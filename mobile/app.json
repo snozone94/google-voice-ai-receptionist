@@ -4,6 +4,7 @@
     "slug": "ddd-ai-receptionist",
     "version": "0.1.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "scheme": "dddaireceptionist",
     "ios": {
@@ -11,7 +12,11 @@
       "bundleIdentifier": "com.dddcincy.aireceptionist"
     },
     "android": {
-      "package": "com.dddcincy.aireceptionist"
+      "package": "com.dddcincy.aireceptionist",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#7d4dff"
+      }
     },
     "web": {
       "bundler": "metro"
