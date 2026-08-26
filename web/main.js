@@ -9,6 +9,12 @@ const summariesList = document.querySelector("#summariesList");
 const bookingsList = document.querySelector("#bookingsList");
 const setupList = document.querySelector("#setupList");
 const webhookUrl = document.querySelector("#webhookUrl");
+const enabledToggle = document.querySelector("#enabledToggle");
+const voiceSelect = document.querySelector("#voiceSelect");
+const greetingInput = document.querySelector("#greetingInput");
+const customInstructionsInput = document.querySelector("#customInstructionsInput");
+const saveSettingsButton = document.querySelector("#saveSettingsButton");
+const settingsStatus = document.querySelector("#settingsStatus");
 
 let peerConnection;
 let localStream;
@@ -22,6 +28,10 @@ fetch("/api/business")
     document.querySelector("#aiForwardingNumber").textContent = business.aiForwardingNumber || "Not set";
   })
   .catch(() => {});
+
+loadSettings().catch(() => {
+  settingsStatus.textContent = "Could not load receptionist settings.";
+});
 
 fetch("/api/setup-status")
   .then((res) => res.json())
@@ -49,6 +59,57 @@ fetch("/api/setup-status")
 function setStatus(message) {
   statusEl.textContent = message;
 }
+
+async function loadSettings() {
+  const response = await fetch("/api/settings");
+  const settings = await response.json();
+  voiceSelect.innerHTML = "";
+  for (const voice of settings.voiceOptions || []) {
+    const option = document.createElement("option");
+    option.value = voice.id;
+    option.textContent = `${voice.label} - ${voice.note}`;
+    voiceSelect.append(option);
+  }
+  enabledToggle.checked = settings.enabled !== false;
+  voiceSelect.value = settings.voice || "marin";
+  greetingInput.value = settings.greeting || "";
+  customInstructionsInput.value = settings.customInstructions || "";
+  voiceSelect.disabled = false;
+  saveSettingsButton.disabled = false;
+  settingsStatus.textContent = settings.enabled
+    ? `Live. New calls will use ${voiceSelect.selectedOptions[0]?.textContent || voiceSelect.value}.`
+    : "Paused. New calls will be logged but the AI will not answer.";
+}
+
+saveSettingsButton.addEventListener("click", async () => {
+  voiceSelect.disabled = true;
+  saveSettingsButton.disabled = true;
+  settingsStatus.textContent = "Saving receptionist settings...";
+  try {
+    const response = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        enabled: enabledToggle.checked,
+        voice: voiceSelect.value,
+        greeting: greetingInput.value,
+        customInstructions: customInstructionsInput.value
+      })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || "Could not save receptionist settings.");
+    }
+    await loadSettings();
+    settingsStatus.textContent = enabledToggle.checked
+      ? `Saved. New calls will use ${voiceSelect.selectedOptions[0]?.textContent || voiceSelect.value}.`
+      : "Saved. The AI receptionist is paused.";
+  } catch (error) {
+    settingsStatus.textContent = error.message;
+    voiceSelect.disabled = false;
+    saveSettingsButton.disabled = false;
+  }
+});
 
 function renderList(element, records, emptyMessage, formatter) {
   element.innerHTML = "";
@@ -180,10 +241,15 @@ leadForm.addEventListener("submit", async (event) => {
 
 async function handleRealtimeEvent(message) {
   const event = JSON.parse(message.data);
-  if (event.type !== "response.function_call_arguments.done" || event.name !== "save_lead") return;
+  if (
+    event.type !== "response.function_call_arguments.done" ||
+    (event.name !== "save_lead" && event.name !== "save_booking_request")
+  ) {
+    return;
+  }
 
   const args = JSON.parse(event.arguments || "{}");
-  const response = await fetch("/api/leads", {
+  const response = await fetch(event.name === "save_booking_request" ? "/api/bookings" : "/api/leads", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...args, source: "browser" })
@@ -196,7 +262,10 @@ async function handleRealtimeEvent(message) {
       item: {
         type: "function_call_output",
         call_id: event.call_id,
-        output: JSON.stringify({ ok: response.ok, leadId: payload.lead?.createdAt })
+        output: JSON.stringify({
+          ok: response.ok,
+          recordId: (payload.lead || payload.booking)?.createdAt
+        })
       }
     })
   );
@@ -204,7 +273,10 @@ async function handleRealtimeEvent(message) {
     JSON.stringify({
       type: "response.create",
       response: {
-        instructions: "Tell the caller their message has been saved and give a concise next step."
+        instructions:
+          event.name === "save_booking_request"
+            ? "Tell the caller the booking request has been saved, share the booking link if useful, and give a concise next step."
+            : "Tell the caller their message has been saved and give a concise next step."
       }
     })
   );

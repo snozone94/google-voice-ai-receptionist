@@ -24,6 +24,28 @@
             </div>
           </dl>
         </div>
+        <div class="settings-grid">
+          <label class="switch-row">
+            <input id="enabledToggle" type="checkbox" />
+            <span>AI receptionist answers calls</span>
+          </label>
+          <label>
+            Receptionist voice
+            <select id="voiceSelect" disabled>
+              <option>Loading voices...</option>
+            </select>
+          </label>
+          <label>
+            Greeting
+            <input id="greetingInput" maxlength="240" placeholder="Thank you for calling DDD..." />
+          </label>
+          <label>
+            What the receptionist should say/do
+            <textarea id="customInstructionsInput" rows="5" maxlength="1600"></textarea>
+          </label>
+          <button id="saveSettingsButton" type="button">Save receptionist settings</button>
+          <p id="settingsStatus">Settings load from the live receptionist.</p>
+        </div>
         <button id="callButton">Start voice call</button>
         <button id="hangupButton" disabled>Hang up</button>
         <p id="status">Idle</p>

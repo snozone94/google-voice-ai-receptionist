@@ -2,17 +2,17 @@ import "dotenv/config";
 import express from "express";
 import OpenAI from "openai";
 import {
-  buildReceptionistInstructions,
   callAcceptPayload,
   listCalls,
   listBookings,
   listLeads,
   listSummaries,
+  loadReceptionistSettings,
   loadBusiness,
-  receptionistTools,
   saveCallEvent,
   saveBookingRequest,
-  saveLead
+  saveLead,
+  saveReceptionistSettings
 } from "./receptionist.js";
 import { monitorRealtimeCall } from "./realtime-tools.js";
 
@@ -63,13 +63,31 @@ app.get("/api/setup-status", (_req, res) => {
 app.get("/api/business", async (_req, res, next) => {
   try {
     const business = await loadBusiness();
+    const settings = await loadReceptionistSettings();
     res.json({
       ...business,
+      receptionistVoice: settings.voice,
       googleVoiceNumber: process.env.GOOGLE_VOICE_NUMBER || "",
       aiForwardingNumber: process.env.AI_FORWARDING_NUMBER || ""
     });
   } catch (error) {
     next(error);
+  }
+});
+
+app.get("/api/settings", async (_req, res, next) => {
+  try {
+    res.json(await loadReceptionistSettings());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/settings", express.json(), async (req, res, next) => {
+  try {
+    res.json(await saveReceptionistSettings(req.body || {}));
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
   }
 });
 
@@ -135,6 +153,12 @@ app.post("/api/webrtc-offer", requireOpenAIKey, express.text({ type: "*/*", limi
     }
 
     const business = await loadBusiness();
+    const settings = await loadReceptionistSettings();
+    if (!settings.enabled) {
+      res.status(409).send("The AI receptionist is turned off.");
+      return;
+    }
+
     const form = new FormData();
     form.set("sdp", new Blob([req.body], { type: "application/sdp" }), "offer.sdp");
     form.set(
@@ -142,16 +166,8 @@ app.post("/api/webrtc-offer", requireOpenAIKey, express.text({ type: "*/*", limi
       new Blob(
         [
           JSON.stringify({
-            type: "realtime",
-            model: "gpt-realtime",
-            instructions: buildReceptionistInstructions(business),
-            tools: receptionistTools(),
-            tool_choice: "auto",
-            audio: {
-              output: {
-                voice: "marin"
-              }
-            }
+            ...callAcceptPayload(business, settings),
+            type: "realtime"
           })
         ],
         { type: "application/json" }
@@ -190,7 +206,7 @@ async function handleSipWebhook(req, res, next) {
       return;
     }
 
-      const event = await openAIClient().webhooks.unwrap(
+    const event = await openAIClient().webhooks.unwrap(
       req.body.toString("utf8"),
       req.headers,
       process.env.OPENAI_WEBHOOK_SECRET
@@ -199,14 +215,21 @@ async function handleSipWebhook(req, res, next) {
     if (event.type === "realtime.call.incoming") {
       const callId = event.data?.call_id;
       const business = await loadBusiness();
+      const settings = await loadReceptionistSettings();
       await saveCallEvent(event);
+      if (!settings.enabled) {
+        console.warn("AI receptionist is off. Incoming call was logged but not accepted.");
+        res.sendStatus(200);
+        return;
+      }
+
       if (!callId) {
         console.warn("Received realtime.call.incoming webhook without a call_id.");
         res.sendStatus(200);
         return;
       }
       try {
-        await openAIClient().realtime.calls.accept(callId, callAcceptPayload(business));
+        await openAIClient().realtime.calls.accept(callId, callAcceptPayload(business, settings));
         monitorRealtimeCall(callId);
       } catch (acceptError) {
         console.error(`Failed to accept realtime call ${callId}: ${acceptError.message}`);

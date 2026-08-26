@@ -7,11 +7,66 @@ const leadsPath = path.join(root, "data", "leads.jsonl");
 const callsPath = path.join(root, "data", "calls.jsonl");
 const summariesPath = path.join(root, "data", "summaries.jsonl");
 const bookingsPath = path.join(root, "data", "bookings.jsonl");
+const settingsPath = path.join(root, "data", "settings.json");
 const dataDir = path.join(root, "data");
+
+export const voiceOptions = [
+  { id: "marin", label: "Marin", note: "Recommended, polished and natural" },
+  { id: "cedar", label: "Cedar", note: "Recommended, calm and steady" },
+  { id: "alloy", label: "Alloy", note: "Balanced and neutral" },
+  { id: "ash", label: "Ash", note: "Clear and confident" },
+  { id: "ballad", label: "Ballad", note: "Warm and expressive" },
+  { id: "coral", label: "Coral", note: "Bright and friendly" },
+  { id: "echo", label: "Echo", note: "Crisp and direct" },
+  { id: "sage", label: "Sage", note: "Measured and professional" },
+  { id: "shimmer", label: "Shimmer", note: "Upbeat and light" },
+  { id: "verse", label: "Verse", note: "Smooth and conversational" }
+];
+
+const supportedVoiceIds = new Set(voiceOptions.map((voice) => voice.id));
+const defaultGreeting = "Thank you for calling DDD, this is the receptionist. How can I help today?";
+const defaultCustomInstructions =
+  "Act like a polished front desk receptionist. Be warm, concise, collect the caller's details, and help them book or leave a clear message.";
 
 export async function loadBusiness() {
   const raw = await fs.readFile(businessPath, "utf8");
   return JSON.parse(raw);
+}
+
+export async function loadReceptionistSettings() {
+  const envVoice = normalizeVoice(process.env.RECEPTIONIST_VOICE);
+  try {
+    const raw = await fs.readFile(settingsPath, "utf8");
+    const settings = JSON.parse(raw);
+    return normalizeSettings({ ...settings, voice: normalizeVoice(settings.voice) || envVoice || "marin" });
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    return normalizeSettings({ voice: envVoice || "marin" });
+  }
+}
+
+export async function saveReceptionistSettings(settings) {
+  const current = await loadReceptionistSettings();
+  const next = normalizeSettings({ ...current, ...settings });
+  if (settings.voice !== undefined && !normalizeVoice(settings.voice)) {
+    throw new Error(`Unsupported voice "${settings.voice}".`);
+  }
+
+  await ensureDataDir();
+  await fs.writeFile(
+    settingsPath,
+    `${JSON.stringify(
+      {
+        enabled: next.enabled,
+        voice: next.voice,
+        greeting: next.greeting,
+        customInstructions: next.customInstructions
+      },
+      null,
+      2
+    )}\n`
+  );
+  return loadReceptionistSettings();
 }
 
 export async function saveLead(lead) {
@@ -91,22 +146,39 @@ export async function saveCallEvent(event) {
   return record;
 }
 
-export function buildReceptionistInstructions(business) {
+export function buildReceptionistInstructions(business, settings = {}) {
+  const activeSettings = normalizeSettings(settings);
   const publicBaseUrl = process.env.PUBLIC_BASE_URL || "";
   const fallbackBookingUrl =
     publicBaseUrl && !publicBaseUrl.includes("your-domain") ? `${publicBaseUrl.replace(/\/$/, "")}/api/book` : "";
   const bookingUrl = process.env.BOOKING_URL || fallbackBookingUrl;
   return `
 You are the AI receptionist for ${business.name}.
-Your job is to answer Google Voice forwarded calls like a capable Smith.ai-style front-desk teammate for DDD.
+Your job is to answer Google Voice forwarded calls like a polished Smith.ai-style front-desk teammate for DDD.
 
 Voice and manner:
 - Sound ${business.tone}.
-- Keep answers short enough for a phone call.
+- Speak like a real front desk receptionist: calm, helpful, confident, and not robotic.
+- Keep answers short enough for a phone call, usually one or two sentences.
 - Ask one question at a time.
+- Let the caller finish before responding, and do not over-explain.
+- Use natural acknowledgements like "I can help with that" or "Let me grab a few details."
 - Do not invent business policies, prices, addresses, or availability.
 - If a caller wants to book, collect their name, phone, email if available, reason for booking, and preferred date/time.
 ${bookingUrl ? `- The booking link is ${bookingUrl}. Offer it verbally and include it in saved lead next steps.` : "- A booking link is not configured yet because the public deployment URL is not set. Tell callers DDD will text or call them with the booking link after their details are saved."}
+
+Opening flow:
+- Start with exactly this greeting unless the caller speaks first: "${activeSettings.greeting}"
+- If they ask whether you are human, be honest: say you are DDD's AI receptionist and you can take care of intake or get their message to the team.
+- Identify the caller's intent: booking, pricing, service question, existing appointment, urgent help, or general message.
+- If the caller wants Smith.ai-style service, focus on being useful and efficient instead of mentioning Smith.ai.
+
+Intake flow:
+- For every meaningful call, collect and confirm name, best callback number, service needed, location or service area if relevant, urgency, and preferred appointment time when scheduling.
+- For roadside or vehicle-related requests, ask for vehicle year/make/model, current location, what happened, and whether the caller is in a safe place.
+- For pricing questions, gather the job details and say the DDD team will confirm the price.
+- For existing customers, collect their name, callback number, and what appointment or job they are calling about.
+- Before ending, summarize the message in one sentence and confirm the next step.
 
 Business hours:
 ${Object.entries(business.hours).map(([day, hours]) => `- ${day}: ${hours}`).join("\n")}
@@ -121,12 +193,16 @@ Escalation rules:
 ${business.escalationRules.map((rule) => `- ${rule}`).join("\n")}
 
 Lead capture:
-- Politely collect name, phone number, email if they are willing, and reason for calling.
+- Politely collect name, phone number, email if they are willing, location/service area when relevant, and reason for calling.
 - Repeat important contact details back for confirmation.
 - Once the caller confirms details, call the save_lead tool.
+- If the caller specifically requests an appointment or gives a preferred time, call the save_booking_request tool after confirming the details.
 - End with a clear next step. If a booking link is configured, tell them to use it to book.
 - If you cannot complete the request, say a team member will follow up.
 - Never promise that a human is available unless the caller has actually been transferred.
+
+User-editable receptionist notes:
+${activeSettings.customInstructions}
 `.trim();
 }
 
@@ -171,27 +247,85 @@ export function receptionistTools() {
           preferredTime: {
             type: "string",
             description: "Caller preferred appointment date or time, if provided."
+          },
+          location: {
+            type: "string",
+            description: "Caller location or service area, if relevant."
+          },
+          serviceType: {
+            type: "string",
+            description: "Type of service or appointment the caller needs."
+          },
+          vehicle: {
+            type: "string",
+            description: "Vehicle year, make, model, or related details, if relevant."
+          },
+          callerSentiment: {
+            type: "string",
+            enum: ["calm", "confused", "upset", "urgent"],
+            description: "How the caller sounded."
           }
         },
         required: ["reason", "urgency", "nextStep"]
+      }
+    },
+    {
+      type: "function",
+      name: "save_booking_request",
+      description: "Save a booking request after confirming appointment details with the caller.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Caller name." },
+          phone: { type: "string", description: "Best callback phone number." },
+          email: { type: "string", description: "Caller email, if provided." },
+          preferredTime: { type: "string", description: "Preferred appointment date or time." },
+          reason: { type: "string", description: "What the caller needs booked." },
+          location: { type: "string", description: "Caller location or service area, if relevant." },
+          serviceType: { type: "string", description: "Type of service requested." },
+          nextStep: { type: "string", description: "What DDD should do next." }
+        },
+        required: ["name", "phone", "preferredTime", "reason", "nextStep"]
       }
     }
   ];
 }
 
-export function callAcceptPayload(business) {
+export function callAcceptPayload(business, settings = {}) {
   return {
     type: "realtime",
     model: "gpt-realtime",
-    instructions: buildReceptionistInstructions(business),
+    instructions: buildReceptionistInstructions(business, settings),
     tools: receptionistTools(),
     tool_choice: "auto",
     audio: {
       output: {
-        voice: "marin"
+        voice: normalizeVoice(settings.voice) || "marin"
       }
     }
   };
+}
+
+function normalizeVoice(voice) {
+  if (!voice || typeof voice !== "string") return "";
+  const normalized = voice.trim().toLowerCase();
+  return supportedVoiceIds.has(normalized) ? normalized : "";
+}
+
+function normalizeSettings(settings = {}) {
+  return {
+    enabled: settings.enabled !== false,
+    voice: normalizeVoice(settings.voice) || "marin",
+    greeting: cleanText(settings.greeting, defaultGreeting, 240),
+    customInstructions: cleanText(settings.customInstructions, defaultCustomInstructions, 1600),
+    voiceOptions
+  };
+}
+
+function cleanText(value, fallback, maxLength) {
+  if (typeof value !== "string") return fallback;
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  return cleaned ? cleaned.slice(0, maxLength) : fallback;
 }
 
 async function postOptionalWebhook(url, payload) {

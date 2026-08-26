@@ -1,5 +1,5 @@
 import WebSocket from "ws";
-import { saveCallSummary, saveLead } from "./receptionist.js";
+import { saveBookingRequest, saveCallSummary, saveLead } from "./receptionist.js";
 
 const activeMonitors = new Map();
 
@@ -55,16 +55,22 @@ class CallMonitor {
   }
 
   async handleEvent(event) {
-    if (event.type === "response.function_call_arguments.done" && event.name === "save_lead") {
+    if (
+      event.type === "response.function_call_arguments.done" &&
+      (event.name === "save_lead" || event.name === "save_booking_request")
+    ) {
       const args = JSON.parse(event.arguments || "{}");
-      const lead = await saveLead({ ...args, callId: this.callId, source: "phone" });
+      const record =
+        event.name === "save_booking_request"
+          ? await saveBookingRequest({ ...args, callId: this.callId, source: "phone" })
+          : await saveLead({ ...args, callId: this.callId, source: "phone" });
       this.ws.send(
         JSON.stringify({
           type: "conversation.item.create",
           item: {
             type: "function_call_output",
             call_id: event.call_id,
-            output: JSON.stringify({ ok: true, leadId: lead.createdAt })
+            output: JSON.stringify({ ok: true, recordId: record.createdAt })
           }
         })
       );
@@ -72,7 +78,10 @@ class CallMonitor {
         JSON.stringify({
           type: "response.create",
           response: {
-            instructions: "Tell the caller their message has been saved and give a concise next step."
+            instructions:
+              event.name === "save_booking_request"
+                ? "Tell the caller the booking request has been saved, share the booking link if useful, and give a concise next step."
+                : "Tell the caller their message has been saved and give a concise next step."
           }
         })
       );

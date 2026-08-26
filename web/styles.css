@@ -56,6 +56,24 @@ h2 {
   margin: 0 0 18px;
 }
 
+.settings-grid {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 18px;
+}
+
+.switch-row {
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.switch-row input {
+  width: 20px;
+  height: 20px;
+}
+
 .numbers div {
   border-left: 3px solid #2b6f6d;
   padding-left: 10px;
@@ -102,6 +120,7 @@ label {
 }
 
 input,
+select,
 textarea {
   width: min(100%, 520px);
   box-sizing: border-box;
@@ -112,7 +131,8 @@ textarea {
 }
 
 #status,
-#leadStatus {
+#leadStatus,
+#settingsStatus {
   min-height: 22px;
   color: #46565f;
 }
