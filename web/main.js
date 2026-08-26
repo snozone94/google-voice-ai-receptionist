@@ -15,6 +15,15 @@ const previewVoiceButton = document.querySelector("#previewVoiceButton");
 const voicePreviewAudio = document.querySelector("#voicePreviewAudio");
 const greetingInput = document.querySelector("#greetingInput");
 const businessKnowledgeInput = document.querySelector("#businessKnowledgeInput");
+const qualifyingServicesInput = document.querySelector("#qualifyingServicesInput");
+const outOfScopeHandlingInput = document.querySelector("#outOfScopeHandlingInput");
+const followUpStyleInput = document.querySelector("#followUpStyleInput");
+const newClientsFlowInput = document.querySelector("#newClientsFlowInput");
+const existingClientsFlowInput = document.querySelector("#existingClientsFlowInput");
+const salesFlowInput = document.querySelector("#salesFlowInput");
+const otherCallersFlowInput = document.querySelector("#otherCallersFlowInput");
+const ambientSoundSelect = document.querySelector("#ambientSoundSelect");
+const thinkingSoundToggle = document.querySelector("#thinkingSoundToggle");
 const customInstructionsInput = document.querySelector("#customInstructionsInput");
 const scriptPreview = document.querySelector("#scriptPreview");
 const saveSettingsButton = document.querySelector("#saveSettingsButton");
@@ -78,6 +87,15 @@ async function loadSettings() {
   voiceSelect.value = settings.voice || "marin";
   greetingInput.value = settings.greeting || "";
   businessKnowledgeInput.value = settings.businessKnowledge || "";
+  qualifyingServicesInput.value = (settings.qualifyingServices || []).join("\n");
+  outOfScopeHandlingInput.value = settings.outOfScopeHandling || "";
+  followUpStyleInput.value = settings.followUpStyle || "";
+  newClientsFlowInput.value = settings.callerFlows?.newClients || "";
+  existingClientsFlowInput.value = settings.callerFlows?.existingClients || "";
+  salesFlowInput.value = settings.callerFlows?.sales || "";
+  otherCallersFlowInput.value = settings.callerFlows?.otherCallers || "";
+  ambientSoundSelect.value = settings.soundPreferences?.ambientSound || "none";
+  thinkingSoundToggle.checked = settings.soundPreferences?.thinkingSound !== false;
   customInstructionsInput.value = settings.customInstructions || "";
   voiceSelect.disabled = false;
   previewVoiceButton.disabled = false;
@@ -101,6 +119,19 @@ saveSettingsButton.addEventListener("click", async () => {
         voice: voiceSelect.value,
         greeting: greetingInput.value,
         businessKnowledge: businessKnowledgeInput.value,
+        qualifyingServices: qualifyingServicesInput.value,
+        outOfScopeHandling: outOfScopeHandlingInput.value,
+        followUpStyle: followUpStyleInput.value,
+        callerFlows: {
+          newClients: newClientsFlowInput.value,
+          existingClients: existingClientsFlowInput.value,
+          sales: salesFlowInput.value,
+          otherCallers: otherCallersFlowInput.value
+        },
+        soundPreferences: {
+          ambientSound: ambientSoundSelect.value,
+          thinkingSound: thinkingSoundToggle.checked
+        },
         customInstructions: customInstructionsInput.value
       })
     });
@@ -148,7 +179,22 @@ previewVoiceButton.addEventListener("click", async () => {
   }
 });
 
-for (const input of [enabledToggle, voiceSelect, greetingInput, businessKnowledgeInput, customInstructionsInput]) {
+for (const input of [
+  enabledToggle,
+  voiceSelect,
+  greetingInput,
+  businessKnowledgeInput,
+  qualifyingServicesInput,
+  outOfScopeHandlingInput,
+  followUpStyleInput,
+  newClientsFlowInput,
+  existingClientsFlowInput,
+  salesFlowInput,
+  otherCallersFlowInput,
+  ambientSoundSelect,
+  thinkingSoundToggle,
+  customInstructionsInput
+]) {
   input.addEventListener("input", updateScriptPreview);
   input.addEventListener("change", updateScriptPreview);
 }
@@ -161,6 +207,19 @@ function updateScriptPreview() {
     "",
     "Business knowledge:",
     businessKnowledgeInput.value || "Add DDD services, prices, service areas, hours, policies, and answers here.",
+    "",
+    "Qualifying services:",
+    qualifyingServicesInput.value || "Roadside assistance\nMaintenance/repair\nExisting appointment",
+    "",
+    "Caller intake:",
+    `New clients: ${newClientsFlowInput.value || "Qualify and collect lead details."}`,
+    `Existing clients: ${existingClientsFlowInput.value || "Collect job or appointment details."}`,
+    `Sales: ${salesFlowInput.value || "Collect a message without committing."}`,
+    `Other callers: ${otherCallersFlowInput.value || "Collect caller info and reason."}`,
+    "",
+    `Out-of-scope: ${outOfScopeHandlingInput.value || "Take a message unless unsafe or unrelated."}`,
+    `Follow-up: ${followUpStyleInput.value || "Share booking link or save a callback message."}`,
+    `Sound: ${ambientSoundSelect.value || "none"}; thinking phrases ${thinkingSoundToggle.checked ? "on" : "off"}.`,
     "",
     "Behavior:",
     customInstructionsInput.value || "Tell the receptionist exactly how to handle callers."

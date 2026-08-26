@@ -47,6 +47,53 @@
             Business knowledge
             <textarea id="businessKnowledgeInput" rows="7" maxlength="3000"></textarea>
           </label>
+          <div class="admin-subgrid">
+            <label>
+              Qualifying services
+              <textarea id="qualifyingServicesInput" rows="4" placeholder="One service per line"></textarea>
+            </label>
+            <label>
+              Out-of-scope handling
+              <textarea id="outOfScopeHandlingInput" rows="4"></textarea>
+            </label>
+            <label>
+              Follow-up style
+              <textarea id="followUpStyleInput" rows="4"></textarea>
+            </label>
+          </div>
+          <div class="flow-grid">
+            <label>
+              Potential new clients & customers
+              <textarea id="newClientsFlowInput" rows="5"></textarea>
+            </label>
+            <label>
+              Existing clients & customers
+              <textarea id="existingClientsFlowInput" rows="5"></textarea>
+            </label>
+            <label>
+              Sales callers
+              <textarea id="salesFlowInput" rows="5"></textarea>
+            </label>
+            <label>
+              All other callers
+              <textarea id="otherCallersFlowInput" rows="5"></textarea>
+            </label>
+          </div>
+          <div class="admin-subgrid">
+            <label>
+              Ambient sound preference
+              <select id="ambientSoundSelect">
+                <option value="none">None</option>
+                <option value="quiet office">Quiet office</option>
+                <option value="front desk">Front desk</option>
+                <option value="light keyboard">Light keyboard</option>
+              </select>
+            </label>
+            <label class="switch-row">
+              <input id="thinkingSoundToggle" type="checkbox" />
+              <span>Use short thinking phrases</span>
+            </label>
+          </div>
           <label>
             What the receptionist should say/do
             <textarea id="customInstructionsInput" rows="5" maxlength="1600"></textarea>

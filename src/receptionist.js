@@ -29,6 +29,21 @@ const defaultCustomInstructions =
   "Act like a polished front desk receptionist. Be warm, concise, collect the caller's details, and help them book or leave a clear message.";
 const defaultBusinessKnowledge =
   "DDD helps callers with booking requests, service questions, and messages for the team. If pricing, exact availability, or service-area details are unknown, collect the caller's details and say the team will confirm.";
+const defaultCallerFlows = {
+  newClients:
+    "Qualify the service needed, collect name, callback number, location, urgency, and preferred time. End by saving a lead or booking request and sharing the booking link.",
+  existingClients:
+    "Collect name, callback number, existing appointment or job details, and what they need changed or answered. Save a clear message for follow-up.",
+  sales:
+    "Collect company/name, callback number, email, what they are offering, and whether it sounds useful. Do not commit DDD to buying anything.",
+  otherCallers:
+    "Collect who they are, callback number, reason for calling, and the best next step. Keep it brief and professional."
+};
+const defaultQualifyingServices = ["Roadside assistance", "Maintenance/repair", "Existing appointment"];
+const defaultSoundPreferences = {
+  ambientSound: "none",
+  thinkingSound: true
+};
 
 export async function loadBusiness() {
   const raw = await fs.readFile(businessPath, "utf8");
@@ -63,7 +78,12 @@ export async function saveReceptionistSettings(settings) {
         voice: next.voice,
         greeting: next.greeting,
         customInstructions: next.customInstructions,
-        businessKnowledge: next.businessKnowledge
+        businessKnowledge: next.businessKnowledge,
+        callerFlows: next.callerFlows,
+        qualifyingServices: next.qualifyingServices,
+        outOfScopeHandling: next.outOfScopeHandling,
+        followUpStyle: next.followUpStyle,
+        soundPreferences: next.soundPreferences
       },
       null,
       2
@@ -182,6 +202,25 @@ Intake flow:
 - For pricing questions, gather the job details and say the DDD team will confirm the price.
 - For existing customers, collect their name, callback number, and what appointment or job they are calling about.
 - Before ending, summarize the message in one sentence and confirm the next step.
+
+Caller routing:
+- Potential new clients and customers: ${activeSettings.callerFlows.newClients}
+- Existing clients and customers: ${activeSettings.callerFlows.existingClients}
+- Sales callers: ${activeSettings.callerFlows.sales}
+- All other callers: ${activeSettings.callerFlows.otherCallers}
+
+Qualifying services:
+${activeSettings.qualifyingServices.map((service) => `- ${service}`).join("\n")}
+
+Out-of-scope callers:
+- ${activeSettings.outOfScopeHandling}
+
+Follow-up style:
+- ${activeSettings.followUpStyle}
+
+Sound preferences:
+- Ambient sound preference: ${activeSettings.soundPreferences.ambientSound}. This is saved for admin preference; do not claim the caller can hear background audio unless it is actually present.
+- Thinking sound: ${activeSettings.soundPreferences.thinkingSound ? "Use a short natural bridge like 'one moment while I check that' if processing takes a moment." : "Avoid filler sounds or thinking noises; stay silent briefly if needed."}
 
 Business hours:
 ${Object.entries(business.hours).map(([day, hours]) => `- ${day}: ${hours}`).join("\n")}
@@ -325,6 +364,19 @@ function normalizeSettings(settings = {}) {
     greeting: cleanText(settings.greeting, defaultGreeting, 240),
     customInstructions: cleanLongText(settings.customInstructions, defaultCustomInstructions, 1600),
     businessKnowledge: cleanLongText(settings.businessKnowledge, defaultBusinessKnowledge, 3000),
+    callerFlows: normalizeCallerFlows(settings.callerFlows),
+    qualifyingServices: normalizeTextList(settings.qualifyingServices, defaultQualifyingServices, 12, 80),
+    outOfScopeHandling: cleanLongText(
+      settings.outOfScopeHandling,
+      "Take a message for services DDD may not offer, unless the request is unsafe or clearly unrelated.",
+      600
+    ),
+    followUpStyle: cleanLongText(
+      settings.followUpStyle,
+      "For booking callers, share the booking link and save the request. For everyone else, save a message with the best callback number.",
+      600
+    ),
+    soundPreferences: normalizeSoundPreferences(settings.soundPreferences),
     voiceOptions
   };
 }
@@ -343,6 +395,35 @@ function cleanLongText(value, fallback, maxLength) {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return cleaned ? cleaned.slice(0, maxLength) : fallback;
+}
+
+function normalizeCallerFlows(flows = {}) {
+  return {
+    newClients: cleanLongText(flows.newClients, defaultCallerFlows.newClients, 900),
+    existingClients: cleanLongText(flows.existingClients, defaultCallerFlows.existingClients, 900),
+    sales: cleanLongText(flows.sales, defaultCallerFlows.sales, 900),
+    otherCallers: cleanLongText(flows.otherCallers, defaultCallerFlows.otherCallers, 900)
+  };
+}
+
+function normalizeTextList(value, fallback, maxItems, maxItemLength) {
+  const list = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/\n|,/)
+      : fallback;
+  const normalized = list
+    .map((item) => cleanText(String(item || ""), "", maxItemLength))
+    .filter(Boolean)
+    .slice(0, maxItems);
+  return normalized.length ? normalized : fallback;
+}
+
+function normalizeSoundPreferences(value = {}) {
+  return {
+    ambientSound: cleanText(value.ambientSound, defaultSoundPreferences.ambientSound, 80),
+    thinkingSound: value.thinkingSound !== false
+  };
 }
 
 async function postOptionalWebhook(url, payload) {
