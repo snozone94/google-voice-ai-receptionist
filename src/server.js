@@ -31,9 +31,11 @@ function requireOpenAIKey(req, res, next) {
   next();
 }
 
-app.use(express.static(new URL("../web", import.meta.url).pathname));
-
 app.get("/health", (_req, res) => {
+  res.json({ ok: true });
+});
+
+app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
 
@@ -105,6 +107,10 @@ app.post("/api/leads", express.json(), async (req, res, next) => {
   }
 });
 
+app.get("/api/book", (_req, res) => {
+  res.type("html").send(bookingPage());
+});
+
 app.get("/api/calls", async (req, res, next) => {
   try {
     res.json({ calls: await listCalls(Number(req.query.limit || 25)) });
@@ -172,7 +178,7 @@ app.post("/api/webrtc-offer", requireOpenAIKey, express.text({ type: "*/*", limi
   }
 });
 
-app.post("/openai/sip-webhook", express.raw({ type: "*/*" }), async (req, res, next) => {
+async function handleSipWebhook(req, res, next) {
   try {
     if (!process.env.OPENAI_API_KEY) {
       res.status(500).send("OPENAI_API_KEY is required for SIP webhooks.");
@@ -202,7 +208,12 @@ app.post("/openai/sip-webhook", express.raw({ type: "*/*" }), async (req, res, n
   } catch (error) {
     next(error);
   }
-});
+}
+
+app.post("/openai/sip-webhook", express.raw({ type: "*/*" }), handleSipWebhook);
+app.post("/api/openai/sip-webhook", express.raw({ type: "*/*" }), handleSipWebhook);
+
+app.use(express.static(new URL("../web", import.meta.url).pathname));
 
 app.use((error, _req, res, _next) => {
   console.error(error);
@@ -212,3 +223,65 @@ app.use((error, _req, res, _next) => {
 app.listen(port, () => {
   console.log(`AI receptionist listening on http://localhost:${port}`);
 });
+
+function bookingPage() {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Book With DDD</title>
+    <style>
+      body { margin: 0; font-family: Arial, sans-serif; background: #f5f7fb; color: #18202f; }
+      main { width: min(720px, calc(100vw - 32px)); margin: 40px auto; }
+      section { background: #fff; border: 1px solid #d8dee9; border-radius: 8px; padding: 24px; box-shadow: 0 10px 30px rgba(24, 32, 47, 0.08); }
+      .eyebrow { margin: 0 0 8px; color: #4f46e5; font-size: 13px; font-weight: 700; text-transform: uppercase; }
+      h1 { margin: 0 0 8px; font-size: clamp(28px, 6vw, 42px); line-height: 1.05; }
+      .summary { margin: 0 0 24px; color: #4a5568; }
+      form { display: grid; gap: 14px; }
+      label { display: grid; gap: 6px; font-weight: 700; }
+      input, textarea { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; font: inherit; }
+      button { border: 0; border-radius: 6px; padding: 12px 16px; background: #111827; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+      #bookingStatus { min-height: 24px; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <p class="eyebrow">DDD booking</p>
+        <h1>Request a Booking</h1>
+        <p class="summary">Send DDD your details and preferred time. A team member will confirm the appointment.</p>
+        <form id="bookingForm">
+          <label>Name <input name="name" autocomplete="name" required /></label>
+          <label>Phone <input name="phone" autocomplete="tel" required /></label>
+          <label>Email <input name="email" autocomplete="email" /></label>
+          <label>Preferred date/time <input name="preferredTime" autocomplete="off" required /></label>
+          <label>What do you need? <textarea name="reason" rows="4" required></textarea></label>
+          <button type="submit">Request booking</button>
+        </form>
+        <p id="bookingStatus"></p>
+      </section>
+    </main>
+    <script>
+      const form = document.querySelector("#bookingForm");
+      const statusEl = document.querySelector("#bookingStatus");
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        statusEl.textContent = "Sending...";
+        const payload = Object.fromEntries(new FormData(form).entries());
+        const response = await fetch("/api/bookings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (response.ok) {
+          form.reset();
+          statusEl.textContent = "Thanks. DDD received your booking request.";
+        } else {
+          statusEl.textContent = "Something went wrong. Please call or text DDD.";
+        }
+      });
+    </script>
+  </body>
+</html>`;
+}

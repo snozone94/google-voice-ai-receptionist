@@ -7,6 +7,7 @@ const leadsPath = path.join(root, "data", "leads.jsonl");
 const callsPath = path.join(root, "data", "calls.jsonl");
 const summariesPath = path.join(root, "data", "summaries.jsonl");
 const bookingsPath = path.join(root, "data", "bookings.jsonl");
+const dataDir = path.join(root, "data");
 
 export async function loadBusiness() {
   const raw = await fs.readFile(businessPath, "utf8");
@@ -18,6 +19,7 @@ export async function saveLead(lead) {
     createdAt: new Date().toISOString(),
     ...lead
   };
+  await ensureDataDir();
   await fs.appendFile(leadsPath, `${JSON.stringify(record)}\n`);
   await postOptionalWebhook(process.env.LEAD_WEBHOOK_URL, record);
   return record;
@@ -28,6 +30,7 @@ export async function saveCallSummary(summary) {
     createdAt: new Date().toISOString(),
     ...summary
   };
+  await ensureDataDir();
   await fs.appendFile(summariesPath, `${JSON.stringify(record)}\n`);
   await postOptionalWebhook(process.env.CALL_SUMMARY_WEBHOOK_URL, record);
   return record;
@@ -38,6 +41,7 @@ export async function saveBookingRequest(booking) {
     createdAt: new Date().toISOString(),
     ...booking
   };
+  await ensureDataDir();
   await fs.appendFile(bookingsPath, `${JSON.stringify(record)}\n`);
   await postOptionalWebhook(process.env.LEAD_WEBHOOK_URL, { ...record, type: "booking_request" });
   return record;
@@ -82,6 +86,7 @@ export async function saveCallEvent(event) {
     callId: event.data?.call_id,
     sipHeaders: event.data?.sip_headers || []
   };
+  await ensureDataDir();
   await fs.appendFile(callsPath, `${JSON.stringify(record)}\n`);
   return record;
 }
@@ -89,7 +94,7 @@ export async function saveCallEvent(event) {
 export function buildReceptionistInstructions(business) {
   const publicBaseUrl = process.env.PUBLIC_BASE_URL || "";
   const fallbackBookingUrl =
-    publicBaseUrl && !publicBaseUrl.includes("your-domain") ? `${publicBaseUrl.replace(/\/$/, "")}/book.html` : "";
+    publicBaseUrl && !publicBaseUrl.includes("your-domain") ? `${publicBaseUrl.replace(/\/$/, "")}/api/book` : "";
   const bookingUrl = process.env.BOOKING_URL || fallbackBookingUrl;
   return `
 You are the AI receptionist for ${business.name}.
@@ -123,6 +128,10 @@ Lead capture:
 - If you cannot complete the request, say a team member will follow up.
 - Never promise that a human is available unless the caller has actually been transferred.
 `.trim();
+}
+
+async function ensureDataDir() {
+  await fs.mkdir(dataDir, { recursive: true });
 }
 
 export function receptionistTools() {
