@@ -55,7 +55,7 @@ app.get("/api/setup-status", (_req, res) => {
     aiForwardingNumber: process.env.AI_FORWARDING_NUMBER || "",
     webhookUrl:
       process.env.PUBLIC_BASE_URL && !process.env.PUBLIC_BASE_URL.includes("your-domain")
-        ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/openai/sip-webhook`
+        ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/openai/sip-webhook`
         : ""
   });
 });
@@ -200,8 +200,12 @@ async function handleSipWebhook(req, res, next) {
       const callId = event.data.call_id;
       const business = await loadBusiness();
       await saveCallEvent(event);
-      await openAIClient().realtime.calls.accept(callId, callAcceptPayload(business));
-      monitorRealtimeCall(callId);
+      try {
+        await openAIClient().realtime.calls.accept(callId, callAcceptPayload(business));
+        monitorRealtimeCall(callId);
+      } catch (acceptError) {
+        console.error(`Failed to accept realtime call ${callId}: ${acceptError.message}`);
+      }
     }
 
     res.sendStatus(200);
