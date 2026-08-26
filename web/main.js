@@ -6,6 +6,7 @@ const leadStatus = document.querySelector("#leadStatus");
 const callsList = document.querySelector("#callsList");
 const leadsList = document.querySelector("#leadsList");
 const summariesList = document.querySelector("#summariesList");
+const bookingsList = document.querySelector("#bookingsList");
 const setupList = document.querySelector("#setupList");
 const webhookUrl = document.querySelector("#webhookUrl");
 
@@ -66,15 +67,17 @@ function renderList(element, records, emptyMessage, formatter) {
 }
 
 async function refreshActivity() {
-  const [callsResponse, leadsResponse, summariesResponse] = await Promise.all([
+  const [callsResponse, leadsResponse, summariesResponse, bookingsResponse] = await Promise.all([
     fetch("/api/calls"),
     fetch("/api/leads"),
-    fetch("/api/summaries")
+    fetch("/api/summaries"),
+    fetch("/api/bookings")
   ]);
-  const [{ calls }, { leads }, { summaries }] = await Promise.all([
+  const [{ calls }, { leads }, { summaries }, { bookings }] = await Promise.all([
     callsResponse.json(),
     leadsResponse.json(),
-    summariesResponse.json()
+    summariesResponse.json(),
+    bookingsResponse.json()
   ]);
   renderList(callsList, calls, "No forwarded calls yet.", (call) => `${call.createdAt} ${call.callId || ""}`.trim());
   renderList(leadsList, leads, "No leads yet.", (lead) => `${lead.createdAt} ${lead.name || lead.phone || "Lead"}`);
@@ -83,6 +86,12 @@ async function refreshActivity() {
     summaries,
     "No summaries yet.",
     (summary) => `${summary.endedAt || summary.createdAt} ${summary.callId || "Browser call"}`
+  );
+  renderList(
+    bookingsList,
+    bookings,
+    "No booking requests yet.",
+    (booking) => `${booking.createdAt} ${booking.name || booking.phone || "Booking"}`
   );
 }
 

@@ -5,11 +5,13 @@ import {
   buildReceptionistInstructions,
   callAcceptPayload,
   listCalls,
+  listBookings,
   listLeads,
   listSummaries,
   loadBusiness,
   receptionistTools,
   saveCallEvent,
+  saveBookingRequest,
   saveLead
 } from "./receptionist.js";
 import { monitorRealtimeCall } from "./realtime-tools.js";
@@ -72,6 +74,23 @@ app.get("/api/business", async (_req, res, next) => {
 app.get("/api/leads", async (req, res, next) => {
   try {
     res.json({ leads: await listLeads(Number(req.query.limit || 25)) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/bookings", async (req, res, next) => {
+  try {
+    res.json({ bookings: await listBookings(Number(req.query.limit || 25)) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/bookings", express.json(), async (req, res, next) => {
+  try {
+    const booking = await saveBookingRequest(req.body || {});
+    res.status(201).json({ ok: true, booking });
   } catch (error) {
     next(error);
   }

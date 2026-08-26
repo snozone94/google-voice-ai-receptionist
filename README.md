@@ -35,7 +35,7 @@ http://localhost:8787
 ```
 
 Edit `config/business.json` to teach the receptionist your hours, FAQs, services, and escalation rules.
-Set `BOOKING_URL` so the assistant can give callers the booking link.
+Set `BOOKING_URL` if you already have a scheduler. If it is blank, the assistant uses the built-in booking request page at `/book.html` after deployment.
 
 ## Google Voice Forwarding
 
@@ -78,6 +78,7 @@ Call activity and summaries are stored in:
 ```text
 data/calls.jsonl
 data/summaries.jsonl
+data/bookings.jsonl
 ```
 
 Optional outbound webhooks:

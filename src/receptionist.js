@@ -6,6 +6,7 @@ const businessPath = path.join(root, "config", "business.json");
 const leadsPath = path.join(root, "data", "leads.jsonl");
 const callsPath = path.join(root, "data", "calls.jsonl");
 const summariesPath = path.join(root, "data", "summaries.jsonl");
+const bookingsPath = path.join(root, "data", "bookings.jsonl");
 
 export async function loadBusiness() {
   const raw = await fs.readFile(businessPath, "utf8");
@@ -29,6 +30,16 @@ export async function saveCallSummary(summary) {
   };
   await fs.appendFile(summariesPath, `${JSON.stringify(record)}\n`);
   await postOptionalWebhook(process.env.CALL_SUMMARY_WEBHOOK_URL, record);
+  return record;
+}
+
+export async function saveBookingRequest(booking) {
+  const record = {
+    createdAt: new Date().toISOString(),
+    ...booking
+  };
+  await fs.appendFile(bookingsPath, `${JSON.stringify(record)}\n`);
+  await postOptionalWebhook(process.env.LEAD_WEBHOOK_URL, { ...record, type: "booking_request" });
   return record;
 }
 
@@ -60,6 +71,10 @@ export async function listSummaries(limit) {
   return listRecords(summariesPath, limit);
 }
 
+export async function listBookings(limit) {
+  return listRecords(bookingsPath, limit);
+}
+
 export async function saveCallEvent(event) {
   const record = {
     createdAt: new Date().toISOString(),
@@ -72,7 +87,10 @@ export async function saveCallEvent(event) {
 }
 
 export function buildReceptionistInstructions(business) {
-  const bookingUrl = process.env.BOOKING_URL || "";
+  const publicBaseUrl = process.env.PUBLIC_BASE_URL || "";
+  const fallbackBookingUrl =
+    publicBaseUrl && !publicBaseUrl.includes("your-domain") ? `${publicBaseUrl.replace(/\/$/, "")}/book.html` : "";
+  const bookingUrl = process.env.BOOKING_URL || fallbackBookingUrl;
   return `
 You are the AI receptionist for ${business.name}.
 Your job is to answer Google Voice forwarded calls like a capable Smith.ai-style front-desk teammate for DDD.
@@ -83,7 +101,7 @@ Voice and manner:
 - Ask one question at a time.
 - Do not invent business policies, prices, addresses, or availability.
 - If a caller wants to book, collect their name, phone, email if available, reason for booking, and preferred date/time.
-${bookingUrl ? `- The booking link is ${bookingUrl}. Offer it verbally and include it in saved lead next steps.` : "- A booking link is not configured yet. Tell callers DDD will text or call them with the booking link after their details are saved."}
+${bookingUrl ? `- The booking link is ${bookingUrl}. Offer it verbally and include it in saved lead next steps.` : "- A booking link is not configured yet because the public deployment URL is not set. Tell callers DDD will text or call them with the booking link after their details are saved."}
 
 Business hours:
 ${Object.entries(business.hours).map(([day, hours]) => `- ${day}: ${hours}`).join("\n")}

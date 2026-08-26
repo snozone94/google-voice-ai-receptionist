@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Book With DDD</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main>
+      <section class="panel">
+        <p class="eyebrow">DDD booking</p>
+        <h1>Request a Booking</h1>
+        <p class="summary">Send DDD your details and preferred time. A team member will confirm the appointment.</p>
+        <form id="bookingForm">
+          <label>Name <input name="name" autocomplete="name" required /></label>
+          <label>Phone <input name="phone" autocomplete="tel" required /></label>
+          <label>Email <input name="email" autocomplete="email" /></label>
+          <label>Preferred date/time <input name="preferredTime" autocomplete="off" required /></label>
+          <label>What do you need? <textarea name="reason" rows="4" required></textarea></label>
+          <button type="submit">Request booking</button>
+        </form>
+        <p id="bookingStatus"></p>
+      </section>
+    </main>
+    <script type="module" src="/book.js"></script>
+  </body>
+</html>
