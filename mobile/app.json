@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "DDD AI Receptionist",
+    "slug": "ddd-ai-receptionist",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "dddaireceptionist",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dddcincy.aireceptionist"
+    },
+    "android": {
+      "package": "com.dddcincy.aireceptionist"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "extra": {
+      "defaultApiBaseUrl": "https://google-voice-ai-receptionist.onrender.com"
+    }
+  }
+}

@@ -66,6 +66,18 @@ This lets you test the same AI receptionist from your browser before wiring phon
 The browser page creates a WebRTC offer and sends it to `/api/webrtc-offer`.
 The server forwards that offer to OpenAI's Realtime Calls endpoint with your receptionist instructions.
 
+## iPhone Admin App
+
+The `mobile/` folder contains an Expo iOS admin app that talks to the live Render backend. It lets you control answering, voice, speaking speed, voice previews, greeting, business knowledge, DDD destination links, follow-up rules, and recent activity from a phone.
+
+```bash
+cd mobile
+npm install
+npm run ios
+```
+
+For physical iPhone testing, use `npm start` and scan the Expo QR code with Expo Go.
+
 ## Lead Capture
 
 Manual lead capture from the web page writes JSON lines to:
