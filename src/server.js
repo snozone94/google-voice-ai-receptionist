@@ -197,9 +197,14 @@ async function handleSipWebhook(req, res, next) {
     );
 
     if (event.type === "realtime.call.incoming") {
-      const callId = event.data.call_id;
+      const callId = event.data?.call_id;
       const business = await loadBusiness();
       await saveCallEvent(event);
+      if (!callId) {
+        console.warn("Received realtime.call.incoming webhook without a call_id.");
+        res.sendStatus(200);
+        return;
+      }
       try {
         await openAIClient().realtime.calls.accept(callId, callAcceptPayload(business));
         monitorRealtimeCall(callId);
