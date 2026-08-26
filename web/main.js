@@ -11,8 +11,12 @@ const setupList = document.querySelector("#setupList");
 const webhookUrl = document.querySelector("#webhookUrl");
 const enabledToggle = document.querySelector("#enabledToggle");
 const voiceSelect = document.querySelector("#voiceSelect");
+const previewVoiceButton = document.querySelector("#previewVoiceButton");
+const voicePreviewAudio = document.querySelector("#voicePreviewAudio");
 const greetingInput = document.querySelector("#greetingInput");
+const businessKnowledgeInput = document.querySelector("#businessKnowledgeInput");
 const customInstructionsInput = document.querySelector("#customInstructionsInput");
+const scriptPreview = document.querySelector("#scriptPreview");
 const saveSettingsButton = document.querySelector("#saveSettingsButton");
 const settingsStatus = document.querySelector("#settingsStatus");
 
@@ -73,9 +77,12 @@ async function loadSettings() {
   enabledToggle.checked = settings.enabled !== false;
   voiceSelect.value = settings.voice || "marin";
   greetingInput.value = settings.greeting || "";
+  businessKnowledgeInput.value = settings.businessKnowledge || "";
   customInstructionsInput.value = settings.customInstructions || "";
   voiceSelect.disabled = false;
+  previewVoiceButton.disabled = false;
   saveSettingsButton.disabled = false;
+  updateScriptPreview();
   settingsStatus.textContent = settings.enabled
     ? `Live. New calls will use ${voiceSelect.selectedOptions[0]?.textContent || voiceSelect.value}.`
     : "Paused. New calls will be logged but the AI will not answer.";
@@ -93,6 +100,7 @@ saveSettingsButton.addEventListener("click", async () => {
         enabled: enabledToggle.checked,
         voice: voiceSelect.value,
         greeting: greetingInput.value,
+        businessKnowledge: businessKnowledgeInput.value,
         customInstructions: customInstructionsInput.value
       })
     });
@@ -107,9 +115,57 @@ saveSettingsButton.addEventListener("click", async () => {
   } catch (error) {
     settingsStatus.textContent = error.message;
     voiceSelect.disabled = false;
+    previewVoiceButton.disabled = false;
     saveSettingsButton.disabled = false;
   }
 });
+
+previewVoiceButton.addEventListener("click", async () => {
+  previewVoiceButton.disabled = true;
+  settingsStatus.textContent = "Making voice preview...";
+  try {
+    const response = await fetch("/api/voice-preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        voice: voiceSelect.value,
+        text: greetingInput.value || "Thank you for calling DDD. How can I help today?"
+      })
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || "Could not make voice preview.");
+    }
+    const audioBlob = await response.blob();
+    if (voicePreviewAudio.src) URL.revokeObjectURL(voicePreviewAudio.src);
+    voicePreviewAudio.src = URL.createObjectURL(audioBlob);
+    await voicePreviewAudio.play().catch(() => {});
+    settingsStatus.textContent = "Preview ready.";
+  } catch (error) {
+    settingsStatus.textContent = error.message;
+  } finally {
+    previewVoiceButton.disabled = false;
+  }
+});
+
+for (const input of [enabledToggle, voiceSelect, greetingInput, businessKnowledgeInput, customInstructionsInput]) {
+  input.addEventListener("input", updateScriptPreview);
+  input.addEventListener("change", updateScriptPreview);
+}
+
+function updateScriptPreview() {
+  scriptPreview.value = [
+    enabledToggle.checked ? "Status: AI answers new calls." : "Status: AI is paused.",
+    `Voice: ${voiceSelect.selectedOptions[0]?.textContent || voiceSelect.value || "Marin"}`,
+    `Greeting: ${greetingInput.value || "Thank you for calling DDD, this is the receptionist. How can I help today?"}`,
+    "",
+    "Business knowledge:",
+    businessKnowledgeInput.value || "Add DDD services, prices, service areas, hours, policies, and answers here.",
+    "",
+    "Behavior:",
+    customInstructionsInput.value || "Tell the receptionist exactly how to handle callers."
+  ].join("\n");
+}
 
 function renderList(element, records, emptyMessage, formatter) {
   element.innerHTML = "";

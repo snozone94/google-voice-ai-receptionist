@@ -9,6 +9,7 @@ import {
   listSummaries,
   loadReceptionistSettings,
   loadBusiness,
+  normalizeVoice,
   saveCallEvent,
   saveBookingRequest,
   saveLead,
@@ -88,6 +89,33 @@ app.post("/api/settings", express.json(), async (req, res, next) => {
     res.json(await saveReceptionistSettings(req.body || {}));
   } catch (error) {
     res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+app.post("/api/voice-preview", requireOpenAIKey, express.json(), async (req, res, next) => {
+  try {
+    const voice = normalizeVoice(req.body?.voice);
+    if (!voice) {
+      res.status(400).json({ ok: false, error: "Choose a supported voice." });
+      return;
+    }
+
+    const settings = await loadReceptionistSettings();
+    const input = String(req.body?.text || settings.greeting || "Thank you for calling DDD. How can I help today?")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 600);
+    const speech = await openAIClient().audio.speech.create({
+      model: "gpt-4o-mini-tts",
+      voice,
+      input,
+      instructions: "Sound like a warm, polished business receptionist on a phone call.",
+      response_format: "mp3"
+    });
+    const buffer = Buffer.from(await speech.arrayBuffer());
+    res.type("audio/mpeg").send(buffer);
+  } catch (error) {
+    next(error);
   }
 });
 

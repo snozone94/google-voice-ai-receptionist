@@ -27,6 +27,8 @@ const supportedVoiceIds = new Set(voiceOptions.map((voice) => voice.id));
 const defaultGreeting = "Thank you for calling DDD, this is the receptionist. How can I help today?";
 const defaultCustomInstructions =
   "Act like a polished front desk receptionist. Be warm, concise, collect the caller's details, and help them book or leave a clear message.";
+const defaultBusinessKnowledge =
+  "DDD helps callers with booking requests, service questions, and messages for the team. If pricing, exact availability, or service-area details are unknown, collect the caller's details and say the team will confirm.";
 
 export async function loadBusiness() {
   const raw = await fs.readFile(businessPath, "utf8");
@@ -60,7 +62,8 @@ export async function saveReceptionistSettings(settings) {
         enabled: next.enabled,
         voice: next.voice,
         greeting: next.greeting,
-        customInstructions: next.customInstructions
+        customInstructions: next.customInstructions,
+        businessKnowledge: next.businessKnowledge
       },
       null,
       2
@@ -189,6 +192,9 @@ ${business.services.map((service) => `- ${service}`).join("\n")}
 FAQs:
 ${business.faqs.map((faq) => `- Q: ${faq.question}\n  A: ${faq.answer}`).join("\n")}
 
+Admin business knowledge:
+${activeSettings.businessKnowledge}
+
 Escalation rules:
 ${business.escalationRules.map((rule) => `- ${rule}`).join("\n")}
 
@@ -306,7 +312,7 @@ export function callAcceptPayload(business, settings = {}) {
   };
 }
 
-function normalizeVoice(voice) {
+export function normalizeVoice(voice) {
   if (!voice || typeof voice !== "string") return "";
   const normalized = voice.trim().toLowerCase();
   return supportedVoiceIds.has(normalized) ? normalized : "";
@@ -317,7 +323,8 @@ function normalizeSettings(settings = {}) {
     enabled: settings.enabled !== false,
     voice: normalizeVoice(settings.voice) || "marin",
     greeting: cleanText(settings.greeting, defaultGreeting, 240),
-    customInstructions: cleanText(settings.customInstructions, defaultCustomInstructions, 1600),
+    customInstructions: cleanLongText(settings.customInstructions, defaultCustomInstructions, 1600),
+    businessKnowledge: cleanLongText(settings.businessKnowledge, defaultBusinessKnowledge, 3000),
     voiceOptions
   };
 }
@@ -325,6 +332,16 @@ function normalizeSettings(settings = {}) {
 function cleanText(value, fallback, maxLength) {
   if (typeof value !== "string") return fallback;
   const cleaned = value.replace(/\s+/g, " ").trim();
+  return cleaned ? cleaned.slice(0, maxLength) : fallback;
+}
+
+function cleanLongText(value, fallback, maxLength) {
+  if (typeof value !== "string") return fallback;
+  const cleaned = value
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
   return cleaned ? cleaned.slice(0, maxLength) : fallback;
 }
 

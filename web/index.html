@@ -35,13 +35,25 @@
               <option>Loading voices...</option>
             </select>
           </label>
+          <div class="button-row">
+            <button id="previewVoiceButton" type="button" disabled>Preview voice</button>
+            <audio id="voicePreviewAudio" controls></audio>
+          </div>
           <label>
             Greeting
             <input id="greetingInput" maxlength="240" placeholder="Thank you for calling DDD..." />
           </label>
           <label>
+            Business knowledge
+            <textarea id="businessKnowledgeInput" rows="7" maxlength="3000"></textarea>
+          </label>
+          <label>
             What the receptionist should say/do
             <textarea id="customInstructionsInput" rows="5" maxlength="1600"></textarea>
+          </label>
+          <label>
+            Call script preview
+            <textarea id="scriptPreview" rows="8" readonly></textarea>
           </label>
           <button id="saveSettingsButton" type="button">Save receptionist settings</button>
           <p id="settingsStatus">Settings load from the live receptionist.</p>
