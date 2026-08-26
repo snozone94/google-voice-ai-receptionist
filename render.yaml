@@ -14,12 +14,14 @@ services:
       - key: PUBLIC_BASE_URL
         sync: false
       - key: BUSINESS_NAME
-        value: Your Business
+        value: DDD
       - key: BUSINESS_PHONE
         value: "+15134091342"
       - key: GOOGLE_VOICE_NUMBER
         value: "+15134091342"
       - key: AI_FORWARDING_NUMBER
+        sync: false
+      - key: BOOKING_URL
         sync: false
       - key: LEAD_WEBHOOK_URL
         sync: false

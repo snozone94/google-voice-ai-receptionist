@@ -1,6 +1,6 @@
 # Google Voice Forwarded AI Receptionist
 
-This is a starter for owning your own Smith.ai-style answering assistant where **Google Voice remains the public number**.
+This is a starter for DDD to own a Smith.ai-style answering assistant where **Google Voice remains the public number**.
 
 The call path is:
 
@@ -35,6 +35,7 @@ http://localhost:8787
 ```
 
 Edit `config/business.json` to teach the receptionist your hours, FAQs, services, and escalation rules.
+Set `BOOKING_URL` so the assistant can give callers the booking link.
 
 ## Google Voice Forwarding
 
@@ -118,6 +119,7 @@ BUSINESS_NAME
 BUSINESS_PHONE
 GOOGLE_VOICE_NUMBER
 AI_FORWARDING_NUMBER
+BOOKING_URL
 TRANSFER_SIP_URI
 LEAD_WEBHOOK_URL
 CALL_SUMMARY_WEBHOOK_URL

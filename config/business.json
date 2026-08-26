@@ -1,5 +1,5 @@
 {
-  "name": "Your Business",
+  "name": "DDD",
   "tone": "warm, concise, professional",
   "hours": {
     "monday": "9:00 AM - 5:00 PM",
@@ -11,25 +11,25 @@
     "sunday": "closed"
   },
   "services": [
-    "Answer common questions",
+    "Answer DDD calls from the Google Voice number",
     "Collect caller name, phone, email, and reason for calling",
-    "Qualify new leads",
-    "Take messages for staff",
-    "Escalate urgent requests"
+    "Qualify new leads and booking requests",
+    "Share the booking link when the caller wants to schedule",
+    "Take messages for staff"
   ],
   "faqs": [
     {
       "question": "Where are you located?",
-      "answer": "Update config/business.json with your address or service area."
+      "answer": "Collect the caller's location or service area, then say the DDD team will confirm service availability."
     },
     {
       "question": "How do appointments work?",
-      "answer": "The assistant should collect the caller's preferred date and time, then mark the request as needing staff confirmation."
+      "answer": "Collect the caller's preferred date and time, save the lead, and give them the booking link if it is configured."
     }
   ],
   "escalationRules": [
     "If the caller says this is an emergency, tell them to call emergency services immediately, then take a brief message.",
-    "If the caller asks for pricing you do not know, collect their needs and say a team member will follow up.",
+    "If the caller asks for pricing you do not know, collect what they need and say DDD will follow up.",
     "If the caller is angry, apologize once, stay calm, and collect the best callback number."
   ]
 }

@@ -72,15 +72,18 @@ export async function saveCallEvent(event) {
 }
 
 export function buildReceptionistInstructions(business) {
+  const bookingUrl = process.env.BOOKING_URL || "";
   return `
 You are the AI receptionist for ${business.name}.
-Your job is to answer calls like a capable front-desk teammate.
+Your job is to answer Google Voice forwarded calls like a capable Smith.ai-style front-desk teammate for DDD.
 
 Voice and manner:
 - Sound ${business.tone}.
 - Keep answers short enough for a phone call.
 - Ask one question at a time.
 - Do not invent business policies, prices, addresses, or availability.
+- If a caller wants to book, collect their name, phone, email if available, reason for booking, and preferred date/time.
+${bookingUrl ? `- The booking link is ${bookingUrl}. Offer it verbally and include it in saved lead next steps.` : "- A booking link is not configured yet. Tell callers DDD will text or call them with the booking link after their details are saved."}
 
 Business hours:
 ${Object.entries(business.hours).map(([day, hours]) => `- ${day}: ${hours}`).join("\n")}
@@ -98,7 +101,7 @@ Lead capture:
 - Politely collect name, phone number, email if they are willing, and reason for calling.
 - Repeat important contact details back for confirmation.
 - Once the caller confirms details, call the save_lead tool.
-- End with a clear next step.
+- End with a clear next step. If a booking link is configured, tell them to use it to book.
 - If you cannot complete the request, say a team member will follow up.
 - Never promise that a human is available unless the caller has actually been transferred.
 `.trim();
@@ -136,7 +139,11 @@ export function receptionistTools() {
           },
           nextStep: {
             type: "string",
-            description: "What the business should do next."
+            description: "What the business should do next. Include the booking link if the caller wants to schedule and BOOKING_URL is configured."
+          },
+          preferredTime: {
+            type: "string",
+            description: "Caller preferred appointment date or time, if provided."
           }
         },
         required: ["reason", "urgency", "nextStep"]
