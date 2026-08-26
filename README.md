@@ -20,6 +20,8 @@ You can avoid Smith.ai and Twilio. Google Voice cannot directly stream a live ca
 
 For this architecture, your recurring costs are the AI forwarding number/SIP route plus OpenAI Realtime API usage.
 
+Once wired, the receptionist can run by itself for normal answering, intake, booking handoff, and lead capture. You still need to keep OpenAI billing active, keep the SIP/VoIP.ms balance topped up, and update the dashboard when DDD details, links, pricing, or policies change. For production reliability, use always-on hosting and persistent storage for settings/leads.
+
 ## Setup
 
 ```bash
@@ -34,8 +36,9 @@ Then open:
 http://localhost:8787
 ```
 
-Edit `config/business.json` to teach the receptionist your hours, FAQs, services, and escalation rules.
-Set `BOOKING_URL` if you already have a scheduler. If it is blank, the assistant uses the built-in booking request page at `/book.html` after deployment.
+Use the admin dashboard to turn answering on/off, choose the voice, preview the voice, change speaking speed, edit the greeting, update business knowledge, tune caller handling, and maintain booking/app/apply destination links.
+Edit `config/business.json` only for deeper defaults like hours, FAQs, services, and escalation rules.
+Set `BOOKING_URL` if you already have a scheduler. If it is blank, the assistant uses the built-in booking request page at `/api/book` after deployment.
 
 ## Google Voice Forwarding
 

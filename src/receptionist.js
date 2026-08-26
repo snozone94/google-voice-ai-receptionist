@@ -46,6 +46,43 @@ const defaultSoundPreferences = {
   ambientSound: "none",
   thinkingSound: true
 };
+const defaultBookingDestinations = [
+  {
+    label: "Book roadside service",
+    url: "https://dddcincy.com/book-service/",
+    useWhen: "Most roadside or mobile service callers who are ready to book. Push this for jump starts, lockouts, tire help, fuel delivery, batteries, oil changes, brakes, and light maintenance."
+  },
+  {
+    label: "Emergency service request",
+    url: "https://dddcincy.com/emergency-service/",
+    useWhen: "Caller says they need urgent roadside help now, is stranded, locked out, has a flat, dead battery, fuel issue, or needs dispatch-style help."
+  },
+  {
+    label: "Shop roadside services",
+    url: "https://dddcincy.com/shop-our-roadside-services/",
+    useWhen: "Caller asks what DDD offers, wants prices, wants to choose a service, or may need to add a service to cart."
+  },
+  {
+    label: "DDD Mobile app",
+    url: "https://dddcincy.com/ddd-mobile-app/",
+    useWhen: "Caller wants the mobile app, service status, booking alerts, app account tools, or a smoother repeat-customer flow."
+  },
+  {
+    label: "DDD Auto Doc app",
+    url: "https://dddcincy.com/ddd-auto-doc/",
+    useWhen: "Caller wants AI vehicle diagnosis, safety guidance, saved reports, or help deciding what is wrong before booking."
+  },
+  {
+    label: "DDDCincy.com",
+    url: "https://dddcincy.com/",
+    useWhen: "Caller needs the main website, general DDD information, or is not sure which DDD page they need."
+  },
+  {
+    label: "DDD apply to work",
+    url: "https://dddcincy.com/apply-to-work-with-ddd/",
+    useWhen: "Caller wants to apply to work with DDD, contractor interest, technician approval, or service provider onboarding."
+  }
+];
 
 export async function loadBusiness() {
   const raw = await fs.readFile(businessPath, "utf8");
@@ -87,7 +124,8 @@ export async function saveReceptionistSettings(settings) {
         qualifyingServices: next.qualifyingServices,
         outOfScopeHandling: next.outOfScopeHandling,
         followUpStyle: next.followUpStyle,
-        soundPreferences: next.soundPreferences
+        soundPreferences: next.soundPreferences,
+        bookingDestinations: next.bookingDestinations
       },
       null,
       2
@@ -228,6 +266,20 @@ Sound preferences:
 - Ambient sound preference: ${activeSettings.soundPreferences.ambientSound}. This is saved for admin preference; do not claim the caller can hear background audio unless it is actually present.
 - Thinking sound: ${activeSettings.soundPreferences.thinkingSound ? "Use a short natural bridge like 'one moment while I check that' if processing takes a moment." : "Avoid filler sounds or thinking noises; stay silent briefly if needed."}
 
+Booking, app, and apply destinations:
+${activeSettings.bookingDestinations.map((destination) => `- ${destination.label}: ${destination.url}\n  Use when: ${destination.useWhen}`).join("\n")}
+
+DDD routing rules:
+- Push callers toward the best DDD destination above instead of giving a generic booking link when one clearly fits.
+- For ready-to-book roadside callers, direct them to Book roadside service.
+- For stranded, locked out, flat tire, dead battery, fuel, or urgent roadside callers, direct them to Emergency service request.
+- For callers comparing or buying specific services, direct them to Shop roadside services.
+- For mobile-app, booking-alert, service-status, or repeat-customer questions, direct them to DDD Mobile app.
+- For vehicle symptom or "what is wrong with my car" questions, direct them to DDD Auto Doc app after collecting the main symptoms.
+- For general website or unclear DDD page questions, direct them to DDDCincy.com.
+- For contractor/job interest, direct them to DDD apply to work.
+- Do not mention DDD Tech, customer portal, Fish On, Rap League, TrustCall, or unrelated DDD products unless the admin adds them to the booking destinations.
+
 Business hours:
 ${Object.entries(business.hours).map(([day, hours]) => `- ${day}: ${hours}`).join("\n")}
 
@@ -248,7 +300,7 @@ Lead capture:
 - Repeat important contact details back for confirmation.
 - Once the caller confirms details, call the save_lead tool.
 - If the caller specifically requests an appointment or gives a preferred time, call the save_booking_request tool after confirming the details.
-- End with a clear next step. If a booking link is configured, tell them to use it to book.
+- End with a clear next step. Include the most relevant DDD destination link in the saved next step and tell the caller they can use that link.
 - If you cannot complete the request, say a team member will follow up.
 - Never promise that a human is available unless the caller has actually been transferred.
 
@@ -386,6 +438,7 @@ function normalizeSettings(settings = {}) {
       600
     ),
     soundPreferences: normalizeSoundPreferences(settings.soundPreferences),
+    bookingDestinations: normalizeBookingDestinations(settings.bookingDestinations),
     voiceOptions
   };
 }
@@ -439,6 +492,28 @@ function normalizeSoundPreferences(value = {}) {
     ambientSound: cleanText(value.ambientSound, defaultSoundPreferences.ambientSound, 80),
     thinkingSound: value.thinkingSound !== false
   };
+}
+
+function normalizeBookingDestinations(value = {}) {
+  const list = Array.isArray(value) ? value : defaultBookingDestinations;
+  const normalized = list
+    .map((destination) => ({
+      label: cleanText(destination?.label, "", 80),
+      url: cleanText(destination?.url, "", 240),
+      useWhen: cleanLongText(destination?.useWhen, "", 400)
+    }))
+    .filter((destination) => destination.label && isHttpUrl(destination.url) && destination.useWhen)
+    .slice(0, 12);
+  return normalized.length ? normalized : defaultBookingDestinations;
+}
+
+function isHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 async function postOptionalWebhook(url, payload) {

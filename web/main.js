@@ -18,6 +18,7 @@ const previewVoiceButton = document.querySelector("#previewVoiceButton");
 const voicePreviewAudio = document.querySelector("#voicePreviewAudio");
 const greetingInput = document.querySelector("#greetingInput");
 const businessKnowledgeInput = document.querySelector("#businessKnowledgeInput");
+const bookingDestinationsInput = document.querySelector("#bookingDestinationsInput");
 const qualifyingServicesInput = document.querySelector("#qualifyingServicesInput");
 const outOfScopeHandlingInput = document.querySelector("#outOfScopeHandlingInput");
 const followUpStyleInput = document.querySelector("#followUpStyleInput");
@@ -93,6 +94,7 @@ async function loadSettings() {
   voiceDirectionInput.value = settings.voiceDirection || "";
   greetingInput.value = settings.greeting || "";
   businessKnowledgeInput.value = settings.businessKnowledge || "";
+  bookingDestinationsInput.value = formatBookingDestinations(settings.bookingDestinations || []);
   qualifyingServicesInput.value = (settings.qualifyingServices || []).join("\n");
   outOfScopeHandlingInput.value = settings.outOfScopeHandling || "";
   followUpStyleInput.value = settings.followUpStyle || "";
@@ -127,6 +129,7 @@ saveSettingsButton.addEventListener("click", async () => {
         voiceDirection: voiceDirectionInput.value,
         greeting: greetingInput.value,
         businessKnowledge: businessKnowledgeInput.value,
+        bookingDestinations: parseBookingDestinations(bookingDestinationsInput.value),
         qualifyingServices: qualifyingServicesInput.value,
         outOfScopeHandling: outOfScopeHandlingInput.value,
         followUpStyle: followUpStyleInput.value,
@@ -196,6 +199,7 @@ for (const input of [
   voiceDirectionInput,
   greetingInput,
   businessKnowledgeInput,
+  bookingDestinationsInput,
   qualifyingServicesInput,
   outOfScopeHandlingInput,
   followUpStyleInput,
@@ -226,6 +230,9 @@ function updateScriptPreview() {
     "Business knowledge:",
     businessKnowledgeInput.value || "Add DDD services, prices, service areas, hours, policies, and answers here.",
     "",
+    "Booking, app, and apply options:",
+    bookingDestinationsInput.value || "Add one destination per line.",
+    "",
     "Qualifying services:",
     qualifyingServicesInput.value || "Roadside assistance\nMaintenance/repair\nExisting appointment",
     "",
@@ -242,6 +249,28 @@ function updateScriptPreview() {
     "Behavior:",
     customInstructionsInput.value || "Tell the receptionist exactly how to handle callers."
   ].join("\n");
+}
+
+function formatBookingDestinations(destinations) {
+  return destinations
+    .map((destination) => `${destination.label || ""} | ${destination.url || ""} | ${destination.useWhen || ""}`)
+    .join("\n");
+}
+
+function parseBookingDestinations(value) {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [label = "", url = "", ...useWhenParts] = line.split("|").map((part) => part.trim());
+      return {
+        label,
+        url,
+        useWhen: useWhenParts.join(" | ")
+      };
+    })
+    .filter((destination) => destination.label && destination.url && destination.useWhen);
 }
 
 function renderList(element, records, emptyMessage, formatter) {

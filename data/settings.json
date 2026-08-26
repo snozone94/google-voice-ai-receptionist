@@ -22,5 +22,42 @@
   "soundPreferences": {
     "ambientSound": "none",
     "thinkingSound": true
-  }
+  },
+  "bookingDestinations": [
+    {
+      "label": "Book roadside service",
+      "url": "https://dddcincy.com/book-service/",
+      "useWhen": "Most roadside or mobile service callers who are ready to book. Push this for jump starts, lockouts, tire help, fuel delivery, batteries, oil changes, brakes, and light maintenance."
+    },
+    {
+      "label": "Emergency service request",
+      "url": "https://dddcincy.com/emergency-service/",
+      "useWhen": "Caller needs urgent roadside help now, is stranded, locked out, has a flat, dead battery, fuel issue, or needs dispatch-style help."
+    },
+    {
+      "label": "Shop roadside services",
+      "url": "https://dddcincy.com/shop-our-roadside-services/",
+      "useWhen": "Caller asks what DDD offers, wants prices, wants to choose a service, or may need to add a service to cart."
+    },
+    {
+      "label": "DDD Mobile app",
+      "url": "https://dddcincy.com/ddd-mobile-app/",
+      "useWhen": "Caller wants the mobile app, service status, booking alerts, account tools, or a smoother repeat-customer flow."
+    },
+    {
+      "label": "DDD Auto Doc app",
+      "url": "https://dddcincy.com/ddd-auto-doc/",
+      "useWhen": "Caller wants AI vehicle diagnosis, safety guidance, saved reports, or help deciding what is wrong before booking."
+    },
+    {
+      "label": "DDDCincy.com",
+      "url": "https://dddcincy.com/",
+      "useWhen": "Caller needs the main website, general DDD information, or is not sure which DDD page they need."
+    },
+    {
+      "label": "DDD apply to work",
+      "url": "https://dddcincy.com/apply-to-work-with-ddd/",
+      "useWhen": "Caller wants to apply to work with DDD, contractor interest, technician approval, or service provider onboarding."
+    }
+  ]
 }
