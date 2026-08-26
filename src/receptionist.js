@@ -29,6 +29,8 @@ const defaultCustomInstructions =
   "Act like a polished front desk receptionist. Be warm, concise, collect the caller's details, and help them book or leave a clear message.";
 const defaultBusinessKnowledge =
   "DDD helps callers with booking requests, service questions, and messages for the team. If pricing, exact availability, or service-area details are unknown, collect the caller's details and say the team will confirm.";
+const defaultVoiceDirection =
+  "Warm, confident, friendly receptionist. Natural phone cadence, clear pronunciation, and not robotic.";
 const defaultCallerFlows = {
   newClients:
     "Qualify the service needed, collect name, callback number, location, urgency, and preferred time. End by saving a lead or booking request and sharing the booking link.",
@@ -76,6 +78,8 @@ export async function saveReceptionistSettings(settings) {
       {
         enabled: next.enabled,
         voice: next.voice,
+        voiceSpeed: next.voiceSpeed,
+        voiceDirection: next.voiceDirection,
         greeting: next.greeting,
         customInstructions: next.customInstructions,
         businessKnowledge: next.businessKnowledge,
@@ -181,6 +185,8 @@ Your job is to answer Google Voice forwarded calls like a polished Smith.ai-styl
 
 Voice and manner:
 - Sound ${business.tone}.
+- Voice direction: ${activeSettings.voiceDirection}
+- Speaking speed: ${activeSettings.voiceSpeed}x. Keep the same natural pace throughout the call.
 - Speak like a real front desk receptionist: calm, helpful, confident, and not robotic.
 - Keep answers short enough for a phone call, usually one or two sentences.
 - Ask one question at a time.
@@ -345,7 +351,8 @@ export function callAcceptPayload(business, settings = {}) {
     tool_choice: "auto",
     audio: {
       output: {
-        voice: normalizeVoice(settings.voice) || "marin"
+        voice: normalizeVoice(settings.voice) || "marin",
+        speed: normalizeSpeed(settings.voiceSpeed)
       }
     }
   };
@@ -361,6 +368,8 @@ function normalizeSettings(settings = {}) {
   return {
     enabled: settings.enabled !== false,
     voice: normalizeVoice(settings.voice) || "marin",
+    voiceSpeed: normalizeSpeed(settings.voiceSpeed),
+    voiceDirection: cleanLongText(settings.voiceDirection, defaultVoiceDirection, 700),
     greeting: cleanText(settings.greeting, defaultGreeting, 240),
     customInstructions: cleanLongText(settings.customInstructions, defaultCustomInstructions, 1600),
     businessKnowledge: cleanLongText(settings.businessKnowledge, defaultBusinessKnowledge, 3000),
@@ -395,6 +404,12 @@ function cleanLongText(value, fallback, maxLength) {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return cleaned ? cleaned.slice(0, maxLength) : fallback;
+}
+
+function normalizeSpeed(value) {
+  const speed = Number(value);
+  if (!Number.isFinite(speed)) return 1;
+  return Math.min(1.5, Math.max(0.5, Math.round(speed * 100) / 100));
 }
 
 function normalizeCallerFlows(flows = {}) {

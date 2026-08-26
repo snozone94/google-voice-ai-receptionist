@@ -11,6 +11,9 @@ const setupList = document.querySelector("#setupList");
 const webhookUrl = document.querySelector("#webhookUrl");
 const enabledToggle = document.querySelector("#enabledToggle");
 const voiceSelect = document.querySelector("#voiceSelect");
+const voiceSpeedInput = document.querySelector("#voiceSpeedInput");
+const voiceSpeedOutput = document.querySelector("#voiceSpeedOutput");
+const voiceDirectionInput = document.querySelector("#voiceDirectionInput");
 const previewVoiceButton = document.querySelector("#previewVoiceButton");
 const voicePreviewAudio = document.querySelector("#voicePreviewAudio");
 const greetingInput = document.querySelector("#greetingInput");
@@ -85,6 +88,9 @@ async function loadSettings() {
   }
   enabledToggle.checked = settings.enabled !== false;
   voiceSelect.value = settings.voice || "marin";
+  voiceSpeedInput.value = settings.voiceSpeed || 1;
+  voiceSpeedOutput.value = `${Number(voiceSpeedInput.value).toFixed(2)}x`;
+  voiceDirectionInput.value = settings.voiceDirection || "";
   greetingInput.value = settings.greeting || "";
   businessKnowledgeInput.value = settings.businessKnowledge || "";
   qualifyingServicesInput.value = (settings.qualifyingServices || []).join("\n");
@@ -117,6 +123,8 @@ saveSettingsButton.addEventListener("click", async () => {
       body: JSON.stringify({
         enabled: enabledToggle.checked,
         voice: voiceSelect.value,
+        voiceSpeed: voiceSpeedInput.value,
+        voiceDirection: voiceDirectionInput.value,
         greeting: greetingInput.value,
         businessKnowledge: businessKnowledgeInput.value,
         qualifyingServices: qualifyingServicesInput.value,
@@ -160,6 +168,8 @@ previewVoiceButton.addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         voice: voiceSelect.value,
+        voiceSpeed: voiceSpeedInput.value,
+        voiceDirection: voiceDirectionInput.value,
         text: greetingInput.value || "Thank you for calling DDD. How can I help today?"
       })
     });
@@ -182,6 +192,8 @@ previewVoiceButton.addEventListener("click", async () => {
 for (const input of [
   enabledToggle,
   voiceSelect,
+  voiceSpeedInput,
+  voiceDirectionInput,
   greetingInput,
   businessKnowledgeInput,
   qualifyingServicesInput,
@@ -199,10 +211,16 @@ for (const input of [
   input.addEventListener("change", updateScriptPreview);
 }
 
+voiceSpeedInput.addEventListener("input", () => {
+  voiceSpeedOutput.value = `${Number(voiceSpeedInput.value).toFixed(2)}x`;
+});
+
 function updateScriptPreview() {
   scriptPreview.value = [
     enabledToggle.checked ? "Status: AI answers new calls." : "Status: AI is paused.",
     `Voice: ${voiceSelect.selectedOptions[0]?.textContent || voiceSelect.value || "Marin"}`,
+    `Speed: ${Number(voiceSpeedInput.value || 1).toFixed(2)}x`,
+    `Voice direction: ${voiceDirectionInput.value || "Warm, confident, friendly receptionist."}`,
     `Greeting: ${greetingInput.value || "Thank you for calling DDD, this is the receptionist. How can I help today?"}`,
     "",
     "Business knowledge:",

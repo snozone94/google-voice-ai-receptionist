@@ -110,6 +110,23 @@ h2 {
   height: 20px;
 }
 
+.range-row {
+  max-width: 520px;
+  grid-template-columns: 1fr auto;
+}
+
+.range-row input {
+  width: 100%;
+  accent-color: #e640a5;
+}
+
+.range-row output {
+  width: 64px;
+  justify-self: end;
+  color: #7d4dff;
+  font-weight: 800;
+}
+
 .numbers div {
   border-left: 3px solid #ff4fa3;
   padding-left: 10px;
@@ -169,6 +186,7 @@ textarea {
 }
 
 textarea#businessKnowledgeInput,
+textarea#voiceDirectionInput,
 textarea#qualifyingServicesInput,
 textarea#outOfScopeHandlingInput,
 textarea#followUpStyleInput,

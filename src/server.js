@@ -101,6 +101,15 @@ app.post("/api/voice-preview", requireOpenAIKey, express.json(), async (req, res
     }
 
     const settings = await loadReceptionistSettings();
+    const speed = clampSpeechSpeed(req.body?.voiceSpeed || settings.voiceSpeed);
+    const instructions = String(
+      req.body?.voiceDirection ||
+        settings.voiceDirection ||
+        "Sound like a warm, polished business receptionist on a phone call."
+    )
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 700);
     const input = String(req.body?.text || settings.greeting || "Thank you for calling DDD. How can I help today?")
       .replace(/\s+/g, " ")
       .trim()
@@ -109,7 +118,8 @@ app.post("/api/voice-preview", requireOpenAIKey, express.json(), async (req, res
       model: "gpt-4o-mini-tts",
       voice,
       input,
-      instructions: "Sound like a warm, polished business receptionist on a phone call.",
+      instructions,
+      speed,
       response_format: "mp3"
     });
     const buffer = Buffer.from(await speech.arrayBuffer());
@@ -118,6 +128,12 @@ app.post("/api/voice-preview", requireOpenAIKey, express.json(), async (req, res
     next(error);
   }
 });
+
+function clampSpeechSpeed(value) {
+  const speed = Number(value);
+  if (!Number.isFinite(speed)) return 1;
+  return Math.min(1.5, Math.max(0.5, Math.round(speed * 100) / 100));
+}
 
 app.get("/api/leads", async (req, res, next) => {
   try {

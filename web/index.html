@@ -35,6 +35,15 @@
               <option>Loading voices...</option>
             </select>
           </label>
+          <label class="range-row">
+            Speaking speed
+            <input id="voiceSpeedInput" type="range" min="0.5" max="1.5" step="0.05" value="1" />
+            <output id="voiceSpeedOutput">1.00x</output>
+          </label>
+          <label>
+            Voice direction
+            <textarea id="voiceDirectionInput" rows="4" maxlength="700"></textarea>
+          </label>
           <div class="button-row">
             <button id="previewVoiceButton" type="button" disabled>Preview voice</button>
             <audio id="voicePreviewAudio" controls></audio>
