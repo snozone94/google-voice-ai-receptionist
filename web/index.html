@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Receptionist</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main>
+      <section class="panel">
+        <div>
+          <p class="eyebrow">No Twilio voice assistant</p>
+          <h1 id="businessName">AI Receptionist</h1>
+          <p class="summary">Google Voice forwards to your AI number, and this app handles the receptionist brain.</p>
+          <dl class="numbers">
+            <div>
+              <dt>Google Voice</dt>
+              <dd id="googleVoiceNumber">Not set</dd>
+            </div>
+            <div>
+              <dt>AI forwarding number</dt>
+              <dd id="aiForwardingNumber">Not set</dd>
+            </div>
+          </dl>
+        </div>
+        <button id="callButton">Start voice call</button>
+        <button id="hangupButton" disabled>Hang up</button>
+        <p id="status">Idle</p>
+      </section>
+
+      <section class="panel">
+        <h2>Setup status</h2>
+        <ul id="setupList"></ul>
+        <p id="webhookUrl"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Lead capture</h2>
+        <form id="leadForm">
+          <label>Name <input name="name" autocomplete="name" /></label>
+          <label>Phone <input name="phone" autocomplete="tel" /></label>
+          <label>Email <input name="email" autocomplete="email" /></label>
+          <label>Reason <textarea name="reason" rows="4"></textarea></label>
+          <button type="submit">Save lead</button>
+        </form>
+        <p id="leadStatus"></p>
+      </section>
+
+      <section class="panel">
+        <h2>Recent activity</h2>
+        <div class="activity">
+          <div>
+            <h3>Calls</h3>
+            <ul id="callsList"></ul>
+          </div>
+          <div>
+            <h3>Leads</h3>
+            <ul id="leadsList"></ul>
+          </div>
+          <div>
+            <h3>Summaries</h3>
+            <ul id="summariesList"></ul>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,35 @@
+{
+  "name": "Your Business",
+  "tone": "warm, concise, professional",
+  "hours": {
+    "monday": "9:00 AM - 5:00 PM",
+    "tuesday": "9:00 AM - 5:00 PM",
+    "wednesday": "9:00 AM - 5:00 PM",
+    "thursday": "9:00 AM - 5:00 PM",
+    "friday": "9:00 AM - 5:00 PM",
+    "saturday": "closed",
+    "sunday": "closed"
+  },
+  "services": [
+    "Answer common questions",
+    "Collect caller name, phone, email, and reason for calling",
+    "Qualify new leads",
+    "Take messages for staff",
+    "Escalate urgent requests"
+  ],
+  "faqs": [
+    {
+      "question": "Where are you located?",
+      "answer": "Update config/business.json with your address or service area."
+    },
+    {
+      "question": "How do appointments work?",
+      "answer": "The assistant should collect the caller's preferred date and time, then mark the request as needing staff confirmation."
+    }
+  ],
+  "escalationRules": [
+    "If the caller says this is an emergency, tell them to call emergency services immediately, then take a brief message.",
+    "If the caller asks for pricing you do not know, collect their needs and say a team member will follow up.",
+    "If the caller is angry, apologize once, stay calm, and collect the best callback number."
+  ]
+}
