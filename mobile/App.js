@@ -23,6 +23,7 @@ export default function App() {
   const [savedApiBaseUrl, setSavedApiBaseUrl] = useState(defaultApiBaseUrl);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState("");
@@ -33,6 +34,8 @@ export default function App() {
   const [activity, setActivity] = useState({ calls: [], leads: [], bookings: [] });
   const [settings, setSettings] = useState(blankSettings);
   const currentSoundRef = useRef(null);
+  const autosaveTimerRef = useRef(null);
+  const lastSavedSettingsRef = useRef("");
 
   const cleanBaseUrl = useMemo(() => normalizeBaseUrl(apiBaseUrl), [apiBaseUrl]);
 
@@ -50,6 +53,7 @@ export default function App() {
           apiGet(targetBaseUrl, "/api/bookings")
         ]);
       setSettings(toFormSettings(settingsResponse));
+      lastSavedSettingsRef.current = JSON.stringify(fromFormSettings(toFormSettings(settingsResponse)));
       setSetup(setupResponse);
       setBusiness(businessResponse);
       setActivity({
@@ -79,8 +83,20 @@ export default function App() {
     return () => {
       mounted = false;
       currentSoundRef.current?.unloadAsync().catch(() => {});
+      clearTimeout(autosaveTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!editMode || loading) return;
+    const serialized = JSON.stringify(fromFormSettings(settings));
+    if (!lastSavedSettingsRef.current || serialized === lastSavedSettingsRef.current) return;
+    clearTimeout(autosaveTimerRef.current);
+    setStatus("Unsaved changes...");
+    autosaveTimerRef.current = setTimeout(() => {
+      saveSettings("auto").catch(() => {});
+    }, 900);
+  }, [settings, editMode, loading]);
 
   async function saveBaseUrl() {
     const next = normalizeBaseUrl(apiBaseUrl);
@@ -90,12 +106,17 @@ export default function App() {
     setStatus("Backend URL saved.");
   }
 
-  async function saveSettings() {
+  async function saveSettings(reason = "manual") {
     setSaving(true);
     try {
       const saved = await apiPost(cleanBaseUrl, "/api/settings", fromFormSettings(settings));
-      setSettings(toFormSettings(saved));
-      setStatus(saved.enabled ? "Saved. AI is answering new calls." : "Saved. AI answering is paused.");
+      const formSettings = toFormSettings(saved);
+      setSettings(formSettings);
+      lastSavedSettingsRef.current = JSON.stringify(fromFormSettings(formSettings));
+      setStatus(saved.enabled
+        ? `${reason === "auto" ? "Autosaved" : "Saved"}. AI is answering new calls.`
+        : `${reason === "auto" ? "Autosaved" : "Saved"}. AI answering is paused.`
+      );
     } catch (error) {
       setStatus(error.message);
     } finally {
@@ -185,16 +206,23 @@ export default function App() {
               <Text style={styles.muted}>{settings.enabled ? "AI answers new calls" : "AI is paused"}</Text>
             </View>
             <Switch
+              disabled={!editMode}
               onValueChange={(enabled) => setSettings((current) => ({ ...current, enabled }))}
               value={settings.enabled}
             />
           </View>
+          <ActionButton
+            label={editMode ? "Lock Settings" : "Edit Settings"}
+            onPress={() => setEditMode((current) => !current)}
+            variant={editMode ? "primary" : "light"}
+          />
           {setup ? <SetupBadges setup={setup} /> : null}
         </View>
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Voice</Text>
           <SegmentedOptions
+            disabled={!editMode}
             options={settings.voiceOptions}
             selected={settings.voice}
             onSelect={(voice) => setSettings((current) => ({ ...current, voice }))}
@@ -203,16 +231,19 @@ export default function App() {
           <View style={styles.speedRow}>
             <ActionButton
               label="Slower"
+              disabled={!editMode}
               onPress={() => setSettings((current) => ({ ...current, voiceSpeed: clampSpeed(current.voiceSpeed - 0.05) }))}
               variant="light"
             />
             <ActionButton
               label="Faster"
+              disabled={!editMode}
               onPress={() => setSettings((current) => ({ ...current, voiceSpeed: clampSpeed(current.voiceSpeed + 0.05) }))}
               variant="light"
             />
           </View>
           <Field
+            editable={editMode}
             label="Voice direction"
             multiline
             onChangeText={(voiceDirection) => setSettings((current) => ({ ...current, voiceDirection }))}
@@ -228,47 +259,55 @@ export default function App() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>What It Says</Text>
           <Field
+            editable={editMode}
             label="Greeting"
             onChangeText={(greeting) => setSettings((current) => ({ ...current, greeting }))}
             value={settings.greeting}
           />
           <Field
+            editable={editMode}
             label="Business knowledge"
             multiline
             onChangeText={(businessKnowledge) => setSettings((current) => ({ ...current, businessKnowledge }))}
             value={settings.businessKnowledge}
           />
           <Field
+            editable={editMode}
             label="Service area"
             multiline
             onChangeText={(serviceArea) => setSettings((current) => ({ ...current, serviceArea }))}
             value={settings.serviceArea}
           />
           <Field
+            editable={editMode}
             label="Pricing rules"
             multiline
             onChangeText={(pricingNotes) => setSettings((current) => ({ ...current, pricingNotes }))}
             value={settings.pricingNotes}
           />
           <Field
+            editable={editMode}
             label="Emergency handling"
             multiline
             onChangeText={(emergencyInstructions) => setSettings((current) => ({ ...current, emergencyInstructions }))}
             value={settings.emergencyInstructions}
           />
           <Field
+            editable={editMode}
             label="Human handoff"
             multiline
             onChangeText={(humanHandoffRules) => setSettings((current) => ({ ...current, humanHandoffRules }))}
             value={settings.humanHandoffRules}
           />
           <Field
+            editable={editMode}
             label="Apply-to-work handling"
             multiline
             onChangeText={(applyInstructions) => setSettings((current) => ({ ...current, applyInstructions }))}
             value={settings.applyInstructions}
           />
           <Field
+            editable={editMode}
             label="Custom instructions"
             multiline
             onChangeText={(customInstructions) => setSettings((current) => ({ ...current, customInstructions }))}
@@ -292,6 +331,7 @@ export default function App() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>DDD Links</Text>
           <Field
+            editable={editMode}
             label="Booking, app, and apply options"
             multiline
             onChangeText={(bookingDestinationsText) =>
@@ -304,6 +344,7 @@ export default function App() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Caller Handling</Text>
           <Field
+            editable={editMode}
             label="Potential new clients and customers"
             multiline
             onChangeText={(newClients) =>
@@ -315,6 +356,7 @@ export default function App() {
             value={settings.callerFlows.newClients}
           />
           <Field
+            editable={editMode}
             label="Existing clients and customers"
             multiline
             onChangeText={(existingClients) =>
@@ -326,6 +368,7 @@ export default function App() {
             value={settings.callerFlows.existingClients}
           />
           <Field
+            editable={editMode}
             label="Sales callers"
             multiline
             onChangeText={(sales) =>
@@ -337,6 +380,7 @@ export default function App() {
             value={settings.callerFlows.sales}
           />
           <Field
+            editable={editMode}
             label="All other callers"
             multiline
             onChangeText={(otherCallers) =>
@@ -348,6 +392,7 @@ export default function App() {
             value={settings.callerFlows.otherCallers}
           />
           <Field
+            editable={editMode}
             label="Qualifying services"
             multiline
             onChangeText={(qualifyingServicesText) =>
@@ -356,12 +401,14 @@ export default function App() {
             value={settings.qualifyingServicesText}
           />
           <Field
+            editable={editMode}
             label="Follow-up style"
             multiline
             onChangeText={(followUpStyle) => setSettings((current) => ({ ...current, followUpStyle }))}
             value={settings.followUpStyle}
           />
           <Field
+            editable={editMode}
             label="Out-of-scope handling"
             multiline
             onChangeText={(outOfScopeHandling) => setSettings((current) => ({ ...current, outOfScopeHandling }))}
@@ -373,6 +420,7 @@ export default function App() {
               <Text style={styles.muted}>Adds quick bridges while the receptionist thinks.</Text>
             </View>
             <Switch
+              disabled={!editMode}
               onValueChange={(thinkingSound) =>
                 setSettings((current) => ({
                   ...current,
@@ -382,6 +430,34 @@ export default function App() {
               value={settings.soundPreferences.thinkingSound}
             />
           </View>
+          <View style={styles.statusRow}>
+            <View>
+              <Text style={styles.label}>SMS follow-up</Text>
+              <Text style={styles.muted}>Texts the best DDD link after SMS is connected.</Text>
+            </View>
+            <Switch
+              disabled={!editMode}
+              onValueChange={(enabled) =>
+                setSettings((current) => ({
+                  ...current,
+                  smsFollowUp: { ...current.smsFollowUp, enabled }
+                }))
+              }
+              value={settings.smsFollowUp.enabled}
+            />
+          </View>
+          <Field
+            editable={editMode}
+            label="SMS follow-up message"
+            multiline
+            onChangeText={(message) =>
+              setSettings((current) => ({
+                ...current,
+                smsFollowUp: { ...current.smsFollowUp, message }
+              }))
+            }
+            value={settings.smsFollowUp.message}
+          />
         </View>
 
         <View style={styles.card}>
@@ -389,7 +465,7 @@ export default function App() {
           <Text style={styles.testOutput}>{buildScriptPreview(settings)}</Text>
         </View>
 
-        <ActionButton disabled={saving || loading} label={saving ? "Saving..." : "Save Receptionist"} onPress={saveSettings} />
+        <ActionButton disabled={saving || loading || !editMode} label={saving ? "Saving..." : "Save Now"} onPress={() => saveSettings("manual")} />
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Recent Activity</Text>
@@ -428,6 +504,11 @@ const blankSettings = {
   followUpStyle: "",
   outOfScopeHandling: "",
   bookingDestinationsText: "",
+  smsFollowUp: {
+    enabled: true,
+    message:
+      "Thanks for calling DDD. Here is the best next link for your request: {{link}}. The DDD team will follow up if anything else is needed."
+  },
   callerFlows: {
     newClients: "",
     existingClients: "",
@@ -441,14 +522,15 @@ const blankSettings = {
   voiceOptions: []
 };
 
-function Field({ label, multiline = false, onChangeText, value }) {
+function Field({ editable = true, label, multiline = false, onChangeText, value }) {
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
         multiline={multiline}
+        editable={editable}
         onChangeText={onChangeText}
-        style={[styles.input, multiline && styles.textarea]}
+        style={[styles.input, !editable && styles.lockedInput, multiline && styles.textarea]}
         textAlignVertical={multiline ? "top" : "center"}
         value={value}
       />
@@ -473,14 +555,15 @@ function ActionButton({ disabled = false, label, onPress, variant = "primary" })
   );
 }
 
-function SegmentedOptions({ options, selected, onSelect }) {
+function SegmentedOptions({ disabled = false, options, selected, onSelect }) {
   return (
     <View style={styles.segmentWrap}>
       {(options || []).map((option) => (
         <Pressable
           key={option.id}
+          disabled={disabled}
           onPress={() => onSelect(option.id)}
-          style={[styles.segment, selected === option.id && styles.segmentSelected]}
+          style={[styles.segment, disabled && styles.segmentDisabled, selected === option.id && styles.segmentSelected]}
         >
           <Text style={[styles.segmentText, selected === option.id && styles.segmentTextSelected]}>{option.label}</Text>
         </Pressable>
@@ -561,6 +644,10 @@ function toFormSettings(settings) {
       ...blankSettings.soundPreferences,
       ...(settings.soundPreferences || {})
     },
+    smsFollowUp: {
+      ...blankSettings.smsFollowUp,
+      ...(settings.smsFollowUp || {})
+    },
     voiceOptions: settings.voiceOptions || []
   };
 }
@@ -584,6 +671,7 @@ function fromFormSettings(settings) {
     outOfScopeHandling: settings.outOfScopeHandling,
     callerFlows: settings.callerFlows,
     soundPreferences: settings.soundPreferences,
+    smsFollowUp: settings.smsFollowUp,
     bookingDestinations: parseBookingDestinations(settings.bookingDestinationsText)
   };
 }
@@ -624,6 +712,7 @@ function buildScriptPreview(settings) {
     `Pricing rules: ${settings.pricingNotes || "Do not quote exact pricing unless added here."}`,
     `Emergency: ${settings.emergencyInstructions || "Collect safety, location, vehicle, and callback number."}`,
     `Apply-to-work: ${settings.applyInstructions || "Collect applicant details and share the apply link."}`,
+    `SMS follow-up: ${settings.smsFollowUp.enabled ? "on" : "off"}. ${settings.smsFollowUp.message || "Text the best DDD link after permission."}`,
     "",
     "Caller handling:",
     `New: ${settings.callerFlows.newClients || "Qualify and collect booking details."}`,
@@ -717,6 +806,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10
   },
+  lockedInput: {
+    backgroundColor: "#fbf9ff",
+    color: "#55576d"
+  },
   textarea: {
     minHeight: 118
   },
@@ -761,6 +854,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 8
+  },
+  segmentDisabled: {
+    backgroundColor: "#fbf9ff",
+    opacity: 0.72
   },
   segmentSelected: {
     borderColor: "#e640a5",

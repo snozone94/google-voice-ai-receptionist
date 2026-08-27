@@ -185,6 +185,19 @@ textarea {
   background: #fff;
 }
 
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background: #fbf9ff;
+  color: #55576d;
+  cursor: default;
+  opacity: 1;
+}
+
+body:not(.edit-mode) .settings-grid label {
+  color: #55576d;
+}
+
 textarea#businessKnowledgeInput,
 textarea#voiceDirectionInput,
 textarea#serviceAreaInput,

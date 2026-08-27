@@ -24,6 +24,10 @@
             </div>
           </dl>
         </div>
+        <div class="button-row">
+          <button id="editSettingsButton" type="button">Edit settings</button>
+          <button id="saveSettingsButton" type="button">Save now</button>
+        </div>
         <div class="settings-grid">
           <label class="switch-row">
             <input id="enabledToggle" type="checkbox" />
@@ -133,6 +137,16 @@
               <span>Use short thinking phrases</span>
             </label>
           </div>
+          <div class="admin-subgrid">
+            <label class="switch-row">
+              <input id="smsFollowUpToggle" type="checkbox" />
+              <span>Send SMS follow-up when connected</span>
+            </label>
+            <label>
+              SMS follow-up message
+              <textarea id="smsFollowUpMessageInput" rows="4" maxlength="500"></textarea>
+            </label>
+          </div>
           <label>
             What the receptionist should say/do
             <textarea id="customInstructionsInput" rows="5" maxlength="1600"></textarea>
@@ -149,7 +163,6 @@
             <button id="testScriptButton" type="button">Run free test</button>
             <textarea id="testScriptOutput" rows="8" readonly></textarea>
           </div>
-          <button id="saveSettingsButton" type="button">Save receptionist settings</button>
           <p id="settingsStatus">Settings load from the live receptionist.</p>
         </div>
         <button id="callButton">Start voice call</button>

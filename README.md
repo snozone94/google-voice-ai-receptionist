@@ -101,6 +101,7 @@ Optional outbound webhooks:
 ```text
 LEAD_WEBHOOK_URL=https://your-crm-or-automation-webhook.example/leads
 CALL_SUMMARY_WEBHOOK_URL=https://your-crm-or-automation-webhook.example/calls
+SMS_FOLLOWUP_WEBHOOK_URL=https://your-sms-automation-webhook.example/send
 ```
 
 ## Recommended Production Shape

@@ -38,6 +38,8 @@ const defaultHumanHandoffRules =
   "Do not promise a live transfer. Save the caller's details and tell them the DDD team will follow up as soon as possible.";
 const defaultApplyInstructions =
   "For work, contractor, technician, or job-interest calls, collect name, phone, email, role or service type, experience, and location, then direct them to the DDD apply to work link.";
+const defaultSmsFollowUpText =
+  "Thanks for calling {{business}}. Here is the best next link for your request: {{link}}. The DDD team will follow up if anything else is needed.";
 const defaultVoiceDirection =
   "Warm, confident, friendly receptionist. Natural phone cadence, clear pronunciation, and not robotic.";
 const defaultCallerFlows = {
@@ -134,6 +136,7 @@ export async function saveReceptionistSettings(settings) {
         emergencyInstructions: next.emergencyInstructions,
         humanHandoffRules: next.humanHandoffRules,
         applyInstructions: next.applyInstructions,
+        smsFollowUp: next.smsFollowUp,
         callerFlows: next.callerFlows,
         qualifyingServices: next.qualifyingServices,
         outOfScopeHandling: next.outOfScopeHandling,
@@ -156,6 +159,7 @@ export async function saveLead(lead) {
   await ensureDataDir();
   await fs.appendFile(leadsPath, `${JSON.stringify(record)}\n`);
   await postOptionalWebhook(process.env.LEAD_WEBHOOK_URL, record);
+  await sendOptionalSmsFollowUp(record, "lead");
   return record;
 }
 
@@ -178,6 +182,7 @@ export async function saveBookingRequest(booking) {
   await ensureDataDir();
   await fs.appendFile(bookingsPath, `${JSON.stringify(record)}\n`);
   await postOptionalWebhook(process.env.LEAD_WEBHOOK_URL, { ...record, type: "booking_request" });
+  await sendOptionalSmsFollowUp(record, "booking_request");
   return record;
 }
 
@@ -280,6 +285,13 @@ Sound preferences:
 - Ambient sound preference: ${activeSettings.soundPreferences.ambientSound}. This is saved for admin preference; do not claim the caller can hear background audio unless it is actually present.
 - Thinking sound: ${activeSettings.soundPreferences.thinkingSound ? "Use a short natural bridge like 'one moment while I check that' if processing takes a moment." : "Avoid filler sounds or thinking noises; stay silent briefly if needed."}
 
+SMS follow-up:
+- SMS follow-up is ${activeSettings.smsFollowUp.enabled ? "enabled" : "disabled"} in admin.
+- If enabled, ask permission before texting the caller the best DDD link.
+- Message template: ${activeSettings.smsFollowUp.message}
+- Use the most relevant DDD destination as {{link}}.
+- If SMS delivery is not connected yet, still save the caller's phone number and best next link.
+
 Booking, app, and apply destinations:
 ${activeSettings.bookingDestinations.map((destination) => `- ${destination.label}: ${destination.url}\n  Use when: ${destination.useWhen}`).join("\n")}
 
@@ -330,6 +342,7 @@ Lead capture:
 - Once the caller confirms details, call the save_lead tool.
 - If the caller specifically requests an appointment or gives a preferred time, call the save_booking_request tool after confirming the details.
 - End with a clear next step. Include the most relevant DDD destination link in the saved next step and tell the caller they can use that link.
+- If SMS follow-up is enabled and the caller agrees, say DDD will text the best link to the callback number on file.
 - If you cannot complete the request, say a team member will follow up.
 - Never promise that a human is available unless the caller has actually been transferred.
 
@@ -469,6 +482,7 @@ function normalizeSettings(settings = {}) {
     emergencyInstructions: cleanLongText(settings.emergencyInstructions, defaultEmergencyInstructions, 1200),
     humanHandoffRules: cleanLongText(settings.humanHandoffRules, defaultHumanHandoffRules, 1200),
     applyInstructions: cleanLongText(settings.applyInstructions, defaultApplyInstructions, 1200),
+    smsFollowUp: normalizeSmsFollowUp(settings.smsFollowUp),
     callerFlows: normalizeCallerFlows(settings.callerFlows),
     qualifyingServices: normalizeTextList(settings.qualifyingServices, defaultQualifyingServices, 12, 80),
     outOfScopeHandling: cleanLongText(
@@ -510,7 +524,10 @@ export function buildDryRun(settings = {}, callerMessage = "") {
           ? "I can help get your information to DDD. What kind of work are you applying for?"
           : "I can help with that. Let me grab a few details so DDD can follow up correctly.",
       `I would ask: ${questions.join(" ")}`,
-      destination ? `Best next link: ${destination.label} - ${destination.url}` : "Best next link: use the main DDD booking option if one applies."
+      destination ? `Best next link: ${destination.label} - ${destination.url}` : "Best next link: use the main DDD booking option if one applies.",
+      activeSettings.smsFollowUp.enabled
+        ? `SMS follow-up: ask permission, then text "${renderSmsTemplate(activeSettings.smsFollowUp.message, destination)}"`
+        : "SMS follow-up: off"
     ].join("\n\n"),
     questions,
     note: "Free dry run. This does not place a phone call and does not use OpenAI voice minutes."
@@ -596,6 +613,14 @@ function normalizeSoundPreferences(value = {}) {
   };
 }
 
+function normalizeSmsFollowUp(value = {}) {
+  return {
+    enabled: value.enabled !== false,
+    askPermission: value.askPermission !== false,
+    message: cleanLongText(value.message, defaultSmsFollowUpText, 500)
+  };
+}
+
 function normalizeBookingDestinations(value = {}) {
   const list = Array.isArray(value) ? value : defaultBookingDestinations;
   const normalized = list
@@ -632,4 +657,31 @@ async function postOptionalWebhook(url, payload) {
   if (!response.ok) {
     console.warn(`Webhook failed: ${response.status} ${await response.text()}`);
   }
+}
+
+async function sendOptionalSmsFollowUp(record, type) {
+  const settings = await loadReceptionistSettings();
+  if (!settings.smsFollowUp.enabled || !record.phone) return;
+
+  const destination = chooseDestination(
+    settings.bookingDestinations,
+    `${record.reason || ""} ${record.serviceType || ""} ${record.nextStep || ""}`
+  );
+  const message = renderSmsTemplate(settings.smsFollowUp.message, destination);
+  await postOptionalWebhook(process.env.SMS_FOLLOWUP_WEBHOOK_URL, {
+    type,
+    to: record.phone,
+    message,
+    destination,
+    record
+  });
+}
+
+function renderSmsTemplate(template, destination) {
+  const fallbackLink = destination?.url || process.env.BOOKING_URL || "";
+  return String(template || defaultSmsFollowUpText)
+    .replaceAll("{{link}}", fallbackLink)
+    .replaceAll("{{business}}", "DDD")
+    .replace(/\s+/g, " ")
+    .trim();
 }

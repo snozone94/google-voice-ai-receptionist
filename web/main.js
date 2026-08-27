@@ -33,17 +33,23 @@ const salesFlowInput = document.querySelector("#salesFlowInput");
 const otherCallersFlowInput = document.querySelector("#otherCallersFlowInput");
 const ambientSoundSelect = document.querySelector("#ambientSoundSelect");
 const thinkingSoundToggle = document.querySelector("#thinkingSoundToggle");
+const smsFollowUpToggle = document.querySelector("#smsFollowUpToggle");
+const smsFollowUpMessageInput = document.querySelector("#smsFollowUpMessageInput");
 const customInstructionsInput = document.querySelector("#customInstructionsInput");
 const scriptPreview = document.querySelector("#scriptPreview");
 const testCallerInput = document.querySelector("#testCallerInput");
 const testScriptButton = document.querySelector("#testScriptButton");
 const testScriptOutput = document.querySelector("#testScriptOutput");
 const saveSettingsButton = document.querySelector("#saveSettingsButton");
+const editSettingsButton = document.querySelector("#editSettingsButton");
 const settingsStatus = document.querySelector("#settingsStatus");
 
 let peerConnection;
 let localStream;
 let dataChannel;
+let editMode = false;
+let saveTimer;
+let isLoadingSettings = false;
 
 fetch("/api/business")
   .then((res) => res.json())
@@ -86,6 +92,7 @@ function setStatus(message) {
 }
 
 async function loadSettings() {
+  isLoadingSettings = true;
   const response = await fetch("/api/settings");
   const settings = await response.json();
   voiceSelect.innerHTML = "";
@@ -117,20 +124,32 @@ async function loadSettings() {
   otherCallersFlowInput.value = settings.callerFlows?.otherCallers || "";
   ambientSoundSelect.value = settings.soundPreferences?.ambientSound || "none";
   thinkingSoundToggle.checked = settings.soundPreferences?.thinkingSound !== false;
+  smsFollowUpToggle.checked = settings.smsFollowUp?.enabled !== false;
+  smsFollowUpMessageInput.value =
+    settings.smsFollowUp?.message ||
+    "Thanks for calling DDD. Here is the best next link for your request: {{link}}. The DDD team will follow up if anything else is needed.";
   customInstructionsInput.value = settings.customInstructions || "";
-  voiceSelect.disabled = false;
+  isLoadingSettings = false;
+  setEditMode(editMode);
   previewVoiceButton.disabled = false;
-  saveSettingsButton.disabled = false;
   updateScriptPreview();
   settingsStatus.textContent = settings.enabled
     ? `Live. New calls will use ${voiceSelect.selectedOptions[0]?.textContent || voiceSelect.value}.`
     : "Paused. New calls will be logged but the AI will not answer.";
 }
 
-saveSettingsButton.addEventListener("click", async () => {
+editSettingsButton.addEventListener("click", () => {
+  setEditMode(!editMode);
+});
+
+saveSettingsButton.addEventListener("click", () => {
+  saveSettings("manual").catch(() => {});
+});
+
+async function saveSettings(reason = "auto") {
   voiceSelect.disabled = true;
   saveSettingsButton.disabled = true;
-  settingsStatus.textContent = "Saving receptionist settings...";
+  settingsStatus.textContent = reason === "auto" ? "Autosaving..." : "Saving receptionist settings...";
   try {
     const response = await fetch("/api/settings", {
       method: "POST",
@@ -161,6 +180,10 @@ saveSettingsButton.addEventListener("click", async () => {
           ambientSound: ambientSoundSelect.value,
           thinkingSound: thinkingSoundToggle.checked
         },
+        smsFollowUp: {
+          enabled: smsFollowUpToggle.checked,
+          message: smsFollowUpMessageInput.value
+        },
         customInstructions: customInstructionsInput.value
       })
     });
@@ -170,15 +193,15 @@ saveSettingsButton.addEventListener("click", async () => {
     }
     await loadSettings();
     settingsStatus.textContent = enabledToggle.checked
-      ? `Saved. New calls will use ${voiceSelect.selectedOptions[0]?.textContent || voiceSelect.value}.`
-      : "Saved. The AI receptionist is paused.";
+      ? `${reason === "auto" ? "Autosaved" : "Saved"}. New calls will use ${voiceSelect.selectedOptions[0]?.textContent || voiceSelect.value}.`
+      : `${reason === "auto" ? "Autosaved" : "Saved"}. The AI receptionist is paused.`;
   } catch (error) {
     settingsStatus.textContent = error.message;
-    voiceSelect.disabled = false;
+    setEditMode(editMode);
     previewVoiceButton.disabled = false;
-    saveSettingsButton.disabled = false;
+    throw error;
   }
-});
+}
 
 previewVoiceButton.addEventListener("click", async () => {
   previewVoiceButton.disabled = true;
@@ -232,15 +255,67 @@ for (const input of [
   otherCallersFlowInput,
   ambientSoundSelect,
   thinkingSoundToggle,
+  smsFollowUpToggle,
+  smsFollowUpMessageInput,
   customInstructionsInput
 ]) {
-  input.addEventListener("input", updateScriptPreview);
-  input.addEventListener("change", updateScriptPreview);
+  input.addEventListener("input", handleSettingsChange);
+  input.addEventListener("change", handleSettingsChange);
 }
 
 voiceSpeedInput.addEventListener("input", () => {
   voiceSpeedOutput.value = `${Number(voiceSpeedInput.value).toFixed(2)}x`;
 });
+
+function handleSettingsChange() {
+  updateScriptPreview();
+  if (!editMode || isLoadingSettings) return;
+  clearTimeout(saveTimer);
+  settingsStatus.textContent = "Unsaved changes...";
+  saveTimer = setTimeout(() => {
+    saveSettings("auto").catch(() => {});
+  }, 900);
+}
+
+function setEditMode(nextEditMode) {
+  editMode = nextEditMode;
+  editSettingsButton.textContent = editMode ? "Lock settings" : "Edit settings";
+  for (const input of [
+    enabledToggle,
+    voiceSelect,
+    voiceSpeedInput,
+    voiceDirectionInput,
+    greetingInput,
+    businessKnowledgeInput,
+    serviceAreaInput,
+    pricingNotesInput,
+    emergencyInstructionsInput,
+    humanHandoffRulesInput,
+    applyInstructionsInput,
+    bookingDestinationsInput,
+    qualifyingServicesInput,
+    outOfScopeHandlingInput,
+    followUpStyleInput,
+    newClientsFlowInput,
+    existingClientsFlowInput,
+    salesFlowInput,
+    otherCallersFlowInput,
+    ambientSoundSelect,
+    thinkingSoundToggle,
+    smsFollowUpToggle,
+    smsFollowUpMessageInput,
+    customInstructionsInput
+  ]) {
+    input.disabled = !editMode;
+  }
+  saveSettingsButton.disabled = !editMode;
+  previewVoiceButton.disabled = false;
+  document.body.classList.toggle("edit-mode", editMode);
+  if (!editMode) {
+    clearTimeout(saveTimer);
+    settingsStatus.textContent = "Settings locked. Tap Edit settings before changing anything.";
+  }
+}
 
 testScriptButton.addEventListener("click", async () => {
   testScriptButton.disabled = true;
@@ -300,6 +375,7 @@ function updateScriptPreview() {
     `Out-of-scope: ${outOfScopeHandlingInput.value || "Take a message unless unsafe or unrelated."}`,
     `Follow-up: ${followUpStyleInput.value || "Share booking link or save a callback message."}`,
     `Sound: ${ambientSoundSelect.value || "none"}; thinking phrases ${thinkingSoundToggle.checked ? "on" : "off"}.`,
+    `SMS follow-up: ${smsFollowUpToggle.checked ? "on" : "off"}. ${smsFollowUpMessageInput.value || "Text the best DDD link after permission."}`,
     "",
     "Behavior:",
     customInstructionsInput.value || "Tell the receptionist exactly how to handle callers."

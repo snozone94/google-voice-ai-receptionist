@@ -19,6 +19,11 @@
   ],
   "outOfScopeHandling": "Take a message for services DDD may not offer, unless the request is unsafe or clearly unrelated.",
   "followUpStyle": "For booking callers, share the booking link and save the request. For everyone else, save a message with the best callback number.",
+  "smsFollowUp": {
+    "enabled": true,
+    "askPermission": true,
+    "message": "Thanks for calling DDD. Here is the best next link for your request: {{link}}. The DDD team will follow up if anything else is needed."
+  },
   "soundPreferences": {
     "ambientSound": "none",
     "thinkingSound": true
