@@ -664,7 +664,11 @@ async function refreshActivity() {
     bookingsList,
     bookings,
     "No booking requests yet.",
-    (booking) => `${booking.createdAt} ${booking.name || booking.phone || "Booking"}`
+    (booking) => {
+      const sync = booking.externalSync?.ok ? `synced ${booking.externalSync.jobId || ""}`.trim() : "local";
+      const statusLink = booking.customerStatusUrl ? ` - status: ${booking.customerStatusUrl}` : "";
+      return `${booking.createdAt} ${booking.name || booking.phone || "Booking"} - ${booking.serviceType || booking.reason || "request"} - ${booking.status || "Requested"} - ${sync}${statusLink}`;
+    }
   );
 }
 
@@ -778,7 +782,10 @@ async function handleRealtimeEvent(message) {
         call_id: event.call_id,
         output: JSON.stringify({
           ok: response.ok,
-          recordId: (payload.lead || payload.booking)?.createdAt
+          recordId: (payload.lead || payload.booking)?.bookingId || (payload.lead || payload.booking)?.createdAt,
+          status: payload.booking?.status,
+          customerStatusUrl: payload.booking?.customerStatusUrl,
+          externalSync: payload.booking?.externalSync
         })
       }
     })
@@ -789,7 +796,7 @@ async function handleRealtimeEvent(message) {
       response: {
         instructions:
           event.name === "save_booking_request"
-            ? "Tell the caller the booking request has been saved, share the booking link if useful, and give a concise next step."
+            ? "Tell the caller the booking request has been saved. If the tool returned a customerStatusUrl or external tracking URL, share it as the booking/status link and give one concise next step."
             : "Tell the caller their message has been saved and give a concise next step."
       }
     })

@@ -83,7 +83,13 @@ class CallMonitor {
           item: {
             type: "function_call_output",
             call_id: event.call_id,
-            output: JSON.stringify({ ok: true, recordId: record.createdAt })
+            output: JSON.stringify({
+              ok: true,
+              recordId: record.bookingId || record.createdAt,
+              status: record.status,
+              customerStatusUrl: record.customerStatusUrl,
+              externalSync: record.externalSync
+            })
           }
         })
       );
@@ -93,7 +99,7 @@ class CallMonitor {
           response: {
             instructions:
               event.name === "save_booking_request"
-                ? "Tell the caller the booking request has been saved, share the booking link if useful, and give a concise next step."
+                ? "Tell the caller the booking request has been saved. If the tool returned a customerStatusUrl or external tracking URL, share it as the booking/status link and give one concise next step."
                 : "Tell the caller their message has been saved and give a concise next step."
           }
         })

@@ -7,10 +7,12 @@ import {
   listConversations,
   listSms,
   listBookings,
+  listBookingsByPhone,
   listLeads,
   listSummaries,
   loadReceptionistSettings,
   loadBusiness,
+  getBookingStatus,
   buildDryRun,
   normalizeVoice,
   saveCallEvent,
@@ -316,6 +318,51 @@ app.get("/api/bookings", async (req, res, next) => {
   }
 });
 
+app.get("/api/customer/bookings", async (req, res, next) => {
+  try {
+    if (!hasCustomerLookupAccess(req) && !hasAdminAccess(req)) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+    res.json({ bookings: await listBookingsByPhone(req.query.phone || "", Number(req.query.limit || 20)) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/bookings/:bookingId/status", async (req, res, next) => {
+  try {
+    const booking = await getBookingStatus(req.params.bookingId, req.query.token || "");
+    if (!booking) {
+      res.status(404).json({ ok: false, error: "Booking not found." });
+      return;
+    }
+    res.json({
+      ok: true,
+      booking: {
+        bookingId: booking.bookingId,
+        status: booking.status,
+        serviceType: booking.serviceType,
+        preferredTime: booking.preferredTime,
+        location: booking.location,
+        vehicle: booking.vehicle,
+        createdAt: booking.createdAt,
+        customerStatusUrl: booking.customerStatusUrl,
+        externalSync: booking.externalSync
+          ? {
+              ok: booking.externalSync.ok,
+              jobId: booking.externalSync.jobId,
+              trackingUrl: booking.externalSync.trackingUrl,
+              message: booking.externalSync.message
+            }
+          : undefined
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/bookings", express.json(), async (req, res, next) => {
   try {
     const booking = await saveBookingRequest(req.body || {});
@@ -480,6 +527,12 @@ function hasAdminAccess(req) {
   const pin = process.env.ADMIN_PIN;
   if (!pin) return process.env.ALLOW_UNPROTECTED_ADMIN === "true";
   return req.get("x-admin-pin") === pin || req.query.adminPin === pin;
+}
+
+function hasCustomerLookupAccess(req) {
+  const secret = process.env.CUSTOMER_LOOKUP_SECRET;
+  if (!secret) return false;
+  return req.get("x-customer-lookup-secret") === secret || req.query.secret === secret;
 }
 
 async function sendTwilioSms(to, message) {

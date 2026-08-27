@@ -10,6 +10,7 @@ const bookingsPath = path.join(root, "data", "bookings.jsonl");
 const smsPath = path.join(root, "data", "sms.jsonl");
 const settingsPath = path.join(root, "data", "settings.json");
 const dataDir = path.join(root, "data");
+const bookingStatuses = ["Requested", "Confirmed", "Technician Assigned", "Technician En Route", "Arrived", "In Progress", "Completed", "Cancelled"];
 
 export const voiceOptions = [
   { id: "marin", label: "Marin", note: "Recommended, polished and natural" },
@@ -206,10 +207,12 @@ export async function saveCallSummary(summary) {
 }
 
 export async function saveBookingRequest(booking) {
-  const record = {
-    createdAt: new Date().toISOString(),
-    ...booking
-  };
+  const record = normalizeBookingRecord(booking);
+  const sync = await syncBookingRequest(record);
+  record.externalSync = sync;
+  if (sync.ok && sync.trackingUrl) {
+    record.customerStatusUrl = sync.trackingUrl;
+  }
   await ensureDataDir();
   await fs.appendFile(bookingsPath, `${JSON.stringify(record)}\n`);
   await postOptionalWebhook(process.env.LEAD_WEBHOOK_URL, { ...record, type: "booking_request" });
@@ -247,6 +250,21 @@ export async function listSummaries(limit) {
 
 export async function listBookings(limit) {
   return listRecords(bookingsPath, limit);
+}
+
+export async function listBookingsByPhone(phone, limit = 20) {
+  const target = normalizeE164(phone);
+  if (!target) return [];
+  const records = await listRecords(bookingsPath, 1000);
+  return records
+    .filter((booking) => normalizeE164(booking.phone || booking.customer_phone) === target)
+    .slice(0, limit);
+}
+
+export async function getBookingStatus(bookingId, token) {
+  if (!bookingId || !token) return null;
+  const records = await listRecords(bookingsPath, 1000);
+  return records.find((booking) => booking.bookingId === bookingId && booking.statusToken === token) || null;
 }
 
 export async function saveCallEvent(event) {
@@ -652,6 +670,127 @@ function normalizeSettings(settings = {}) {
   };
 }
 
+function normalizeBookingRecord(booking = {}) {
+  const createdAt = new Date().toISOString();
+  const bookingId = cleanText(booking.bookingId || booking.id, "", 80) || `ai_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const statusToken =
+    cleanText(booking.statusToken || booking.customerStatusToken, "", 120) ||
+    `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+  const phone = normalizeE164(booking.phone || booking.customer_phone || booking.customerPhone);
+  const email = cleanText(booking.email || booking.customer_email || booking.customerEmail, "", 160);
+  const serviceType = cleanText(booking.serviceType || booking.service_type || booking.service || booking.reason, "Roadside Service", 120);
+  const location = cleanLongText(booking.location || booking.service_address || booking.pickup_location || booking.address, "", 600);
+  const vehicle = cleanText(booking.vehicle || booking.vehicleInfo || "", "", 160);
+  const preferredTime = cleanText(booking.preferredTime || booking.preferred_time || "ASAP", "ASAP", 120);
+  const status = bookingStatuses.includes(booking.status) ? booking.status : "Requested";
+  const publicBaseUrl = process.env.PUBLIC_BASE_URL || "";
+  const customerStatusUrl =
+    cleanText(booking.customerStatusUrl || booking.tracking_url || booking.trackingUrl, "", 500) ||
+    (publicBaseUrl && !publicBaseUrl.includes("your-domain")
+      ? `${publicBaseUrl.replace(/\/$/, "")}/api/bookings/${encodeURIComponent(bookingId)}/status?token=${encodeURIComponent(statusToken)}`
+      : "");
+
+  return {
+    createdAt,
+    bookingId,
+    statusToken,
+    status,
+    source: cleanText(booking.source || "ai_receptionist", "ai_receptionist", 80),
+    sourceChannel: cleanText(booking.sourceChannel || booking.channel || "phone", "phone", 80),
+    callId: cleanText(booking.callId || "", "", 120),
+    name: cleanText(booking.name || booking.customer_name || booking.customerName, "Customer", 160),
+    phone,
+    email,
+    serviceType,
+    preferredTime,
+    location,
+    vehicle,
+    urgency: cleanText(booking.urgency || "normal", "normal", 40),
+    reason: cleanLongText(booking.reason || serviceType, serviceType, 600),
+    notes: cleanLongText(booking.notes || booking.customer_notes || booking.problem_description || booking.nextStep || "", "", 1200),
+    nextStep: cleanLongText(booking.nextStep || "DDD should review and confirm the booking request.", "", 900),
+    smsConsent: booking.smsConsent === true,
+    customerStatusUrl,
+    externalSync: { ok: false, skipped: true, reason: "Not attempted yet." }
+  };
+}
+
+async function syncBookingRequest(record) {
+  const url = process.env.DDD_BOOKING_WEBHOOK_URL || process.env.WORDPRESS_BOOKING_WEBHOOK_URL || "";
+  if (!url) {
+    return { ok: false, skipped: true, reason: "DDD_BOOKING_WEBHOOK_URL is not configured." };
+  }
+
+  const payload = buildDddBookingPayload(record);
+  const headers = { "Content-Type": "application/json" };
+  if (process.env.DDD_BOOKING_WEBHOOK_SECRET) {
+    headers["x-ddd-ai-booking-secret"] = process.env.DDD_BOOKING_WEBHOOK_SECRET;
+  }
+  if (process.env.AUTOHUB_INTAKE_API_KEY) {
+    headers["x-autohub-intake-key"] = process.env.AUTOHUB_INTAKE_API_KEY;
+  }
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(9000)
+    });
+    const body = await response.json().catch(async () => ({
+      raw: await response.text().catch(() => "")
+    }));
+    if (!response.ok) {
+      return { ok: false, status: response.status, error: body.error || body.message || "DDD booking webhook failed.", body };
+    }
+    const jobValue = typeof body.job === "object" ? body.job?.id || body.job?.job_uuid : body.job;
+    return {
+      ok: true,
+      status: response.status,
+      jobId: body.jobId || jobValue || body.id || "",
+      leadId: body.lead || body.leadId || "",
+      trackingUrl: body.customer_status_url || body.tracking_url || body.trackingUrl || "",
+      message: body.message || "",
+      source: body.source || "ddd_booking_webhook"
+    };
+  } catch (error) {
+    return { ok: false, error: error.message || "DDD booking webhook failed." };
+  }
+}
+
+function buildDddBookingPayload(record) {
+  return {
+    source: "Phone call",
+    lead_source: "Phone call",
+    channel: "Phone call",
+    external_booking_id: record.bookingId,
+    customer_name: record.name,
+    name: record.name,
+    customer_phone: record.phone,
+    phone: record.phone,
+    customer_email: record.email,
+    email: record.email,
+    service_type: record.serviceType,
+    service: record.serviceType,
+    vehicle: record.vehicle,
+    service_address: record.location,
+    location: record.location,
+    preferred_time: record.preferredTime,
+    preferredTime: record.preferredTime,
+    urgency: record.urgency,
+    notes: [
+      record.reason ? `Reason: ${record.reason}` : "",
+      record.notes ? `Notes: ${record.notes}` : "",
+      record.nextStep ? `AI next step: ${record.nextStep}` : "",
+      record.callId ? `OpenAI call ID: ${record.callId}` : "",
+      record.smsConsent ? "Customer agreed to SMS follow-up." : "SMS consent not confirmed."
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    created_at: record.createdAt
+  };
+}
+
 export function buildDryRun(settings = {}, callerMessage = "") {
   const activeSettings = normalizeSettings(settings);
   const message = String(callerMessage || "").toLowerCase();
@@ -820,13 +959,17 @@ async function sendOptionalSmsFollowUp(record, type) {
     settings.bookingDestinations,
     `${record.reason || ""} ${record.serviceType || ""} ${record.nextStep || ""}`
   );
-  const message = renderSmsTemplate(settings.smsFollowUp.message, destination);
+  const followUpDestination =
+    type === "booking_request" && record.customerStatusUrl
+      ? { label: "DDD booking status", url: record.customerStatusUrl, useWhen: "Customer booking created by the AI receptionist." }
+      : destination;
+  const message = renderSmsTemplate(settings.smsFollowUp.message, followUpDestination);
   const delivery = await sendConfiguredSms(record.phone, message);
   await postOptionalWebhook(process.env.SMS_FOLLOWUP_WEBHOOK_URL, {
     type,
     to: record.phone,
     message,
-    destination,
+    destination: followUpDestination,
     delivery,
     record
   });

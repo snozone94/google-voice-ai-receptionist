@@ -1,26 +1,20 @@
 # Google Voice Forwarded AI Receptionist
 
-This is a starter for DDD to own a Smith.ai-style answering assistant where **Google Voice remains the public number**.
+This is a starter for DDD to own a Smith.ai-style answering assistant where **513-409-1342 remains the public number** after it ports to Twilio.
 
 The call path is:
 
 ```text
-Caller -> Google Voice number -> forwarded AI number -> OpenAI Realtime SIP -> this webhook
+Caller -> 513-409-1342 on Twilio -> OpenAI Realtime SIP -> this webhook
 ```
 
 The browser voice widget is included only as a local test harness so you can tune the receptionist without placing phone calls.
 
 ## Cost Reality
 
-You can avoid Smith.ai and Twilio. Google Voice cannot directly stream a live call into your app, so the forwarded AI number still has to come from one of these:
+Google Voice cannot directly stream a live call into your app. The current production path uses Twilio for the phone number, SMS, and SIP handoff, then OpenAI Realtime for the AI receptionist voice.
 
-- A low-cost SIP number/trunk
-- A PBX you already control
-- A Google Workspace Voice SIP Link setup, if you already have that admin-level infrastructure
-
-For this architecture, your recurring costs are the AI forwarding number/SIP route plus OpenAI Realtime API usage.
-
-Once wired, the receptionist can run by itself for normal answering, intake, booking handoff, and lead capture. You still need to keep OpenAI billing active, keep the SIP/VoIP.ms balance topped up, and update the dashboard when DDD details, links, pricing, or policies change. For production reliability, use always-on hosting and persistent storage for settings/leads.
+Once wired, the receptionist can run by itself for normal answering, intake, booking creation, SMS follow-up, and lead capture. You still need to keep OpenAI billing active, keep the Twilio balance active, and update the dashboard when DDD details, links, pricing, or policies change. For production reliability, use always-on hosting and persistent storage for settings/leads.
 
 ## Setup
 
@@ -39,6 +33,52 @@ http://localhost:8787
 Use the admin dashboard to turn answering on/off, choose the voice, preview the voice, change speaking speed, edit the greeting, update business knowledge, tune caller handling, and maintain booking/app/apply destination links.
 Edit `config/business.json` only for deeper defaults like hours, FAQs, services, and escalation rules.
 Set `BOOKING_URL` if you already have a scheduler. If it is blank, the assistant uses the built-in booking request page at `/api/book` after deployment.
+
+## AI-Created Bookings
+
+The AI can create the booking during the call. It stores a local booking record first, then optionally syncs that same booking into the DDD website/portal system.
+
+For the DDD WordPress platform, use:
+
+```text
+DDD_BOOKING_WEBHOOK_URL=https://dddcincy.com/wp-json/ddd/v1/booking-job
+```
+
+The payload is compatible with the existing DDD platform fields:
+
+```text
+customer_name
+customer_phone
+customer_email
+service_type
+vehicle
+service_address
+preferred_time
+notes
+lead_source=Phone call
+```
+
+That lets the website create the normal DDD job, notify tech/admin flows, and match customer bookings by phone/email in the customer app/portal.
+
+For the AutoHub business-job intake API, use:
+
+```text
+DDD_BOOKING_WEBHOOK_URL=https://ddd-auto-hub-you-are-an.vercel.app/api/business-jobs/intake
+AUTOHUB_INTAKE_API_KEY=your-intake-key
+```
+
+Customer/app lookup is available for a trusted app backend with:
+
+```text
+GET /api/customer/bookings?phone=+15135551212
+x-customer-lookup-secret: your-secret
+```
+
+Each AI booking also gets a private status URL:
+
+```text
+/api/bookings/:bookingId/status?token=private-token
+```
 
 ## Google Voice Forwarding
 
@@ -102,6 +142,9 @@ Optional outbound webhooks:
 LEAD_WEBHOOK_URL=https://your-crm-or-automation-webhook.example/leads
 CALL_SUMMARY_WEBHOOK_URL=https://your-crm-or-automation-webhook.example/calls
 SMS_FOLLOWUP_WEBHOOK_URL=https://your-sms-automation-webhook.example/send
+DDD_BOOKING_WEBHOOK_URL=https://dddcincy.com/wp-json/ddd/v1/booking-job
+DDD_BOOKING_WEBHOOK_SECRET=optional-shared-secret
+CUSTOMER_LOOKUP_SECRET=shared-secret-for-ddd-mobile-backend
 VOIPMS_API_USERNAME=bria@dddcincy.com
 VOIPMS_API_PASSWORD=your-voip-ms-api-password
 VOIPMS_SMS_DID=5136445016
@@ -145,4 +188,7 @@ BOOKING_URL
 TRANSFER_SIP_URI
 LEAD_WEBHOOK_URL
 CALL_SUMMARY_WEBHOOK_URL
+DDD_BOOKING_WEBHOOK_URL
+DDD_BOOKING_WEBHOOK_SECRET
+CUSTOMER_LOOKUP_SECRET
 ```
