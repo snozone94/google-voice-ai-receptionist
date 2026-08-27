@@ -56,6 +56,28 @@
             Business knowledge
             <textarea id="businessKnowledgeInput" rows="7" maxlength="3000"></textarea>
           </label>
+          <div class="admin-subgrid">
+            <label>
+              Service area
+              <textarea id="serviceAreaInput" rows="4" maxlength="900"></textarea>
+            </label>
+            <label>
+              Pricing rules
+              <textarea id="pricingNotesInput" rows="4" maxlength="1200"></textarea>
+            </label>
+            <label>
+              Emergency handling
+              <textarea id="emergencyInstructionsInput" rows="4" maxlength="1200"></textarea>
+            </label>
+            <label>
+              Human handoff rules
+              <textarea id="humanHandoffRulesInput" rows="4" maxlength="1200"></textarea>
+            </label>
+            <label>
+              Apply-to-work handling
+              <textarea id="applyInstructionsInput" rows="4" maxlength="1200"></textarea>
+            </label>
+          </div>
           <label>
             Booking, app, and apply options
             <textarea
@@ -119,6 +141,14 @@
             Call script preview
             <textarea id="scriptPreview" rows="8" readonly></textarea>
           </label>
+          <div class="test-box">
+            <label>
+              Free receptionist test
+              <textarea id="testCallerInput" rows="4" placeholder="Example: I have a flat tire and need help now"></textarea>
+            </label>
+            <button id="testScriptButton" type="button">Run free test</button>
+            <textarea id="testScriptOutput" rows="8" readonly></textarea>
+          </div>
           <button id="saveSettingsButton" type="button">Save receptionist settings</button>
           <p id="settingsStatus">Settings load from the live receptionist.</p>
         </div>

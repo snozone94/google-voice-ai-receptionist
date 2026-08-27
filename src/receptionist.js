@@ -29,6 +29,15 @@ const defaultCustomInstructions =
   "Act like a polished front desk receptionist. Be warm, concise, collect the caller's details, and help them book or leave a clear message.";
 const defaultBusinessKnowledge =
   "DDD helps callers with booking requests, service questions, and messages for the team. If pricing, exact availability, or service-area details are unknown, collect the caller's details and say the team will confirm.";
+const defaultServiceArea = "Greater Cincinnati and nearby service areas DDD confirms case by case.";
+const defaultPricingNotes =
+  "Do not quote exact prices unless the admin has added them. Collect job details and say the DDD team will confirm the final price.";
+const defaultEmergencyInstructions =
+  "For stranded or urgent roadside callers, first ask if they are in a safe location, collect their exact location and callback number, then direct them to the emergency service request option.";
+const defaultHumanHandoffRules =
+  "Do not promise a live transfer. Save the caller's details and tell them the DDD team will follow up as soon as possible.";
+const defaultApplyInstructions =
+  "For work, contractor, technician, or job-interest calls, collect name, phone, email, role or service type, experience, and location, then direct them to the DDD apply to work link.";
 const defaultVoiceDirection =
   "Warm, confident, friendly receptionist. Natural phone cadence, clear pronunciation, and not robotic.";
 const defaultCallerFlows = {
@@ -120,6 +129,11 @@ export async function saveReceptionistSettings(settings) {
         greeting: next.greeting,
         customInstructions: next.customInstructions,
         businessKnowledge: next.businessKnowledge,
+        serviceArea: next.serviceArea,
+        pricingNotes: next.pricingNotes,
+        emergencyInstructions: next.emergencyInstructions,
+        humanHandoffRules: next.humanHandoffRules,
+        applyInstructions: next.applyInstructions,
         callerFlows: next.callerFlows,
         qualifyingServices: next.qualifyingServices,
         outOfScopeHandling: next.outOfScopeHandling,
@@ -292,8 +306,23 @@ ${business.faqs.map((faq) => `- Q: ${faq.question}\n  A: ${faq.answer}`).join("\
 Admin business knowledge:
 ${activeSettings.businessKnowledge}
 
+Service area:
+${activeSettings.serviceArea}
+
+Pricing rules:
+${activeSettings.pricingNotes}
+
+Emergency call handling:
+${activeSettings.emergencyInstructions}
+
 Escalation rules:
 ${business.escalationRules.map((rule) => `- ${rule}`).join("\n")}
+
+Human handoff rules:
+${activeSettings.humanHandoffRules}
+
+Apply-to-work handling:
+${activeSettings.applyInstructions}
 
 Lead capture:
 - Politely collect name, phone number, email if they are willing, location/service area when relevant, and reason for calling.
@@ -435,6 +464,11 @@ function normalizeSettings(settings = {}) {
     greeting: cleanText(settings.greeting, defaultGreeting, 240),
     customInstructions: cleanLongText(settings.customInstructions, defaultCustomInstructions, 1600),
     businessKnowledge: cleanLongText(settings.businessKnowledge, defaultBusinessKnowledge, 3000),
+    serviceArea: cleanLongText(settings.serviceArea, defaultServiceArea, 900),
+    pricingNotes: cleanLongText(settings.pricingNotes, defaultPricingNotes, 1200),
+    emergencyInstructions: cleanLongText(settings.emergencyInstructions, defaultEmergencyInstructions, 1200),
+    humanHandoffRules: cleanLongText(settings.humanHandoffRules, defaultHumanHandoffRules, 1200),
+    applyInstructions: cleanLongText(settings.applyInstructions, defaultApplyInstructions, 1200),
     callerFlows: normalizeCallerFlows(settings.callerFlows),
     qualifyingServices: normalizeTextList(settings.qualifyingServices, defaultQualifyingServices, 12, 80),
     outOfScopeHandling: cleanLongText(
@@ -451,6 +485,64 @@ function normalizeSettings(settings = {}) {
     bookingDestinations: normalizeBookingDestinations(settings.bookingDestinations),
     voiceOptions
   };
+}
+
+export function buildDryRun(settings = {}, callerMessage = "") {
+  const activeSettings = normalizeSettings(settings);
+  const message = String(callerMessage || "").toLowerCase();
+  const destination = chooseDestination(activeSettings.bookingDestinations, message);
+  const intent = classifyIntent(message);
+  const questions = intent === "emergency"
+    ? ["Are you in a safe place right now?", "What is your exact location?", "What vehicle are you with, and what happened?", "What is the best callback number?"]
+    : intent === "apply"
+      ? ["What kind of DDD work are you applying for?", "What experience do you have?", "What is your best callback number and email?"]
+      : ["What service do you need?", "What is your name and best callback number?", "Where are you located?", "What date or time works best?"];
+
+  return {
+    intent,
+    destination,
+    opening: activeSettings.greeting,
+    likelyReply: [
+      activeSettings.greeting,
+      intent === "emergency"
+        ? "I can help with that. First, are you in a safe place right now?"
+        : intent === "apply"
+          ? "I can help get your information to DDD. What kind of work are you applying for?"
+          : "I can help with that. Let me grab a few details so DDD can follow up correctly.",
+      `I would ask: ${questions.join(" ")}`,
+      destination ? `Best next link: ${destination.label} - ${destination.url}` : "Best next link: use the main DDD booking option if one applies."
+    ].join("\n\n"),
+    questions,
+    note: "Free dry run. This does not place a phone call and does not use OpenAI voice minutes."
+  };
+}
+
+function classifyIntent(message) {
+  if (/stranded|emergency|urgent|now|locked|lockout|flat|tire|jump|battery|dead|fuel|gas|tow/.test(message)) {
+    return "emergency";
+  }
+  if (/apply|job|work|hire|contractor|technician|tech|driver/.test(message)) {
+    return "apply";
+  }
+  if (/app|auto doc|diagnos|symptom|what'?s wrong/.test(message)) {
+    return "app";
+  }
+  if (/price|cost|quote|how much|shop/.test(message)) {
+    return "shopping";
+  }
+  return "booking";
+}
+
+function chooseDestination(destinations, message) {
+  const intent = classifyIntent(message);
+  const wanted = {
+    emergency: /emergency/i,
+    apply: /apply/i,
+    app: /auto doc|mobile app/i,
+    shopping: /shop|service/i,
+    booking: /book/i
+  }[intent];
+  return destinations.find((destination) => wanted.test(`${destination.label} ${destination.useWhen}`)) || destinations[0] || null;
 }
 
 function cleanText(value, fallback, maxLength) {

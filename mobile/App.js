@@ -24,7 +24,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState("");
+  const [testCallerMessage, setTestCallerMessage] = useState("I have a flat tire and need help now.");
+  const [testOutput, setTestOutput] = useState("");
   const [setup, setSetup] = useState(null);
   const [business, setBusiness] = useState(null);
   const [activity, setActivity] = useState({ calls: [], leads: [], bookings: [] });
@@ -107,32 +110,44 @@ export default function App() {
         await currentSoundRef.current.unloadAsync().catch(() => {});
         currentSoundRef.current = null;
       }
-      const response = await fetch(`${cleanBaseUrl}/api/voice-preview`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          voice: settings.voice,
-          voiceSpeed: settings.voiceSpeed,
-          voiceDirection: settings.voiceDirection,
-          text: settings.greeting || "Thank you for calling DDD. How can I help today?"
-        })
-      });
-      if (!response.ok) throw new Error("Could not make the voice preview.");
-      const blob = await response.blob();
-      const reader = new FileReader();
-      const audioUri = await new Promise((resolve, reject) => {
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-      const created = await Audio.Sound.createAsync({ uri: audioUri });
+      const audioUri = `${cleanBaseUrl}/api/voice-preview.mp3?${new URLSearchParams({
+        voice: settings.voice,
+        voiceSpeed: String(settings.voiceSpeed),
+        voiceDirection: settings.voiceDirection || "",
+        text: settings.greeting || "Thank you for calling DDD. How can I help today?",
+        t: String(Date.now())
+      }).toString()}`;
+      const created = await Audio.Sound.createAsync({ uri: audioUri }, { shouldPlay: true });
       currentSoundRef.current = created.sound;
-      await currentSoundRef.current.playAsync();
       setStatus("Preview playing.");
     } catch (error) {
       setStatus(error.message);
     } finally {
       setPreviewing(false);
+    }
+  }
+
+  async function runFreeTest() {
+    setTesting(true);
+    setTestOutput("Testing...");
+    try {
+      const result = await apiPost(cleanBaseUrl, "/api/test-script", { callerMessage: testCallerMessage });
+      setTestOutput(
+        [
+          `Intent: ${result.intent}`,
+          result.destination ? `Link: ${result.destination.label}\n${result.destination.url}` : "Link: none selected",
+          "",
+          result.likelyReply,
+          "",
+          result.note
+        ].join("\n")
+      );
+      setStatus("Free test complete. This did not place a phone call.");
+    } catch (error) {
+      setTestOutput(error.message);
+      setStatus(error.message);
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -224,11 +239,54 @@ export default function App() {
             value={settings.businessKnowledge}
           />
           <Field
+            label="Service area"
+            multiline
+            onChangeText={(serviceArea) => setSettings((current) => ({ ...current, serviceArea }))}
+            value={settings.serviceArea}
+          />
+          <Field
+            label="Pricing rules"
+            multiline
+            onChangeText={(pricingNotes) => setSettings((current) => ({ ...current, pricingNotes }))}
+            value={settings.pricingNotes}
+          />
+          <Field
+            label="Emergency handling"
+            multiline
+            onChangeText={(emergencyInstructions) => setSettings((current) => ({ ...current, emergencyInstructions }))}
+            value={settings.emergencyInstructions}
+          />
+          <Field
+            label="Human handoff"
+            multiline
+            onChangeText={(humanHandoffRules) => setSettings((current) => ({ ...current, humanHandoffRules }))}
+            value={settings.humanHandoffRules}
+          />
+          <Field
+            label="Apply-to-work handling"
+            multiline
+            onChangeText={(applyInstructions) => setSettings((current) => ({ ...current, applyInstructions }))}
+            value={settings.applyInstructions}
+          />
+          <Field
             label="Custom instructions"
             multiline
             onChangeText={(customInstructions) => setSettings((current) => ({ ...current, customInstructions }))}
             value={settings.customInstructions}
           />
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Free Test</Text>
+          <Text style={styles.muted}>Preview the receptionist logic without placing a phone call.</Text>
+          <Field
+            label="Caller says"
+            multiline
+            onChangeText={setTestCallerMessage}
+            value={testCallerMessage}
+          />
+          <ActionButton disabled={testing} label={testing ? "Testing..." : "Run Free Test"} onPress={runFreeTest} />
+          {testOutput ? <Text style={styles.testOutput}>{testOutput}</Text> : null}
         </View>
 
         <View style={styles.card}>
@@ -296,6 +354,11 @@ const blankSettings = {
   voiceDirection: "",
   greeting: "",
   businessKnowledge: "",
+  serviceArea: "",
+  pricingNotes: "",
+  emergencyInstructions: "",
+  humanHandoffRules: "",
+  applyInstructions: "",
   customInstructions: "",
   qualifyingServicesText: "",
   followUpStyle: "",
@@ -429,6 +492,11 @@ function fromFormSettings(settings) {
     greeting: settings.greeting,
     businessKnowledge: settings.businessKnowledge,
     customInstructions: settings.customInstructions,
+    serviceArea: settings.serviceArea,
+    pricingNotes: settings.pricingNotes,
+    emergencyInstructions: settings.emergencyInstructions,
+    humanHandoffRules: settings.humanHandoffRules,
+    applyInstructions: settings.applyInstructions,
     qualifyingServices: settings.qualifyingServicesText,
     followUpStyle: settings.followUpStyle,
     outOfScopeHandling: settings.outOfScopeHandling,
@@ -634,5 +702,15 @@ const styles = StyleSheet.create({
     color: "#55576d",
     minHeight: 24,
     fontWeight: "800"
+  },
+  testOutput: {
+    borderColor: "#d9d3ee",
+    borderRadius: 6,
+    borderWidth: 1,
+    backgroundColor: "#fffaff",
+    color: "#34364a",
+    fontSize: 13,
+    lineHeight: 19,
+    padding: 12
   }
 });

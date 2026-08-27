@@ -18,6 +18,11 @@ const previewVoiceButton = document.querySelector("#previewVoiceButton");
 const voicePreviewAudio = document.querySelector("#voicePreviewAudio");
 const greetingInput = document.querySelector("#greetingInput");
 const businessKnowledgeInput = document.querySelector("#businessKnowledgeInput");
+const serviceAreaInput = document.querySelector("#serviceAreaInput");
+const pricingNotesInput = document.querySelector("#pricingNotesInput");
+const emergencyInstructionsInput = document.querySelector("#emergencyInstructionsInput");
+const humanHandoffRulesInput = document.querySelector("#humanHandoffRulesInput");
+const applyInstructionsInput = document.querySelector("#applyInstructionsInput");
 const bookingDestinationsInput = document.querySelector("#bookingDestinationsInput");
 const qualifyingServicesInput = document.querySelector("#qualifyingServicesInput");
 const outOfScopeHandlingInput = document.querySelector("#outOfScopeHandlingInput");
@@ -30,6 +35,9 @@ const ambientSoundSelect = document.querySelector("#ambientSoundSelect");
 const thinkingSoundToggle = document.querySelector("#thinkingSoundToggle");
 const customInstructionsInput = document.querySelector("#customInstructionsInput");
 const scriptPreview = document.querySelector("#scriptPreview");
+const testCallerInput = document.querySelector("#testCallerInput");
+const testScriptButton = document.querySelector("#testScriptButton");
+const testScriptOutput = document.querySelector("#testScriptOutput");
 const saveSettingsButton = document.querySelector("#saveSettingsButton");
 const settingsStatus = document.querySelector("#settingsStatus");
 
@@ -94,6 +102,11 @@ async function loadSettings() {
   voiceDirectionInput.value = settings.voiceDirection || "";
   greetingInput.value = settings.greeting || "";
   businessKnowledgeInput.value = settings.businessKnowledge || "";
+  serviceAreaInput.value = settings.serviceArea || "";
+  pricingNotesInput.value = settings.pricingNotes || "";
+  emergencyInstructionsInput.value = settings.emergencyInstructions || "";
+  humanHandoffRulesInput.value = settings.humanHandoffRules || "";
+  applyInstructionsInput.value = settings.applyInstructions || "";
   bookingDestinationsInput.value = formatBookingDestinations(settings.bookingDestinations || []);
   qualifyingServicesInput.value = (settings.qualifyingServices || []).join("\n");
   outOfScopeHandlingInput.value = settings.outOfScopeHandling || "";
@@ -129,6 +142,11 @@ saveSettingsButton.addEventListener("click", async () => {
         voiceDirection: voiceDirectionInput.value,
         greeting: greetingInput.value,
         businessKnowledge: businessKnowledgeInput.value,
+        serviceArea: serviceAreaInput.value,
+        pricingNotes: pricingNotesInput.value,
+        emergencyInstructions: emergencyInstructionsInput.value,
+        humanHandoffRules: humanHandoffRulesInput.value,
+        applyInstructions: applyInstructionsInput.value,
         bookingDestinations: parseBookingDestinations(bookingDestinationsInput.value),
         qualifyingServices: qualifyingServicesInput.value,
         outOfScopeHandling: outOfScopeHandlingInput.value,
@@ -199,6 +217,11 @@ for (const input of [
   voiceDirectionInput,
   greetingInput,
   businessKnowledgeInput,
+  serviceAreaInput,
+  pricingNotesInput,
+  emergencyInstructionsInput,
+  humanHandoffRulesInput,
+  applyInstructionsInput,
   bookingDestinationsInput,
   qualifyingServicesInput,
   outOfScopeHandlingInput,
@@ -219,6 +242,32 @@ voiceSpeedInput.addEventListener("input", () => {
   voiceSpeedOutput.value = `${Number(voiceSpeedInput.value).toFixed(2)}x`;
 });
 
+testScriptButton.addEventListener("click", async () => {
+  testScriptButton.disabled = true;
+  testScriptOutput.value = "Testing...";
+  try {
+    const response = await fetch("/api/test-script", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callerMessage: testCallerInput.value })
+    });
+    if (!response.ok) throw new Error("Could not run the free test.");
+    const result = await response.json();
+    testScriptOutput.value = [
+      `Intent: ${result.intent}`,
+      result.destination ? `Link: ${result.destination.label} - ${result.destination.url}` : "Link: none selected",
+      "",
+      result.likelyReply,
+      "",
+      result.note
+    ].join("\n");
+  } catch (error) {
+    testScriptOutput.value = error.message;
+  } finally {
+    testScriptButton.disabled = false;
+  }
+});
+
 function updateScriptPreview() {
   scriptPreview.value = [
     enabledToggle.checked ? "Status: AI answers new calls." : "Status: AI is paused.",
@@ -229,6 +278,12 @@ function updateScriptPreview() {
     "",
     "Business knowledge:",
     businessKnowledgeInput.value || "Add DDD services, prices, service areas, hours, policies, and answers here.",
+    "",
+    `Service area: ${serviceAreaInput.value || "Greater Cincinnati and nearby service areas."}`,
+    `Pricing rules: ${pricingNotesInput.value || "Do not quote exact pricing unless added here."}`,
+    `Emergency handling: ${emergencyInstructionsInput.value || "Confirm safety, location, vehicle, callback number, and urgent link."}`,
+    `Human handoff: ${humanHandoffRulesInput.value || "Save details; do not promise a live transfer."}`,
+    `Apply-to-work: ${applyInstructionsInput.value || "Collect applicant details and share the apply link."}`,
     "",
     "Booking, app, and apply options:",
     bookingDestinationsInput.value || "Add one destination per line.",

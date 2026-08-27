@@ -9,6 +9,7 @@ import {
   listSummaries,
   loadReceptionistSettings,
   loadBusiness,
+  buildDryRun,
   normalizeVoice,
   saveCallEvent,
   saveBookingRequest,
@@ -124,6 +125,44 @@ app.post("/api/voice-preview", requireOpenAIKey, express.json(), async (req, res
     });
     const buffer = Buffer.from(await speech.arrayBuffer());
     res.type("audio/mpeg").send(buffer);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/voice-preview.mp3", requireOpenAIKey, async (req, res, next) => {
+  try {
+    const settings = await loadReceptionistSettings();
+    const voice = normalizeVoice(req.query.voice) || settings.voice;
+    const speed = clampSpeechSpeed(req.query.voiceSpeed || settings.voiceSpeed);
+    const instructions = String(req.query.voiceDirection || settings.voiceDirection)
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 700);
+    const input = String(req.query.text || settings.greeting || "Thank you for calling DDD. How can I help today?")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 600);
+    const speech = await openAIClient().audio.speech.create({
+      model: "gpt-4o-mini-tts",
+      voice,
+      input,
+      instructions,
+      speed,
+      response_format: "mp3"
+    });
+    const buffer = Buffer.from(await speech.arrayBuffer());
+    res.set("Cache-Control", "no-store");
+    res.type("audio/mpeg").send(buffer);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/test-script", express.json(), async (req, res, next) => {
+  try {
+    const settings = await loadReceptionistSettings();
+    res.json(buildDryRun(settings, req.body?.callerMessage || ""));
   } catch (error) {
     next(error);
   }
