@@ -177,6 +177,41 @@
       </section>
 
       <section class="panel">
+        <div class="section-title-row">
+          <div>
+            <p class="eyebrow">Shared DDD inbox</p>
+            <h2>Texts</h2>
+          </div>
+          <button id="refreshInboxButton" type="button">Refresh</button>
+        </div>
+        <div class="inbox-auth">
+          <label>
+            Staff PIN
+            <input id="staffPinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Enter staff PIN" />
+          </label>
+          <label>
+            Your name
+            <input id="staffNameInput" autocomplete="name" placeholder="Brianna, tech name, dispatch..." />
+          </label>
+        </div>
+        <div class="inbox-shell">
+          <aside class="conversation-list" id="conversationList"></aside>
+          <div class="conversation-panel">
+            <div class="conversation-header">
+              <strong id="selectedConversationTitle">Select a conversation</strong>
+              <span id="selectedConversationMeta"></span>
+            </div>
+            <div class="message-list" id="messageList"></div>
+            <form id="replyForm" class="reply-form">
+              <textarea id="replyMessageInput" rows="3" maxlength="1000" placeholder="Type a reply from DDD..."></textarea>
+              <button id="sendReplyButton" type="submit" disabled>Send text</button>
+            </form>
+            <p id="inboxStatus">Texts will appear here after the number ports to Twilio.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
         <h2>Lead capture</h2>
         <form id="leadForm">
           <label>Name <input name="name" autocomplete="name" /></label>

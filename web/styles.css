@@ -94,6 +94,144 @@ h2 {
   gap: 10px;
 }
 
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.inbox-auth {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.inbox-shell {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.85fr) minmax(0, 1.4fr);
+  min-height: 520px;
+  border: 1px solid rgba(124, 118, 255, 0.22);
+  border-radius: 8px;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(255, 79, 163, 0.06), rgba(34, 184, 255, 0.06));
+}
+
+.conversation-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 12px;
+  border-right: 1px solid rgba(124, 118, 255, 0.18);
+  background: rgba(255, 255, 255, 0.76);
+  overflow: auto;
+}
+
+.conversation-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 78px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid rgba(217, 211, 238, 0.9);
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2030;
+  text-align: left;
+  box-shadow: none;
+}
+
+.conversation-item.selected {
+  border-color: #e640a5;
+  background: linear-gradient(135deg, rgba(255, 79, 163, 0.12), rgba(53, 208, 127, 0.12));
+}
+
+.conversation-item span {
+  overflow: hidden;
+  color: #55576d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-item small,
+.conversation-header span,
+.message-bubble small {
+  color: #74758b;
+  font-size: 0.78rem;
+}
+
+.conversation-panel {
+  display: grid;
+  grid-template-rows: auto minmax(260px, 1fr) auto auto;
+  min-width: 0;
+}
+
+.conversation-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px;
+  border-bottom: 1px solid rgba(124, 118, 255, 0.18);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  overflow: auto;
+}
+
+.message-bubble {
+  max-width: min(78%, 460px);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #ede8f8;
+}
+
+.message-bubble p {
+  margin: 0 0 6px;
+  line-height: 1.35;
+}
+
+.message-bubble.outbound {
+  align-self: flex-end;
+  color: #fff;
+  background: linear-gradient(90deg, #7d4dff, #e640a5);
+  border-color: transparent;
+}
+
+.message-bubble.outbound small {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.reply-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 14px;
+  border-top: 1px solid rgba(124, 118, 255, 0.18);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.reply-form textarea {
+  width: 100%;
+  max-width: none;
+  resize: vertical;
+}
+
+.empty-state {
+  margin: 8px 0;
+  color: #74758b;
+}
+
 .button-row audio {
   width: min(100%, 340px);
 }
@@ -231,7 +369,8 @@ textarea#testScriptOutput {
 
 #status,
 #leadStatus,
-#settingsStatus {
+#settingsStatus,
+#inboxStatus {
   min-height: 22px;
   color: #55576d;
 }
@@ -266,7 +405,20 @@ li.missing {
 @media (max-width: 680px) {
   .numbers,
   .activity,
-  .flow-grid {
+  .flow-grid,
+  .inbox-auth,
+  .inbox-shell,
+  .reply-form {
     grid-template-columns: 1fr;
+  }
+
+  .conversation-list {
+    max-height: 240px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(124, 118, 255, 0.18);
+  }
+
+  .message-bubble {
+    max-width: 92%;
   }
 }

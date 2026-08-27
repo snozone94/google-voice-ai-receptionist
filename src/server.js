@@ -4,6 +4,7 @@ import OpenAI from "openai";
 import {
   callAcceptPayload,
   listCalls,
+  listConversations,
   listSms,
   listBookings,
   listLeads,
@@ -14,6 +15,7 @@ import {
   normalizeVoice,
   saveCallEvent,
   saveIncomingSms,
+  saveOutgoingSms,
   saveBookingRequest,
   saveLead,
   saveReceptionistSettings
@@ -117,13 +119,61 @@ app.post("/api/twilio/sms", express.urlencoded({ extended: false }), async (req,
 
 app.get("/api/sms", async (req, res, next) => {
   try {
-    if (!hasTwilioSmsAccess(req)) {
+    if (!hasSmsReadAccess(req)) {
       res.status(403).json({ ok: false, error: "Forbidden" });
       return;
     }
 
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     res.json({ sms: await listSms(limit) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/conversations", async (req, res, next) => {
+  try {
+    if (!hasAdminAccess(req)) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+
+    const limit = Math.min(Number(req.query.limit) || 200, 500);
+    res.json({ conversations: await listConversations(limit) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/sms/reply", express.json(), async (req, res, next) => {
+  try {
+    if (!hasAdminAccess(req)) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+
+    const to = normalizeE164(req.body?.to);
+    const message = String(req.body?.message || "").replace(/\s+/g, " ").trim();
+    const agentName = String(req.body?.agentName || "DDD team").replace(/\s+/g, " ").trim().slice(0, 80);
+    if (!to) {
+      res.status(400).json({ ok: false, error: "Enter a valid customer phone number." });
+      return;
+    }
+    if (!message || message.length > 1000) {
+      res.status(400).json({ ok: false, error: "Enter a reply between 1 and 1000 characters." });
+      return;
+    }
+
+    const delivery = await sendTwilioSms(to, message);
+    const record = await saveOutgoingSms({
+      to,
+      from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
+      body: message,
+      messageSid: delivery.sid || "",
+      status: delivery.status || (delivery.ok ? "sent" : "failed"),
+      agentName
+    });
+    res.status(delivery.ok ? 201 : 502).json({ ok: delivery.ok, delivery, sms: record });
   } catch (error) {
     next(error);
   }
@@ -416,6 +466,68 @@ function hasTwilioSmsAccess(req) {
   const secret = process.env.TWILIO_SMS_WEBHOOK_SECRET;
   if (!secret) return false;
   return req.query.secret === secret || req.get("x-twilio-sms-secret") === secret;
+}
+
+function hasSmsReadAccess(req) {
+  return hasTwilioSmsAccess(req) || hasAdminAccess(req);
+}
+
+function hasAdminAccess(req) {
+  const pin = process.env.ADMIN_PIN;
+  if (!pin) return process.env.ALLOW_UNPROTECTED_ADMIN === "true";
+  return req.get("x-admin-pin") === pin || req.query.adminPin === pin;
+}
+
+async function sendTwilioSms(to, message) {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const from = normalizeE164(process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER);
+  if (!accountSid || !authToken || !from) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: "Twilio SMS sending is not configured yet."
+    };
+  }
+
+  const body = new URLSearchParams({
+    From: from,
+    To: to,
+    Body: message
+  });
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`,
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body
+  });
+  const payload = await response.json().catch(async () => ({
+    message: await response.text().catch(() => "Twilio returned an unreadable response.")
+  }));
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: payload.status || response.status,
+      error: payload.message || "Twilio SMS failed.",
+      code: payload.code
+    };
+  }
+  return {
+    ok: true,
+    sid: payload.sid,
+    status: payload.status,
+    to: payload.to,
+    from: payload.from
+  };
+}
+
+function normalizeE164(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return "";
 }
 
 app.use(express.static(new URL("../web", import.meta.url).pathname));

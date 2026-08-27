@@ -43,6 +43,17 @@ const testScriptOutput = document.querySelector("#testScriptOutput");
 const saveSettingsButton = document.querySelector("#saveSettingsButton");
 const editSettingsButton = document.querySelector("#editSettingsButton");
 const settingsStatus = document.querySelector("#settingsStatus");
+const refreshInboxButton = document.querySelector("#refreshInboxButton");
+const staffPinInput = document.querySelector("#staffPinInput");
+const staffNameInput = document.querySelector("#staffNameInput");
+const conversationList = document.querySelector("#conversationList");
+const selectedConversationTitle = document.querySelector("#selectedConversationTitle");
+const selectedConversationMeta = document.querySelector("#selectedConversationMeta");
+const messageList = document.querySelector("#messageList");
+const replyForm = document.querySelector("#replyForm");
+const replyMessageInput = document.querySelector("#replyMessageInput");
+const sendReplyButton = document.querySelector("#sendReplyButton");
+const inboxStatus = document.querySelector("#inboxStatus");
 
 let peerConnection;
 let localStream;
@@ -50,6 +61,11 @@ let dataChannel;
 let editMode = false;
 let saveTimer;
 let isLoadingSettings = false;
+let conversations = [];
+let selectedConversationPhone = "";
+
+staffPinInput.value = localStorage.getItem("dddStaffPin") || "";
+staffNameInput.value = localStorage.getItem("dddStaffName") || "";
 
 fetch("/api/business")
   .then((res) => res.json())
@@ -421,6 +437,171 @@ function renderList(element, records, emptyMessage, formatter) {
   }
 }
 
+function adminHeaders() {
+  const pin = staffPinInput.value.trim();
+  return pin ? { "x-admin-pin": pin } : {};
+}
+
+function formatPhone(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+  }
+  return phone || "Unknown";
+}
+
+function formatTime(value) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function setInboxStatus(message) {
+  inboxStatus.textContent = message;
+}
+
+function renderConversations() {
+  conversationList.innerHTML = "";
+  if (!conversations.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "No texts yet.";
+    conversationList.append(empty);
+    renderSelectedConversation();
+    return;
+  }
+
+  if (!selectedConversationPhone || !conversations.some((conversation) => conversation.phone === selectedConversationPhone)) {
+    selectedConversationPhone = conversations[0].phone;
+  }
+
+  for (const conversation of conversations) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = conversation.phone === selectedConversationPhone ? "conversation-item selected" : "conversation-item";
+    button.innerHTML = `
+      <strong>${formatPhone(conversation.phone)}</strong>
+      <span>${conversation.lastBody || "No message body"}</span>
+      <small>${formatTime(conversation.lastMessageAt)}</small>
+    `;
+    button.addEventListener("click", () => {
+      selectedConversationPhone = conversation.phone;
+      renderConversations();
+    });
+    conversationList.append(button);
+  }
+
+  renderSelectedConversation();
+}
+
+function renderSelectedConversation() {
+  const conversation = conversations.find((item) => item.phone === selectedConversationPhone);
+  messageList.innerHTML = "";
+  if (!conversation) {
+    selectedConversationTitle.textContent = "Select a conversation";
+    selectedConversationMeta.textContent = "";
+    sendReplyButton.disabled = true;
+    return;
+  }
+
+  selectedConversationTitle.textContent = formatPhone(conversation.phone);
+  selectedConversationMeta.textContent = `${conversation.messages.length} message${conversation.messages.length === 1 ? "" : "s"}`;
+  sendReplyButton.disabled = !replyMessageInput.value.trim();
+
+  for (const message of conversation.messages) {
+    const bubble = document.createElement("article");
+    bubble.className = `message-bubble ${message.direction === "outbound" ? "outbound" : "inbound"}`;
+    const meta = [message.direction === "outbound" ? message.agentName || "DDD team" : "Customer", formatTime(message.createdAt), message.status]
+      .filter(Boolean)
+      .join(" · ");
+    bubble.innerHTML = `
+      <p>${escapeHtml(message.body || "")}</p>
+      <small>${escapeHtml(meta)}</small>
+    `;
+    messageList.append(bubble);
+  }
+  messageList.scrollTop = messageList.scrollHeight;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+async function refreshInbox() {
+  localStorage.setItem("dddStaffPin", staffPinInput.value.trim());
+  localStorage.setItem("dddStaffName", staffNameInput.value.trim());
+  setInboxStatus("Loading texts...");
+  const response = await fetch("/api/conversations", { headers: adminHeaders() });
+  if (response.status === 403) {
+    setInboxStatus("Enter the staff PIN to load texts.");
+    conversations = [];
+    renderConversations();
+    return;
+  }
+  if (!response.ok) throw new Error("Could not load text inbox.");
+  const payload = await response.json();
+  conversations = payload.conversations || [];
+  renderConversations();
+  setInboxStatus(conversations.length ? "Inbox is up to date." : "No texts yet. New SMS will appear here after Twilio receives the number.");
+}
+
+refreshInboxButton.addEventListener("click", () => {
+  refreshInbox().catch((error) => setInboxStatus(error.message));
+});
+
+staffPinInput.addEventListener("change", () => {
+  refreshInbox().catch((error) => setInboxStatus(error.message));
+});
+
+staffNameInput.addEventListener("change", () => {
+  localStorage.setItem("dddStaffName", staffNameInput.value.trim());
+});
+
+replyMessageInput.addEventListener("input", () => {
+  sendReplyButton.disabled = !selectedConversationPhone || !replyMessageInput.value.trim();
+});
+
+replyForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const message = replyMessageInput.value.trim();
+  if (!selectedConversationPhone || !message) return;
+
+  sendReplyButton.disabled = true;
+  setInboxStatus("Sending text...");
+  try {
+    const response = await fetch("/api/sms/reply", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...adminHeaders()
+      },
+      body: JSON.stringify({
+        to: selectedConversationPhone,
+        message,
+        agentName: staffNameInput.value.trim() || "DDD team"
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || payload.delivery?.error || "Could not send text.");
+    replyMessageInput.value = "";
+    setInboxStatus("Text sent.");
+    await refreshInbox();
+  } catch (error) {
+    setInboxStatus(error.message);
+  } finally {
+    sendReplyButton.disabled = !replyMessageInput.value.trim();
+  }
+});
+
 async function refreshActivity() {
   const [callsResponse, leadsResponse, summariesResponse, bookingsResponse] = await Promise.all([
     fetch("/api/calls"),
@@ -452,6 +633,8 @@ async function refreshActivity() {
 
 refreshActivity().catch(() => {});
 setInterval(() => refreshActivity().catch(() => {}), 15000);
+refreshInbox().catch((error) => setInboxStatus(error.message));
+setInterval(() => refreshInbox().catch(() => {}), 15000);
 
 callButton.addEventListener("click", async () => {
   callButton.disabled = true;

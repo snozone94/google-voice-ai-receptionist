@@ -234,10 +234,29 @@ export async function saveCallEvent(event) {
 export async function saveIncomingSms(message) {
   const record = {
     createdAt: new Date().toISOString(),
+    direction: "inbound",
     from: cleanText(message.From || message.from, "", 40),
     to: cleanText(message.To || message.to, "", 40),
     body: cleanLongText(message.Body || message.body, "", 2000),
-    messageSid: cleanText(message.MessageSid || message.SmsSid || "", "", 80)
+    messageSid: cleanText(message.MessageSid || message.SmsSid || "", "", 80),
+    status: cleanText(message.SmsStatus || message.status || "received", "received", 80),
+    agentName: ""
+  };
+  await ensureDataDir();
+  await fs.appendFile(smsPath, `${JSON.stringify(record)}\n`);
+  return record;
+}
+
+export async function saveOutgoingSms(message) {
+  const record = {
+    createdAt: new Date().toISOString(),
+    direction: "outbound",
+    from: cleanText(message.From || message.from, "", 40),
+    to: cleanText(message.To || message.to, "", 40),
+    body: cleanLongText(message.Body || message.body, "", 2000),
+    messageSid: cleanText(message.MessageSid || message.messageSid || "", "", 80),
+    status: cleanText(message.SmsStatus || message.status || "sent", "sent", 80),
+    agentName: cleanText(message.agentName || "DDD team", "DDD team", 80)
   };
   await ensureDataDir();
   await fs.appendFile(smsPath, `${JSON.stringify(record)}\n`);
@@ -246,6 +265,42 @@ export async function saveIncomingSms(message) {
 
 export async function listSms(limit = 50) {
   return listRecords(smsPath, limit);
+}
+
+export async function listConversations(limit = 200) {
+  const messages = await listRecords(smsPath, limit);
+  const conversations = new Map();
+  for (const message of [...messages].reverse()) {
+    const direction = message.direction || "inbound";
+    const customerPhone = direction === "outbound" ? message.to : message.from;
+    const key = normalizeConversationPhone(customerPhone);
+    if (!key) continue;
+    if (!conversations.has(key)) {
+      conversations.set(key, {
+        phone: key,
+        lastMessageAt: message.createdAt,
+        lastBody: message.body || "",
+        unread: 0,
+        messages: []
+      });
+    }
+    const conversation = conversations.get(key);
+    conversation.messages.push({
+      ...message,
+      direction,
+      customerPhone: key
+    });
+    conversation.lastMessageAt = message.createdAt || conversation.lastMessageAt;
+    conversation.lastBody = message.body || conversation.lastBody;
+    if (direction === "inbound") conversation.unread += 1;
+  }
+
+  return [...conversations.values()]
+    .map((conversation) => ({
+      ...conversation,
+      messages: conversation.messages.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
+    }))
+    .sort((a, b) => String(b.lastMessageAt).localeCompare(String(a.lastMessageAt)));
 }
 
 export function buildReceptionistInstructions(business, settings = {}) {
@@ -774,4 +829,11 @@ async function sendVoipMsSms(to, message) {
 function normalizePhoneForSms(value) {
   const digits = String(value || "").replace(/\D/g, "");
   return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+}
+
+function normalizeConversationPhone(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return cleanText(value, "", 40);
 }
