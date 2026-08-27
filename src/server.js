@@ -52,6 +52,7 @@ app.get("/api/setup-status", (_req, res) => {
     aiForwardingNumber: Boolean(process.env.AI_FORWARDING_NUMBER),
     smsDelivery: Boolean(
       process.env.SMS_FOLLOWUP_WEBHOOK_URL ||
+        process.env.TWILIO_SMS_WEBHOOK_SECRET ||
         (process.env.VOIPMS_API_USERNAME && process.env.VOIPMS_API_PASSWORD && process.env.VOIPMS_SMS_DID)
     )
   };
@@ -123,6 +124,42 @@ app.get("/api/sms", async (req, res, next) => {
 
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     res.json({ sms: await listSms(limit) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/twilio/voice-verify", express.urlencoded({ extended: false }), async (req, res) => {
+  if (!hasTwilioSmsAccess(req)) {
+    res.status(403).send("Forbidden");
+    return;
+  }
+
+  const action = `/api/twilio/voice-verify/capture?secret=${encodeURIComponent(req.query.secret || "")}`;
+  res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech dtmf" timeout="12" speechTimeout="auto" action="${action}" method="POST">
+    <Pause length="1"/>
+  </Gather>
+  <Redirect method="POST">${action}</Redirect>
+</Response>`);
+});
+
+app.post("/api/twilio/voice-verify/capture", express.urlencoded({ extended: false }), async (req, res, next) => {
+  try {
+    if (!hasTwilioSmsAccess(req)) {
+      res.status(403).send("Forbidden");
+      return;
+    }
+
+    const codeText = [req.body.SpeechResult, req.body.Digits].filter(Boolean).join(" ").trim();
+    await saveIncomingSms({
+      From: req.body.From || "voice-verification",
+      To: req.body.To || process.env.AI_FORWARDING_NUMBER || "",
+      Body: codeText ? `Google Voice spoken verification: ${codeText}` : "Google Voice spoken verification call ended without captured speech.",
+      MessageSid: req.body.CallSid || ""
+    });
+    res.type("text/xml").send("<Response><Hangup/></Response>");
   } catch (error) {
     next(error);
   }
