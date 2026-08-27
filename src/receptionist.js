@@ -232,6 +232,21 @@ export async function saveCallEvent(event) {
 
 export function buildReceptionistInstructions(business, settings = {}) {
   const activeSettings = normalizeSettings(settings);
+  if (settings.verificationMode) {
+    return `
+You are connected to a Google Voice phone verification call for DDD.
+Stay silent at the start of the call.
+Listen for a six-digit verification code.
+When you hear the code, immediately call save_lead with:
+- reason: "Google Voice verification code"
+- urgency: "normal"
+- nextStep: "Google Voice verification code: XXXXXX" with the exact six digits you heard
+- serviceType: "Google Voice verification"
+- smsConsent: false
+Do not ask questions. Do not say the DDD greeting. Only speak if needed after saving the code.
+`.trim();
+  }
+
   const publicBaseUrl = process.env.PUBLIC_BASE_URL || "";
   const fallbackBookingUrl =
     publicBaseUrl && !publicBaseUrl.includes("your-domain") ? `${publicBaseUrl.replace(/\/$/, "")}/api/book` : "";
@@ -456,6 +471,13 @@ export function callAcceptPayload(business, settings = {}) {
     tracing: "auto",
     audio: {
       input: {
+        transcription: {
+          model: "gpt-4o-mini-transcribe",
+          language: "en",
+          prompt: settings.verificationMode
+            ? "This is a Google Voice verification call. Listen for a six digit numeric code."
+            : "Phone call with a DDD receptionist. Transcribe caller details, names, phone numbers, service requests, locations, and appointment times."
+        },
         turn_detection: {
           type: "semantic_vad",
           eagerness: "high",

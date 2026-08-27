@@ -305,6 +305,9 @@ async function handleSipWebhook(req, res, next) {
       console.log(`Incoming realtime SIP webhook received: ${callId || "missing call_id"}`);
       const business = await loadBusiness();
       const settings = await loadReceptionistSettings();
+      const callSettings = isGoogleVoiceVerificationCall(event)
+        ? { ...settings, verificationMode: true }
+        : settings;
       await saveCallEvent(event);
       if (!settings.enabled) {
         console.warn("AI receptionist is off. Incoming call was logged but not accepted.");
@@ -318,9 +321,9 @@ async function handleSipWebhook(req, res, next) {
         return;
       }
       try {
-        await openAIClient().realtime.calls.accept(callId, callAcceptPayload(business, settings));
+        await openAIClient().realtime.calls.accept(callId, callAcceptPayload(business, callSettings));
         console.log(`Accepted realtime SIP call ${callId}`);
-        monitorRealtimeCall(callId, settings);
+        monitorRealtimeCall(callId, callSettings);
       } catch (acceptError) {
         console.error(`Failed to accept realtime call ${callId}: ${acceptError.message}`);
       }
@@ -334,6 +337,12 @@ async function handleSipWebhook(req, res, next) {
 
 app.post("/openai/sip-webhook", express.raw({ type: "*/*" }), handleSipWebhook);
 app.post("/api/openai/sip-webhook", express.raw({ type: "*/*" }), handleSipWebhook);
+
+function isGoogleVoiceVerificationCall(event) {
+  const headers = event.data?.sip_headers || [];
+  const headerText = headers.map((header) => `${header.name || ""}: ${header.value || ""}`).join("\n");
+  return /\+12024558888\b/.test(headerText);
+}
 
 app.use(express.static(new URL("../web", import.meta.url).pathname));
 

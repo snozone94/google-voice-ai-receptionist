@@ -34,6 +34,11 @@ class CallMonitor {
 
       ws.on("open", () => {
         console.log(`Realtime monitor attached for call ${this.callId}`);
+        if (this.settings.verificationMode) {
+          console.log(`Verification capture mode active for call ${this.callId}; skipping greeting.`);
+          return;
+        }
+
         const greeting = this.settings.greeting || "Thank you for calling DDD. How can I help today?";
         ws.send(
           JSON.stringify({
