@@ -21,8 +21,6 @@ class CallMonitor {
   }
 
   async start() {
-    await new Promise((resolve) => setTimeout(resolve, 750));
-
     return new Promise((resolve) => {
       const ws = new WebSocket(`wss://api.openai.com/v1/realtime?call_id=${encodeURIComponent(this.callId)}`, {
         headers: {
