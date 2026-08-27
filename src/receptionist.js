@@ -401,7 +401,17 @@ export function callAcceptPayload(business, settings = {}) {
     instructions: buildReceptionistInstructions(business, settings),
     tools: receptionistTools(),
     tool_choice: "auto",
+    output_modalities: ["audio"],
+    tracing: "auto",
     audio: {
+      input: {
+        turn_detection: {
+          type: "semantic_vad",
+          eagerness: "high",
+          create_response: true,
+          interrupt_response: true
+        }
+      },
       output: {
         voice: normalizeVoice(settings.voice) || "marin",
         speed: normalizeSpeed(settings.voiceSpeed)

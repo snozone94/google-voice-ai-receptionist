@@ -3,18 +3,19 @@ import { saveBookingRequest, saveCallSummary, saveLead } from "./receptionist.js
 
 const activeMonitors = new Map();
 
-export function monitorRealtimeCall(callId) {
+export function monitorRealtimeCall(callId, settings = {}) {
   if (activeMonitors.has(callId)) return activeMonitors.get(callId);
 
-  const monitor = new CallMonitor(callId);
+  const monitor = new CallMonitor(callId, settings);
   activeMonitors.set(callId, monitor);
   monitor.start().finally(() => activeMonitors.delete(callId));
   return monitor;
 }
 
 class CallMonitor {
-  constructor(callId) {
+  constructor(callId, settings = {}) {
     this.callId = callId;
+    this.settings = settings;
     this.transcript = [];
     this.startedAt = new Date().toISOString();
   }
@@ -32,7 +33,16 @@ class CallMonitor {
       this.ws = ws;
 
       ws.on("open", () => {
-        ws.send(JSON.stringify({ type: "response.create" }));
+        console.log(`Realtime monitor attached for call ${this.callId}`);
+        const greeting = this.settings.greeting || "Thank you for calling DDD. How can I help today?";
+        ws.send(
+          JSON.stringify({
+            type: "response.create",
+            response: {
+              instructions: `Start speaking now. Say exactly: "${greeting}" Then wait for the caller.`
+            }
+          })
+        );
       });
 
       ws.on("message", async (message) => {

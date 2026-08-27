@@ -258,6 +258,7 @@ async function handleSipWebhook(req, res, next) {
 
     if (event.type === "realtime.call.incoming") {
       const callId = event.data?.call_id;
+      console.log(`Incoming realtime SIP webhook received: ${callId || "missing call_id"}`);
       const business = await loadBusiness();
       const settings = await loadReceptionistSettings();
       await saveCallEvent(event);
@@ -274,7 +275,8 @@ async function handleSipWebhook(req, res, next) {
       }
       try {
         await openAIClient().realtime.calls.accept(callId, callAcceptPayload(business, settings));
-        monitorRealtimeCall(callId);
+        console.log(`Accepted realtime SIP call ${callId}`);
+        monitorRealtimeCall(callId, settings);
       } catch (acceptError) {
         console.error(`Failed to accept realtime call ${callId}: ${acceptError.message}`);
       }
