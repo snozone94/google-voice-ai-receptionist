@@ -245,7 +245,7 @@ export async function saveIncomingSms(message) {
 }
 
 export async function listSms(limit = 50) {
-  return readJsonLines(smsPath, limit);
+  return listRecords(smsPath, limit);
 }
 
 export function buildReceptionistInstructions(business, settings = {}) {
