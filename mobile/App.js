@@ -304,6 +304,50 @@ export default function App() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Caller Handling</Text>
           <Field
+            label="Potential new clients and customers"
+            multiline
+            onChangeText={(newClients) =>
+              setSettings((current) => ({
+                ...current,
+                callerFlows: { ...current.callerFlows, newClients }
+              }))
+            }
+            value={settings.callerFlows.newClients}
+          />
+          <Field
+            label="Existing clients and customers"
+            multiline
+            onChangeText={(existingClients) =>
+              setSettings((current) => ({
+                ...current,
+                callerFlows: { ...current.callerFlows, existingClients }
+              }))
+            }
+            value={settings.callerFlows.existingClients}
+          />
+          <Field
+            label="Sales callers"
+            multiline
+            onChangeText={(sales) =>
+              setSettings((current) => ({
+                ...current,
+                callerFlows: { ...current.callerFlows, sales }
+              }))
+            }
+            value={settings.callerFlows.sales}
+          />
+          <Field
+            label="All other callers"
+            multiline
+            onChangeText={(otherCallers) =>
+              setSettings((current) => ({
+                ...current,
+                callerFlows: { ...current.callerFlows, otherCallers }
+              }))
+            }
+            value={settings.callerFlows.otherCallers}
+          />
+          <Field
             label="Qualifying services"
             multiline
             onChangeText={(qualifyingServicesText) =>
@@ -323,6 +367,26 @@ export default function App() {
             onChangeText={(outOfScopeHandling) => setSettings((current) => ({ ...current, outOfScopeHandling }))}
             value={settings.outOfScopeHandling}
           />
+          <View style={styles.statusRow}>
+            <View>
+              <Text style={styles.label}>Short thinking phrases</Text>
+              <Text style={styles.muted}>Adds quick bridges while the receptionist thinks.</Text>
+            </View>
+            <Switch
+              onValueChange={(thinkingSound) =>
+                setSettings((current) => ({
+                  ...current,
+                  soundPreferences: { ...current.soundPreferences, thinkingSound }
+                }))
+              }
+              value={settings.soundPreferences.thinkingSound}
+            />
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Script Preview</Text>
+          <Text style={styles.testOutput}>{buildScriptPreview(settings)}</Text>
         </View>
 
         <ActionButton disabled={saving || loading} label={saving ? "Saving..." : "Save Receptionist"} onPress={saveSettings} />
@@ -364,6 +428,16 @@ const blankSettings = {
   followUpStyle: "",
   outOfScopeHandling: "",
   bookingDestinationsText: "",
+  callerFlows: {
+    newClients: "",
+    existingClients: "",
+    sales: "",
+    otherCallers: ""
+  },
+  soundPreferences: {
+    ambientSound: "none",
+    thinkingSound: true
+  },
   voiceOptions: []
 };
 
@@ -479,6 +553,14 @@ function toFormSettings(settings) {
     voiceSpeed: Number(settings.voiceSpeed || 1),
     qualifyingServicesText: (settings.qualifyingServices || []).join("\n"),
     bookingDestinationsText: formatBookingDestinations(settings.bookingDestinations || []),
+    callerFlows: {
+      ...blankSettings.callerFlows,
+      ...(settings.callerFlows || {})
+    },
+    soundPreferences: {
+      ...blankSettings.soundPreferences,
+      ...(settings.soundPreferences || {})
+    },
     voiceOptions: settings.voiceOptions || []
   };
 }
@@ -500,6 +582,8 @@ function fromFormSettings(settings) {
     qualifyingServices: settings.qualifyingServicesText,
     followUpStyle: settings.followUpStyle,
     outOfScopeHandling: settings.outOfScopeHandling,
+    callerFlows: settings.callerFlows,
+    soundPreferences: settings.soundPreferences,
     bookingDestinations: parseBookingDestinations(settings.bookingDestinationsText)
   };
 }
@@ -524,6 +608,32 @@ function parseBookingDestinations(value) {
 
 function clampSpeed(value) {
   return Math.min(1.5, Math.max(0.5, Math.round(Number(value) * 100) / 100));
+}
+
+function buildScriptPreview(settings) {
+  return [
+    settings.enabled ? "AI answers new calls." : "AI is paused.",
+    `Voice: ${settings.voice}`,
+    `Speed: ${Number(settings.voiceSpeed || 1).toFixed(2)}x`,
+    `Greeting: ${settings.greeting || "Thank you for calling DDD, this is the receptionist. How can I help today?"}`,
+    "",
+    "Business knowledge:",
+    settings.businessKnowledge || "Add DDD business details here.",
+    "",
+    `Service area: ${settings.serviceArea || "Greater Cincinnati and nearby service areas."}`,
+    `Pricing rules: ${settings.pricingNotes || "Do not quote exact pricing unless added here."}`,
+    `Emergency: ${settings.emergencyInstructions || "Collect safety, location, vehicle, and callback number."}`,
+    `Apply-to-work: ${settings.applyInstructions || "Collect applicant details and share the apply link."}`,
+    "",
+    "Caller handling:",
+    `New: ${settings.callerFlows.newClients || "Qualify and collect booking details."}`,
+    `Existing: ${settings.callerFlows.existingClients || "Collect appointment or job details."}`,
+    `Sales: ${settings.callerFlows.sales || "Take a message without committing."}`,
+    `Other: ${settings.callerFlows.otherCallers || "Collect caller info and reason."}`,
+    "",
+    "DDD links:",
+    settings.bookingDestinationsText || "Add booking, mobile app, Auto Doc, main site, and apply links."
+  ].join("\n");
 }
 
 const styles = StyleSheet.create({
