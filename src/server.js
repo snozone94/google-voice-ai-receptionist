@@ -279,6 +279,7 @@ app.post("/api/webrtc-offer", requireOpenAIKey, express.text({ type: "*/*", limi
 
 async function handleSipWebhook(req, res, next) {
   try {
+    console.log(`OpenAI webhook HTTP hit: ${req.method} ${req.originalUrl || req.url}`);
     if (!process.env.OPENAI_API_KEY) {
       res.status(500).send("OPENAI_API_KEY is required for SIP webhooks.");
       return;
