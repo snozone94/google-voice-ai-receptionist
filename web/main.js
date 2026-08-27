@@ -40,6 +40,9 @@ const ambientSoundSelect = document.querySelector("#ambientSoundSelect");
 const thinkingSoundToggle = document.querySelector("#thinkingSoundToggle");
 const smsFollowUpToggle = document.querySelector("#smsFollowUpToggle");
 const smsFollowUpMessageInput = document.querySelector("#smsFollowUpMessageInput");
+const reviewFollowUpToggle = document.querySelector("#reviewFollowUpToggle");
+const reviewFollowUpUrlInput = document.querySelector("#reviewFollowUpUrlInput");
+const reviewFollowUpMessageInput = document.querySelector("#reviewFollowUpMessageInput");
 const customInstructionsInput = document.querySelector("#customInstructionsInput");
 const scriptPreview = document.querySelector("#scriptPreview");
 const testCallerInput = document.querySelector("#testCallerInput");
@@ -155,6 +158,11 @@ async function loadSettings() {
   smsFollowUpMessageInput.value =
     settings.smsFollowUp?.message ||
     "Thanks for calling DDD. Here is the best next link for your request: {{link}}. The DDD team will follow up if anything else is needed.";
+  reviewFollowUpToggle.checked = settings.reviewFollowUp?.enabled !== false;
+  reviewFollowUpUrlInput.value = settings.reviewFollowUp?.url || "https://g.page/r/CfVinSqxHOIDEAE/review";
+  reviewFollowUpMessageInput.value =
+    settings.reviewFollowUp?.message ||
+    "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}";
   customInstructionsInput.value = settings.customInstructions || "";
   isLoadingSettings = false;
   setEditMode(editMode);
@@ -214,6 +222,11 @@ async function saveSettings(reason = "auto") {
         smsFollowUp: {
           enabled: smsFollowUpToggle.checked,
           message: smsFollowUpMessageInput.value
+        },
+        reviewFollowUp: {
+          enabled: reviewFollowUpToggle.checked,
+          url: reviewFollowUpUrlInput.value,
+          message: reviewFollowUpMessageInput.value
         },
         customInstructions: customInstructionsInput.value
       })
@@ -292,6 +305,9 @@ for (const input of [
   thinkingSoundToggle,
   smsFollowUpToggle,
   smsFollowUpMessageInput,
+  reviewFollowUpToggle,
+  reviewFollowUpUrlInput,
+  reviewFollowUpMessageInput,
   customInstructionsInput
 ]) {
   input.addEventListener("input", handleSettingsChange);
@@ -343,6 +359,9 @@ function setEditMode(nextEditMode) {
     thinkingSoundToggle,
     smsFollowUpToggle,
     smsFollowUpMessageInput,
+    reviewFollowUpToggle,
+    reviewFollowUpUrlInput,
+    reviewFollowUpMessageInput,
     customInstructionsInput
   ]) {
     input.disabled = !editMode;
@@ -420,6 +439,7 @@ function updateScriptPreview() {
     `Follow-up: ${followUpStyleInput.value || "Share booking link or save a callback message."}`,
     `Sound: ${ambientSoundSelect.value || "none"}; thinking phrases ${thinkingSoundToggle.checked ? "on" : "off"}.`,
     `SMS follow-up: ${smsFollowUpToggle.checked ? "on" : "off"}. ${smsFollowUpMessageInput.value || "Text the best DDD link after permission."}`,
+    `Google review follow-up: ${reviewFollowUpToggle.checked ? "on" : "off"}. ${reviewFollowUpMessageInput.value || "Ask for a Google review after completed jobs."} ${reviewFollowUpUrlInput.value || ""}`.trim(),
     "",
     "Behavior:",
     customInstructionsInput.value || "Tell the receptionist exactly how to handle callers."

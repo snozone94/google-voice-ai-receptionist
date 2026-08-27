@@ -46,6 +46,11 @@
     "askPermission": true,
     "message": "Thanks for calling DDD. Your request was received. Use this link for the best next step or booking status: {{link}}. Reply here if anything changes."
   },
+  "reviewFollowUp": {
+    "enabled": true,
+    "url": "https://g.page/r/CfVinSqxHOIDEAE/review",
+    "message": "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}"
+  },
   "soundPreferences": {
     "ambientSound": "none",
     "thinkingSound": true

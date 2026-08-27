@@ -42,6 +42,9 @@ const defaultApplyInstructions =
   "For work, contractor, technician, or job-interest calls, collect name, phone, email, role or service type, experience, and location, then direct them to the DDD apply to work link.";
 const defaultSmsFollowUpText =
   "Thanks for calling {{business}}. Here is the best next link for your request: {{link}}. The DDD team will follow up if anything else is needed.";
+const defaultReviewFollowUpUrl = "https://g.page/r/CfVinSqxHOIDEAE/review";
+const defaultReviewFollowUpText =
+  "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}";
 const defaultVoiceDirection =
   "Warm, confident, friendly receptionist. Natural phone cadence, clear pronunciation, and not robotic.";
 const defaultCallerFlows = {
@@ -169,6 +172,7 @@ export async function saveReceptionistSettings(settings) {
         humanHandoffRules: next.humanHandoffRules,
         applyInstructions: next.applyInstructions,
         smsFollowUp: next.smsFollowUp,
+        reviewFollowUp: next.reviewFollowUp,
         callerFlows: next.callerFlows,
         qualifyingServices: next.qualifyingServices,
         outOfScopeHandling: next.outOfScopeHandling,
@@ -441,6 +445,11 @@ SMS follow-up:
 - When calling save_lead or save_booking_request, set smsConsent to true only if the caller clearly agreed to receive the text.
 - If SMS delivery is not connected yet, still save the caller's phone number and best next link.
 
+Google review follow-up:
+- After DDD finishes a job, the follow-up text should be: ${activeSettings.reviewFollowUp.message}
+- Google review link: ${activeSettings.reviewFollowUp.url}
+- Do not ask for a review before service is completed.
+
 Booking, app, and apply destinations:
 ${activeSettings.bookingDestinations.map((destination) => `- ${destination.label}: ${destination.url}\n  Use when: ${destination.useWhen}`).join("\n")}
 
@@ -660,6 +669,7 @@ function normalizeSettings(settings = {}) {
     humanHandoffRules: cleanLongText(settings.humanHandoffRules, defaultHumanHandoffRules, 1200),
     applyInstructions: cleanLongText(settings.applyInstructions, defaultApplyInstructions, 1200),
     smsFollowUp: normalizeSmsFollowUp(settings.smsFollowUp),
+    reviewFollowUp: normalizeReviewFollowUp(settings.reviewFollowUp),
     callerFlows: normalizeCallerFlows(settings.callerFlows),
     qualifyingServices: normalizeTextList(settings.qualifyingServices, defaultQualifyingServices, 12, 80),
     outOfScopeHandling: cleanLongText(
@@ -828,7 +838,7 @@ export function buildDryRun(settings = {}, callerMessage = "") {
         : "Action: once name, callback number, service, location, vehicle, timing, and SMS permission are collected, create the booking during the call and share the returned status link.",
       destination ? `Best next link: ${destination.label} - ${destination.url}` : "Best next link: use the main DDD booking option if one applies.",
       activeSettings.smsFollowUp.enabled
-        ? `SMS follow-up: ask permission, then text "${renderSmsTemplate(activeSettings.smsFollowUp.message, destination)}"`
+        ? `SMS follow-up: ask permission, then text "${renderSmsTemplate(activeSettings.smsFollowUp.message, destination, activeSettings)}"`
         : "SMS follow-up: off"
     ].join("\n\n"),
     questions,
@@ -923,6 +933,14 @@ function normalizeSmsFollowUp(value = {}) {
   };
 }
 
+function normalizeReviewFollowUp(value = {}) {
+  return {
+    enabled: value.enabled !== false,
+    url: cleanText(value.url || defaultReviewFollowUpUrl, defaultReviewFollowUpUrl, 500),
+    message: cleanLongText(value.message, defaultReviewFollowUpText, 500)
+  };
+}
+
 function normalizeBookingDestinations(value = {}) {
   const list = Array.isArray(value) ? value : defaultBookingDestinations;
   const normalized = list
@@ -974,7 +992,7 @@ async function sendOptionalSmsFollowUp(record, type) {
     type === "booking_request" && record.customerStatusUrl
       ? { label: "DDD booking status", url: record.customerStatusUrl, useWhen: "Customer booking created by the AI receptionist." }
       : destination;
-  const message = renderSmsTemplate(settings.smsFollowUp.message, followUpDestination);
+  const message = renderSmsTemplate(settings.smsFollowUp.message, followUpDestination, settings);
   const delivery = await sendConfiguredSms(record.phone, message);
   await postOptionalWebhook(process.env.SMS_FOLLOWUP_WEBHOOK_URL, {
     type,
@@ -986,10 +1004,12 @@ async function sendOptionalSmsFollowUp(record, type) {
   });
 }
 
-function renderSmsTemplate(template, destination) {
+function renderSmsTemplate(template, destination, settings = {}) {
   const fallbackLink = destination?.url || process.env.BOOKING_URL || "";
+  const reviewLink = settings.reviewFollowUp?.url || defaultReviewFollowUpUrl;
   return String(template || defaultSmsFollowUpText)
     .replaceAll("{{link}}", fallbackLink)
+    .replaceAll("{{reviewLink}}", reviewLink)
     .replaceAll("{{business}}", "DDD")
     .replace(/\s+/g, " ")
     .trim();
