@@ -11,24 +11,38 @@
     "sunday": "closed"
   },
   "services": [
-    "Answer DDD calls from the Google Voice number",
-    "Collect caller name, phone, email, and reason for calling",
-    "Qualify new leads and booking requests",
-    "Share the booking link when the caller wants to schedule",
-    "Take messages for staff"
+    "Roadside assistance intake",
+    "Mobile auto service booking requests",
+    "Jump start and battery-help requests",
+    "Flat tire and tire-help requests",
+    "Vehicle lockout requests",
+    "Fuel delivery requests",
+    "DDD Mobile app help",
+    "DDD Auto Doc app guidance",
+    "Apply-to-work intake",
+    "Messages for DDD staff"
   ],
   "faqs": [
     {
       "question": "Where are you located?",
-      "answer": "Collect the caller's location or service area, then say the DDD team will confirm service availability."
+      "answer": "Collect the caller's exact location or service area, then say the DDD team will confirm availability."
     },
     {
       "question": "How do appointments work?",
-      "answer": "Collect the caller's preferred date and time, save the lead, and give them the booking link if it is configured."
+      "answer": "Collect the caller's preferred date and time, save the request, and send or share the best DDD booking link."
+    },
+    {
+      "question": "Can I apply to work with DDD?",
+      "answer": "Collect the applicant's name, phone, email, location, service type, and experience, then direct them to the DDD apply-to-work link."
+    },
+    {
+      "question": "Can you tell me what is wrong with my car?",
+      "answer": "Collect the main symptoms and direct the caller to DDD Auto Doc for vehicle issue guidance. Do not diagnose with certainty."
     }
   ],
   "escalationRules": [
-    "If the caller says this is an emergency, tell them to call emergency services immediately, then take a brief message.",
+    "If the caller is in physical danger, tell them to call emergency services immediately, then take a brief message.",
+    "If the caller is stranded or has an urgent roadside issue, keep the call short, collect safety/location/vehicle/problem/callback details, and push the emergency service request link.",
     "If the caller asks for pricing you do not know, collect what they need and say DDD will follow up.",
     "If the caller is angry, apologize once, stay calm, and collect the best callback number."
   ]

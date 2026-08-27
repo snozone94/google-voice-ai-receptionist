@@ -9,6 +9,7 @@ const summariesList = document.querySelector("#summariesList");
 const bookingsList = document.querySelector("#bookingsList");
 const setupList = document.querySelector("#setupList");
 const webhookUrl = document.querySelector("#webhookUrl");
+const adminPinInput = document.querySelector("#adminPinInput");
 const enabledToggle = document.querySelector("#enabledToggle");
 const voiceSelect = document.querySelector("#voiceSelect");
 const voiceSpeedInput = document.querySelector("#voiceSpeedInput");
@@ -19,9 +20,13 @@ const voicePreviewAudio = document.querySelector("#voicePreviewAudio");
 const greetingInput = document.querySelector("#greetingInput");
 const businessKnowledgeInput = document.querySelector("#businessKnowledgeInput");
 const serviceAreaInput = document.querySelector("#serviceAreaInput");
+const offeredServicesInput = document.querySelector("#offeredServicesInput");
+const notOfferedServicesInput = document.querySelector("#notOfferedServicesInput");
 const pricingNotesInput = document.querySelector("#pricingNotesInput");
 const emergencyInstructionsInput = document.querySelector("#emergencyInstructionsInput");
+const emergencyQuestionsInput = document.querySelector("#emergencyQuestionsInput");
 const humanHandoffRulesInput = document.querySelector("#humanHandoffRulesInput");
+const afterHoursInstructionsInput = document.querySelector("#afterHoursInstructionsInput");
 const applyInstructionsInput = document.querySelector("#applyInstructionsInput");
 const bookingDestinationsInput = document.querySelector("#bookingDestinationsInput");
 const qualifyingServicesInput = document.querySelector("#qualifyingServicesInput");
@@ -64,6 +69,7 @@ let isLoadingSettings = false;
 let conversations = [];
 let selectedConversationPhone = "";
 
+adminPinInput.value = localStorage.getItem("dddStaffPin") || "";
 staffPinInput.value = localStorage.getItem("dddStaffPin") || "";
 staffNameInput.value = localStorage.getItem("dddStaffName") || "";
 
@@ -127,9 +133,13 @@ async function loadSettings() {
   greetingInput.value = settings.greeting || "";
   businessKnowledgeInput.value = settings.businessKnowledge || "";
   serviceAreaInput.value = settings.serviceArea || "";
+  offeredServicesInput.value = settings.offeredServices || "";
+  notOfferedServicesInput.value = settings.notOfferedServices || "";
   pricingNotesInput.value = settings.pricingNotes || "";
   emergencyInstructionsInput.value = settings.emergencyInstructions || "";
+  emergencyQuestionsInput.value = (settings.emergencyQuestions || []).join("\n");
   humanHandoffRulesInput.value = settings.humanHandoffRules || "";
+  afterHoursInstructionsInput.value = settings.afterHoursInstructions || "";
   applyInstructionsInput.value = settings.applyInstructions || "";
   bookingDestinationsInput.value = formatBookingDestinations(settings.bookingDestinations || []);
   qualifyingServicesInput.value = (settings.qualifyingServices || []).join("\n");
@@ -170,7 +180,7 @@ async function saveSettings(reason = "auto") {
   try {
     const response = await fetch("/api/settings", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...adminHeaders() },
       body: JSON.stringify({
         enabled: enabledToggle.checked,
         voice: voiceSelect.value,
@@ -179,9 +189,13 @@ async function saveSettings(reason = "auto") {
         greeting: greetingInput.value,
         businessKnowledge: businessKnowledgeInput.value,
         serviceArea: serviceAreaInput.value,
+        offeredServices: offeredServicesInput.value,
+        notOfferedServices: notOfferedServicesInput.value,
         pricingNotes: pricingNotesInput.value,
         emergencyInstructions: emergencyInstructionsInput.value,
+        emergencyQuestions: emergencyQuestionsInput.value,
         humanHandoffRules: humanHandoffRulesInput.value,
+        afterHoursInstructions: afterHoursInstructionsInput.value,
         applyInstructions: applyInstructionsInput.value,
         bookingDestinations: parseBookingDestinations(bookingDestinationsInput.value),
         qualifyingServices: qualifyingServicesInput.value,
@@ -206,7 +220,7 @@ async function saveSettings(reason = "auto") {
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || "Could not save receptionist settings.");
+      throw new Error(response.status === 403 ? "Enter the admin PIN before saving settings." : error.error || "Could not save receptionist settings.");
     }
     await loadSettings();
     settingsStatus.textContent = enabledToggle.checked
@@ -258,9 +272,13 @@ for (const input of [
   greetingInput,
   businessKnowledgeInput,
   serviceAreaInput,
+  offeredServicesInput,
+  notOfferedServicesInput,
   pricingNotesInput,
   emergencyInstructionsInput,
+  emergencyQuestionsInput,
   humanHandoffRulesInput,
+  afterHoursInstructionsInput,
   applyInstructionsInput,
   bookingDestinationsInput,
   qualifyingServicesInput,
@@ -305,9 +323,13 @@ function setEditMode(nextEditMode) {
     greetingInput,
     businessKnowledgeInput,
     serviceAreaInput,
+    offeredServicesInput,
+    notOfferedServicesInput,
     pricingNotesInput,
     emergencyInstructionsInput,
+    emergencyQuestionsInput,
     humanHandoffRulesInput,
+    afterHoursInstructionsInput,
     applyInstructionsInput,
     bookingDestinationsInput,
     qualifyingServicesInput,
@@ -372,9 +394,14 @@ function updateScriptPreview() {
     businessKnowledgeInput.value || "Add DDD services, prices, service areas, hours, policies, and answers here.",
     "",
     `Service area: ${serviceAreaInput.value || "Greater Cincinnati and nearby service areas."}`,
+    `Services offered: ${offeredServicesInput.value || "Roadside assistance, mobile auto service, app help, Auto Doc, and apply-to-work questions."}`,
+    `Do not promise: ${notOfferedServicesInput.value || "No exact pricing, exact arrival times, or services DDD has not confirmed."}`,
     `Pricing rules: ${pricingNotesInput.value || "Do not quote exact pricing unless added here."}`,
     `Emergency handling: ${emergencyInstructionsInput.value || "Confirm safety, location, vehicle, callback number, and urgent link."}`,
+    "Emergency questions:",
+    emergencyQuestionsInput.value || "Are you in a safe place right now?\nWhat is your exact location?\nWhat vehicle are you with?\nWhat happened?\nWhat is the best callback number?",
     `Human handoff: ${humanHandoffRulesInput.value || "Save details; do not promise a live transfer."}`,
+    `After-hours: ${afterHoursInstructionsInput.value || "Collect the message and say the team will follow up as soon as possible."}`,
     `Apply-to-work: ${applyInstructionsInput.value || "Collect applicant details and share the apply link."}`,
     "",
     "Booking, app, and apply options:",
@@ -438,7 +465,7 @@ function renderList(element, records, emptyMessage, formatter) {
 }
 
 function adminHeaders() {
-  const pin = staffPinInput.value.trim();
+  const pin = adminPinInput.value.trim() || staffPinInput.value.trim();
   return pin ? { "x-admin-pin": pin } : {};
 }
 
@@ -558,7 +585,17 @@ refreshInboxButton.addEventListener("click", () => {
   refreshInbox().catch((error) => setInboxStatus(error.message));
 });
 
+adminPinInput.addEventListener("change", () => {
+  const pin = adminPinInput.value.trim();
+  localStorage.setItem("dddStaffPin", pin);
+  staffPinInput.value = pin;
+  refreshInbox().catch((error) => setInboxStatus(error.message));
+});
+
 staffPinInput.addEventListener("change", () => {
+  const pin = staffPinInput.value.trim();
+  localStorage.setItem("dddStaffPin", pin);
+  adminPinInput.value = pin;
   refreshInbox().catch((error) => setInboxStatus(error.message));
 });
 

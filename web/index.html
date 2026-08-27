@@ -29,6 +29,10 @@
           <button id="saveSettingsButton" type="button">Save now</button>
         </div>
         <div class="settings-grid">
+          <label>
+            Admin PIN
+            <input id="adminPinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Enter PIN before editing" />
+          </label>
           <label class="switch-row">
             <input id="enabledToggle" type="checkbox" />
             <span>AI receptionist answers calls</span>
@@ -66,6 +70,14 @@
               <textarea id="serviceAreaInput" rows="4" maxlength="900"></textarea>
             </label>
             <label>
+              Services DDD offers
+              <textarea id="offeredServicesInput" rows="4" maxlength="1400"></textarea>
+            </label>
+            <label>
+              Do not offer / do not promise
+              <textarea id="notOfferedServicesInput" rows="4" maxlength="1400"></textarea>
+            </label>
+            <label>
               Pricing rules
               <textarea id="pricingNotesInput" rows="4" maxlength="1200"></textarea>
             </label>
@@ -74,8 +86,16 @@
               <textarea id="emergencyInstructionsInput" rows="4" maxlength="1200"></textarea>
             </label>
             <label>
+              Emergency questions
+              <textarea id="emergencyQuestionsInput" rows="5" maxlength="1200" placeholder="One question per line"></textarea>
+            </label>
+            <label>
               Human handoff rules
               <textarea id="humanHandoffRulesInput" rows="4" maxlength="1200"></textarea>
+            </label>
+            <label>
+              After-hours handling
+              <textarea id="afterHoursInstructionsInput" rows="4" maxlength="900"></textarea>
             </label>
             <label>
               Apply-to-work handling
@@ -157,7 +177,7 @@
           </label>
           <div class="test-box">
             <label>
-              Free receptionist test
+              Free receptionist test, no phone call
               <textarea id="testCallerInput" rows="4" placeholder="Example: I have a flat tire and need help now"></textarea>
             </label>
             <button id="testScriptButton" type="button">Run free test</button>

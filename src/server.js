@@ -96,6 +96,10 @@ app.get("/api/settings", async (_req, res, next) => {
 
 app.post("/api/settings", express.json(), async (req, res, next) => {
   try {
+    if (!hasAdminAccess(req)) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
     res.json(await saveReceptionistSettings(req.body || {}));
   } catch (error) {
     res.status(400).json({ ok: false, error: error.message });

@@ -27,14 +27,14 @@ export const voiceOptions = [
 const supportedVoiceIds = new Set(voiceOptions.map((voice) => voice.id));
 const defaultGreeting = "Thank you for calling DDD, this is the receptionist. How can I help today?";
 const defaultCustomInstructions =
-  "Act like a polished front desk receptionist. Be warm, concise, collect the caller's details, and help them book or leave a clear message.";
+  "Act like a polished front desk receptionist. Be warm, direct, and fast. Do not keep emergency callers on the phone longer than needed. Collect the key details, point them to the right DDD link, and save a clear next step.";
 const defaultBusinessKnowledge =
-  "DDD helps callers with booking requests, service questions, and messages for the team. If pricing, exact availability, or service-area details are unknown, collect the caller's details and say the team will confirm.";
+  "DDD Mobile Auto Doc helps drivers with roadside/mobile auto service requests, booking, DDD app links, vehicle issue guidance, and work/applicant questions. The receptionist should push callers toward the correct dddcincy.com option instead of holding long conversations. If pricing, exact availability, or service-area details are unknown, collect details and say the DDD team will confirm.";
 const defaultServiceArea = "Greater Cincinnati and nearby service areas DDD confirms case by case.";
 const defaultPricingNotes =
   "Do not quote exact prices unless the admin has added them. Collect job details and say the DDD team will confirm the final price.";
 const defaultEmergencyInstructions =
-  "For stranded or urgent roadside callers, first ask if they are in a safe location, collect their exact location and callback number, then direct them to the emergency service request option.";
+  "For stranded or urgent roadside callers, be extremely brief. Ask if they are safe, get exact location, vehicle year/make/model, what happened, callback number, and whether they can receive a text. Then direct them to the emergency service request option and save the lead.";
 const defaultHumanHandoffRules =
   "Do not promise a live transfer. Save the caller's details and tell them the DDD team will follow up as soon as possible.";
 const defaultApplyInstructions =
@@ -45,7 +45,7 @@ const defaultVoiceDirection =
   "Warm, confident, friendly receptionist. Natural phone cadence, clear pronunciation, and not robotic.";
 const defaultCallerFlows = {
   newClients:
-    "Qualify the service needed, collect name, callback number, location, urgency, and preferred time. End by saving a lead or booking request and sharing the booking link.",
+    "Quickly qualify the service needed, collect name, callback number, location, urgency, vehicle details if relevant, and preferred time. End by saving a lead or booking request and sharing the best DDD link.",
   existingClients:
     "Collect name, callback number, existing appointment or job details, and what they need changed or answered. Save a clear message for follow-up.",
   sales:
@@ -53,7 +53,33 @@ const defaultCallerFlows = {
   otherCallers:
     "Collect who they are, callback number, reason for calling, and the best next step. Keep it brief and professional."
 };
-const defaultQualifyingServices = ["Roadside assistance", "Maintenance/repair", "Existing appointment"];
+const defaultQualifyingServices = [
+  "Roadside assistance",
+  "Mobile auto service",
+  "Battery or jump start",
+  "Flat tire or tire help",
+  "Lockout",
+  "Fuel delivery",
+  "Maintenance or repair",
+  "Existing appointment",
+  "DDD Mobile app help",
+  "DDD Auto Doc app help",
+  "Apply to work with DDD"
+];
+const defaultEmergencyQuestions = [
+  "Are you in a safe place right now?",
+  "What is your exact location or nearest cross street?",
+  "What is the vehicle year, make, and model?",
+  "What happened?",
+  "What is the best callback number?",
+  "Can DDD text you the best link?"
+];
+const defaultOfferedServices =
+  "Roadside assistance, mobile auto service, jump starts, lockouts, tire help, fuel delivery, basic mobile maintenance/repair requests, DDD Mobile app help, DDD Auto Doc guidance, and apply-to-work questions.";
+const defaultNotOfferedServices =
+  "Do not promise towing, exact arrival times, exact pricing, dealership-level repairs, or emergency medical/police help unless DDD explicitly adds those services.";
+const defaultAfterHoursInstructions =
+  "If DDD is closed or availability is unclear, still collect the message and push the right link. Say the team will follow up as soon as possible.";
 const defaultSoundPreferences = {
   ambientSound: "none",
   thinkingSound: true
@@ -135,6 +161,10 @@ export async function saveReceptionistSettings(settings) {
         serviceArea: next.serviceArea,
         pricingNotes: next.pricingNotes,
         emergencyInstructions: next.emergencyInstructions,
+        emergencyQuestions: next.emergencyQuestions,
+        offeredServices: next.offeredServices,
+        notOfferedServices: next.notOfferedServices,
+        afterHoursInstructions: next.afterHoursInstructions,
         humanHandoffRules: next.humanHandoffRules,
         applyInstructions: next.applyInstructions,
         smsFollowUp: next.smsFollowUp,
@@ -353,6 +383,10 @@ Intake flow:
 - For pricing questions, gather the job details and say the DDD team will confirm the price.
 - For existing customers, collect their name, callback number, and what appointment or job they are calling about.
 - Before ending, summarize the message in one sentence and confirm the next step.
+- Do not turn intake into a long interview. Get the minimum useful details, then move the caller to the link or saved callback.
+
+Emergency intake questions, in order:
+${activeSettings.emergencyQuestions.map((question, index) => `${index + 1}. ${question}`).join("\n")}
 
 Caller routing:
 - Potential new clients and customers: ${activeSettings.callerFlows.newClients}
@@ -401,6 +435,12 @@ ${Object.entries(business.hours).map(([day, hours]) => `- ${day}: ${hours}`).joi
 Services you can provide:
 ${business.services.map((service) => `- ${service}`).join("\n")}
 
+Admin offered services:
+${activeSettings.offeredServices}
+
+Admin not-offered / do-not-promise services:
+${activeSettings.notOfferedServices}
+
 FAQs:
 ${business.faqs.map((faq) => `- Q: ${faq.question}\n  A: ${faq.answer}`).join("\n")}
 
@@ -409,6 +449,9 @@ ${activeSettings.businessKnowledge}
 
 Service area:
 ${activeSettings.serviceArea}
+
+After-hours handling:
+${activeSettings.afterHoursInstructions}
 
 Pricing rules:
 ${activeSettings.pricingNotes}
@@ -584,6 +627,10 @@ function normalizeSettings(settings = {}) {
     serviceArea: cleanLongText(settings.serviceArea, defaultServiceArea, 900),
     pricingNotes: cleanLongText(settings.pricingNotes, defaultPricingNotes, 1200),
     emergencyInstructions: cleanLongText(settings.emergencyInstructions, defaultEmergencyInstructions, 1200),
+    emergencyQuestions: normalizeTextList(settings.emergencyQuestions, defaultEmergencyQuestions, 10, 140),
+    offeredServices: cleanLongText(settings.offeredServices, defaultOfferedServices, 1400),
+    notOfferedServices: cleanLongText(settings.notOfferedServices, defaultNotOfferedServices, 1400),
+    afterHoursInstructions: cleanLongText(settings.afterHoursInstructions, defaultAfterHoursInstructions, 900),
     humanHandoffRules: cleanLongText(settings.humanHandoffRules, defaultHumanHandoffRules, 1200),
     applyInstructions: cleanLongText(settings.applyInstructions, defaultApplyInstructions, 1200),
     smsFollowUp: normalizeSmsFollowUp(settings.smsFollowUp),
@@ -610,11 +657,12 @@ export function buildDryRun(settings = {}, callerMessage = "") {
   const message = String(callerMessage || "").toLowerCase();
   const destination = chooseDestination(activeSettings.bookingDestinations, message);
   const intent = classifyIntent(message);
-  const questions = intent === "emergency"
-    ? ["Are you in a safe place right now?", "What is your exact location?", "What vehicle are you with, and what happened?", "What is the best callback number?"]
-    : intent === "apply"
-      ? ["What kind of DDD work are you applying for?", "What experience do you have?", "What is your best callback number and email?"]
-      : ["What service do you need?", "What is your name and best callback number?", "Where are you located?", "What date or time works best?"];
+  const questions =
+    intent === "emergency"
+      ? activeSettings.emergencyQuestions.slice(0, 6)
+      : intent === "apply"
+        ? ["What kind of DDD work are you applying for?", "What experience do you have?", "What is your best callback number and email?"]
+        : ["What service do you need?", "What is your name and best callback number?", "Where are you located?", "What date or time works best?"];
 
   return {
     intent,
@@ -773,13 +821,13 @@ async function sendOptionalSmsFollowUp(record, type) {
     `${record.reason || ""} ${record.serviceType || ""} ${record.nextStep || ""}`
   );
   const message = renderSmsTemplate(settings.smsFollowUp.message, destination);
-  const voipmsResult = await sendVoipMsSms(record.phone, message);
+  const delivery = await sendConfiguredSms(record.phone, message);
   await postOptionalWebhook(process.env.SMS_FOLLOWUP_WEBHOOK_URL, {
     type,
     to: record.phone,
     message,
     destination,
-    delivery: voipmsResult,
+    delivery,
     record
   });
 }
@@ -791,6 +839,64 @@ function renderSmsTemplate(template, destination) {
     .replaceAll("{{business}}", "DDD")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+async function sendConfiguredSms(to, message) {
+  const twilioResult = await sendTwilioSms(to, message);
+  if (!twilioResult.skipped) {
+    await saveOutgoingSms({
+      to,
+      from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
+      body: message,
+      messageSid: twilioResult.sid || "",
+      status: twilioResult.status || (twilioResult.ok ? "sent" : "failed"),
+      agentName: "AI receptionist"
+    });
+    return twilioResult;
+  }
+  return sendVoipMsSms(to, message);
+}
+
+async function sendTwilioSms(to, message) {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const from = normalizeE164(process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER);
+  const normalizedTo = normalizeE164(to);
+  if (!accountSid || !authToken || !from || !normalizedTo) {
+    return { ok: false, skipped: true, reason: "Twilio SMS API is not configured." };
+  }
+
+  const body = new URLSearchParams({
+    From: from,
+    To: normalizedTo,
+    Body: String(message || "").slice(0, 1000)
+  });
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`,
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body
+  });
+  const payload = await response.json().catch(async () => ({
+    message: await response.text().catch(() => "Twilio returned an unreadable response.")
+  }));
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: payload.status || response.status,
+      error: payload.message || "Twilio SMS failed.",
+      code: payload.code
+    };
+  }
+  return {
+    ok: true,
+    sid: payload.sid,
+    status: payload.status,
+    to: payload.to,
+    from: payload.from
+  };
 }
 
 async function sendVoipMsSms(to, message) {
@@ -829,6 +935,13 @@ async function sendVoipMsSms(to, message) {
 function normalizePhoneForSms(value) {
   const digits = String(value || "").replace(/\D/g, "");
   return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+}
+
+function normalizeE164(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return "";
 }
 
 function normalizeConversationPhone(value) {
