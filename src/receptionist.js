@@ -7,6 +7,7 @@ const leadsPath = path.join(root, "data", "leads.jsonl");
 const callsPath = path.join(root, "data", "calls.jsonl");
 const summariesPath = path.join(root, "data", "summaries.jsonl");
 const bookingsPath = path.join(root, "data", "bookings.jsonl");
+const smsPath = path.join(root, "data", "sms.jsonl");
 const settingsPath = path.join(root, "data", "settings.json");
 const dataDir = path.join(root, "data");
 
@@ -228,6 +229,23 @@ export async function saveCallEvent(event) {
   await ensureDataDir();
   await fs.appendFile(callsPath, `${JSON.stringify(record)}\n`);
   return record;
+}
+
+export async function saveIncomingSms(message) {
+  const record = {
+    createdAt: new Date().toISOString(),
+    from: cleanText(message.From || message.from, "", 40),
+    to: cleanText(message.To || message.to, "", 40),
+    body: cleanLongText(message.Body || message.body, "", 2000),
+    messageSid: cleanText(message.MessageSid || message.SmsSid || "", "", 80)
+  };
+  await ensureDataDir();
+  await fs.appendFile(smsPath, `${JSON.stringify(record)}\n`);
+  return record;
+}
+
+export async function listSms(limit = 50) {
+  return readJsonLines(smsPath, limit);
 }
 
 export function buildReceptionistInstructions(business, settings = {}) {

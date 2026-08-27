@@ -4,6 +4,7 @@ import OpenAI from "openai";
 import {
   callAcceptPayload,
   listCalls,
+  listSms,
   listBookings,
   listLeads,
   listSummaries,
@@ -12,6 +13,7 @@ import {
   buildDryRun,
   normalizeVoice,
   saveCallEvent,
+  saveIncomingSms,
   saveBookingRequest,
   saveLead,
   saveReceptionistSettings
@@ -94,6 +96,35 @@ app.post("/api/settings", express.json(), async (req, res, next) => {
     res.json(await saveReceptionistSettings(req.body || {}));
   } catch (error) {
     res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+app.post("/api/twilio/sms", express.urlencoded({ extended: false }), async (req, res, next) => {
+  try {
+    if (!hasTwilioSmsAccess(req)) {
+      res.status(403).send("Forbidden");
+      return;
+    }
+
+    const record = await saveIncomingSms(req.body || {});
+    console.log(`Inbound Twilio SMS stored from ${record.from || "unknown"} to ${record.to || "unknown"}`);
+    res.type("text/xml").send("<Response></Response>");
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/sms", async (req, res, next) => {
+  try {
+    if (!hasTwilioSmsAccess(req)) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    res.json({ sms: await listSms(limit) });
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -342,6 +373,12 @@ function isGoogleVoiceVerificationCall(event) {
   const headers = event.data?.sip_headers || [];
   const headerText = headers.map((header) => `${header.name || ""}: ${header.value || ""}`).join("\n");
   return /\+12024558888\b/.test(headerText);
+}
+
+function hasTwilioSmsAccess(req) {
+  const secret = process.env.TWILIO_SMS_WEBHOOK_SECRET;
+  if (!secret) return false;
+  return req.query.secret === secret || req.get("x-twilio-sms-secret") === secret;
 }
 
 app.use(express.static(new URL("../web", import.meta.url).pathname));
