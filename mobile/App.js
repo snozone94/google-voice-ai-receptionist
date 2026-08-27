@@ -578,7 +578,8 @@ function SetupBadges({ setup }) {
     ["Webhook", setup.required?.webhookSecret],
     ["Public URL", setup.required?.publicBaseUrl],
     ["Google Voice", setup.required?.googleVoiceNumber],
-    ["AI Number", setup.required?.aiForwardingNumber]
+    ["AI Number", setup.required?.aiForwardingNumber],
+    ["SMS", setup.required?.smsDelivery]
   ];
   return (
     <View style={styles.badges}>

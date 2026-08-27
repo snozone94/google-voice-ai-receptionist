@@ -27,3 +27,11 @@ services:
         sync: false
       - key: CALL_SUMMARY_WEBHOOK_URL
         sync: false
+      - key: SMS_FOLLOWUP_WEBHOOK_URL
+        sync: false
+      - key: VOIPMS_API_USERNAME
+        sync: false
+      - key: VOIPMS_API_PASSWORD
+        sync: false
+      - key: VOIPMS_SMS_DID
+        sync: false

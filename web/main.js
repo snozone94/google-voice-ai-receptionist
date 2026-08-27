@@ -72,7 +72,8 @@ fetch("/api/setup-status")
       publicBaseUrl: "Public HTTPS URL",
       webhookSecret: "OpenAI webhook secret",
       googleVoiceNumber: "Google Voice number",
-      aiForwardingNumber: "AI forwarding number"
+      aiForwardingNumber: "AI forwarding number",
+      smsDelivery: "SMS delivery"
     };
 
     setupList.innerHTML = "";

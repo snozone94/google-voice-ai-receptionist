@@ -102,7 +102,12 @@ Optional outbound webhooks:
 LEAD_WEBHOOK_URL=https://your-crm-or-automation-webhook.example/leads
 CALL_SUMMARY_WEBHOOK_URL=https://your-crm-or-automation-webhook.example/calls
 SMS_FOLLOWUP_WEBHOOK_URL=https://your-sms-automation-webhook.example/send
+VOIPMS_API_USERNAME=bria@dddcincy.com
+VOIPMS_API_PASSWORD=your-voip-ms-api-password
+VOIPMS_SMS_DID=5136445016
 ```
+
+Cheapest SMS option: use the same VoIP.ms account. Outbound follow-up texts use the VoIP.ms `sendSMS` API from `VOIPMS_SMS_DID`, which avoids Twilio. VoIP.ms still requires API access to be enabled, the Render outbound IP/domain to be allowed in the VoIP.ms API settings, and any required business texting/A2P approval for production business SMS.
 
 ## Recommended Production Shape
 

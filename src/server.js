@@ -47,7 +47,11 @@ app.get("/api/setup-status", (_req, res) => {
     publicBaseUrl: Boolean(process.env.PUBLIC_BASE_URL && !process.env.PUBLIC_BASE_URL.includes("your-domain")),
     webhookSecret: Boolean(process.env.OPENAI_WEBHOOK_SECRET),
     googleVoiceNumber: Boolean(process.env.GOOGLE_VOICE_NUMBER),
-    aiForwardingNumber: Boolean(process.env.AI_FORWARDING_NUMBER)
+    aiForwardingNumber: Boolean(process.env.AI_FORWARDING_NUMBER),
+    smsDelivery: Boolean(
+      process.env.SMS_FOLLOWUP_WEBHOOK_URL ||
+        (process.env.VOIPMS_API_USERNAME && process.env.VOIPMS_API_PASSWORD && process.env.VOIPMS_SMS_DID)
+    )
   };
 
   res.json({

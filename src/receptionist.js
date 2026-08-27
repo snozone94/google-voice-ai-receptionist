@@ -290,6 +290,7 @@ SMS follow-up:
 - If enabled, ask permission before texting the caller the best DDD link.
 - Message template: ${activeSettings.smsFollowUp.message}
 - Use the most relevant DDD destination as {{link}}.
+- When calling save_lead or save_booking_request, set smsConsent to true only if the caller clearly agreed to receive the text.
 - If SMS delivery is not connected yet, still save the caller's phone number and best next link.
 
 Booking, app, and apply destinations:
@@ -405,6 +406,10 @@ export function receptionistTools() {
             type: "string",
             description: "Vehicle year, make, model, or related details, if relevant."
           },
+          smsConsent: {
+            type: "boolean",
+            description: "True only if the caller clearly agreed to receive an SMS follow-up."
+          },
           callerSentiment: {
             type: "string",
             enum: ["calm", "confused", "upset", "urgent"],
@@ -428,7 +433,11 @@ export function receptionistTools() {
           reason: { type: "string", description: "What the caller needs booked." },
           location: { type: "string", description: "Caller location or service area, if relevant." },
           serviceType: { type: "string", description: "Type of service requested." },
-          nextStep: { type: "string", description: "What DDD should do next." }
+          nextStep: { type: "string", description: "What DDD should do next." },
+          smsConsent: {
+            type: "boolean",
+            description: "True only if the caller clearly agreed to receive an SMS follow-up."
+          }
         },
         required: ["name", "phone", "preferredTime", "reason", "nextStep"]
       }
@@ -662,17 +671,20 @@ async function postOptionalWebhook(url, payload) {
 async function sendOptionalSmsFollowUp(record, type) {
   const settings = await loadReceptionistSettings();
   if (!settings.smsFollowUp.enabled || !record.phone) return;
+  if (settings.smsFollowUp.askPermission && record.smsConsent !== true) return;
 
   const destination = chooseDestination(
     settings.bookingDestinations,
     `${record.reason || ""} ${record.serviceType || ""} ${record.nextStep || ""}`
   );
   const message = renderSmsTemplate(settings.smsFollowUp.message, destination);
+  const voipmsResult = await sendVoipMsSms(record.phone, message);
   await postOptionalWebhook(process.env.SMS_FOLLOWUP_WEBHOOK_URL, {
     type,
     to: record.phone,
     message,
     destination,
+    delivery: voipmsResult,
     record
   });
 }
@@ -684,4 +696,42 @@ function renderSmsTemplate(template, destination) {
     .replaceAll("{{business}}", "DDD")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+async function sendVoipMsSms(to, message) {
+  if (!process.env.VOIPMS_API_USERNAME || !process.env.VOIPMS_API_PASSWORD || !process.env.VOIPMS_SMS_DID) {
+    return { ok: false, skipped: true, reason: "VoIP.ms SMS API is not configured." };
+  }
+
+  const body = new URLSearchParams({
+    api_username: process.env.VOIPMS_API_USERNAME,
+    api_password: process.env.VOIPMS_API_PASSWORD,
+    method: "sendSMS",
+    did: normalizePhoneForSms(process.env.VOIPMS_SMS_DID),
+    dst: normalizePhoneForSms(to),
+    message: String(message || "").slice(0, 160),
+    content_type: "json"
+  });
+
+  const response = await fetch("https://voip.ms/api/v1/rest.php", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body
+  });
+  const payload = await response.json().catch(async () => ({
+    status: "invalid_response",
+    raw: await response.text().catch(() => "")
+  }));
+  if (!response.ok || payload.status !== "success") {
+    console.warn(`VoIP.ms SMS failed: ${response.status} ${JSON.stringify(payload)}`);
+    return { ok: false, status: payload.status || response.status, payload };
+  }
+  return { ok: true, status: payload.status, sms: payload.sms };
+}
+
+function normalizePhoneForSms(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
 }
