@@ -28,7 +28,7 @@ body {
 
 main {
   display: grid;
-  gap: 20px;
+  gap: 16px;
   max-width: 1180px;
   margin: 0 auto;
   padding: 28px 18px 42px;
@@ -53,6 +53,14 @@ main {
   background: linear-gradient(90deg, var(--pink), var(--orange), var(--gold), var(--green), var(--blue), var(--violet), var(--pink));
   background-size: 180% 100%;
   animation: rainbowShift 12s linear infinite;
+}
+
+.hero-panel {
+  padding-bottom: 18px;
+}
+
+.hero-panel::before {
+  height: 7px;
 }
 
 .eyebrow {
@@ -95,7 +103,96 @@ h2 {
 }
 
 .numbers {
-  margin: 0 0 18px;
+  margin: 0 0 12px;
+}
+
+.top-actions {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.7fr) minmax(0, 1.3fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.top-actions .button-row {
+  justify-content: flex-end;
+  margin: 0;
+}
+
+.tabbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 8px;
+  background:
+    linear-gradient(white, white) padding-box,
+    linear-gradient(90deg, var(--pink), var(--orange), var(--gold), var(--green), var(--blue), var(--violet)) border-box;
+  box-shadow: 0 14px 40px rgba(37, 38, 69, 0.12);
+  backdrop-filter: blur(16px);
+}
+
+.tab-button {
+  flex: 0 0 auto;
+  min-height: 42px;
+  margin: 0;
+  border: 1px solid rgba(118, 87, 255, 0.15);
+  border-radius: 8px;
+  padding: 0 15px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #34364d;
+  box-shadow: none;
+}
+
+.tab-button.active {
+  color: #fff;
+  background: linear-gradient(90deg, var(--violet), var(--pink), var(--orange));
+  box-shadow: 0 10px 22px rgba(230, 64, 165, 0.24);
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+.overview-grid,
+.two-column,
+.lead-capture {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.lead-capture {
+  align-items: start;
+}
+
+.wide-field {
+  grid-column: 1 / -1;
+}
+
+.compact-options {
+  align-items: center;
+}
+
+.compact-options label {
+  min-height: 72px;
+  justify-content: center;
+  padding: 12px;
+  border: 1px solid rgba(230, 64, 165, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.compact-test {
+  margin-top: 16px;
 }
 
 .numbers div,
@@ -393,6 +490,7 @@ textarea#emergencyQuestionsInput,
 textarea#humanHandoffRulesInput,
 textarea#afterHoursInstructionsInput,
 textarea#applyInstructionsInput,
+textarea#bookingDestinationsInput,
 textarea#qualifyingServicesInput,
 textarea#outOfScopeHandlingInput,
 textarea#followUpStyleInput,
@@ -400,12 +498,14 @@ textarea#newClientsFlowInput,
 textarea#existingClientsFlowInput,
 textarea#salesFlowInput,
 textarea#otherCallersFlowInput,
+textarea#smsFollowUpMessageInput,
+textarea#reviewFollowUpMessageInput,
 textarea#customInstructionsInput,
 textarea#scriptPreview,
 textarea#testCallerInput,
 textarea#testScriptOutput {
   width: 100%;
-  max-width: 760px;
+  max-width: none;
 }
 
 .test-box {
@@ -456,10 +556,34 @@ li.missing {
   .numbers,
   .activity,
   .flow-grid,
+  .overview-grid,
+  .two-column,
+  .lead-capture,
+  .top-actions,
   .inbox-auth,
   .inbox-shell,
   .reply-form {
     grid-template-columns: 1fr;
+  }
+
+  main {
+    padding: 18px 12px 30px;
+  }
+
+  .panel {
+    padding: 18px;
+  }
+
+  .panel::before {
+    margin: -18px -18px 16px;
+  }
+
+  .tabbar {
+    margin-inline: -2px;
+  }
+
+  .top-actions .button-row {
+    justify-content: flex-start;
   }
 
   .conversation-list {

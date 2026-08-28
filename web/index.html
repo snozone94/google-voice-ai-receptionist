@@ -3,40 +3,90 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AI Receptionist</title>
+    <title>DDD Phone AI</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main>
-      <section class="panel">
-        <div>
+      <section class="panel hero-panel">
+        <div class="hero-copy">
           <p class="eyebrow">DDD phone AI</p>
           <h1 id="businessName">AI Receptionist</h1>
-          <p class="summary">Live call control, voice tuning, DDD booking intake, shared texting, and review follow-up in one clean rainbow console.</p>
-          <dl class="numbers">
-            <div>
-              <dt>Google Voice</dt>
-              <dd id="googleVoiceNumber">Not set</dd>
-            </div>
-            <div>
-              <dt>AI forwarding number</dt>
-              <dd id="aiForwardingNumber">Not set</dd>
-            </div>
-          </dl>
+          <p class="summary">Control calls, voice, bookings, texts, and review follow-up from one clean rainbow console.</p>
         </div>
-        <div class="button-row">
+        <dl class="numbers">
+          <div>
+            <dt>Public number</dt>
+            <dd id="googleVoiceNumber">Not set</dd>
+          </div>
+          <div>
+            <dt>AI route</dt>
+            <dd id="aiForwardingNumber">Not set</dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd id="status">Idle</dd>
+          </div>
+          <div>
+            <dt>Settings</dt>
+            <dd id="settingsStatus">Loading...</dd>
+          </div>
+        </dl>
+        <div class="top-actions">
+          <label class="pin-field">
+            Admin PIN
+            <input id="adminPinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Enter PIN" />
+          </label>
+          <label class="switch-row power-switch">
+            <input id="enabledToggle" type="checkbox" />
+            <span>AI answers</span>
+          </label>
           <button id="editSettingsButton" type="button">Edit settings</button>
           <button id="saveSettingsButton" type="button">Save now</button>
+          <button id="callButton" type="button">Start voice call</button>
+          <button id="hangupButton" type="button" disabled>Hang up</button>
         </div>
-        <div class="settings-grid">
-          <label>
-            Admin PIN
-            <input id="adminPinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Enter PIN before editing" />
-          </label>
-          <label class="switch-row">
-            <input id="enabledToggle" type="checkbox" />
-            <span>AI receptionist answers calls</span>
-          </label>
+      </section>
+
+      <nav class="tabbar" aria-label="Admin sections">
+        <button class="tab-button active" type="button" data-tab-target="overview">Overview</button>
+        <button class="tab-button" type="button" data-tab-target="voice">Voice</button>
+        <button class="tab-button" type="button" data-tab-target="script">Script</button>
+        <button class="tab-button" type="button" data-tab-target="intake">Intake</button>
+        <button class="tab-button" type="button" data-tab-target="followup">Follow-up</button>
+        <button class="tab-button" type="button" data-tab-target="inbox">Inbox</button>
+        <button class="tab-button" type="button" data-tab-target="activity">Activity</button>
+      </nav>
+
+      <section class="panel tab-panel active" data-tab-panel="overview">
+        <div class="section-title-row">
+          <div>
+            <p class="eyebrow">At a glance</p>
+            <h2>System Status</h2>
+          </div>
+          <button id="refreshInboxButton" type="button">Refresh inbox</button>
+        </div>
+        <div class="overview-grid">
+          <div>
+            <h3>Setup</h3>
+            <ul id="setupList"></ul>
+            <p id="webhookUrl"></p>
+          </div>
+          <div class="test-box compact-test">
+            <label>
+              Free receptionist test
+              <textarea id="testCallerInput" rows="4" placeholder="Example: I have a flat tire and need help now"></textarea>
+            </label>
+            <button id="testScriptButton" type="button">Run free test</button>
+            <textarea id="testScriptOutput" rows="6" readonly></textarea>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel tab-panel" data-tab-panel="voice">
+        <p class="eyebrow">Sound control</p>
+        <h2>Voice</h2>
+        <div class="settings-grid two-column">
           <label>
             Receptionist voice
             <select id="voiceSelect" disabled>
@@ -48,73 +98,96 @@
             <input id="voiceSpeedInput" type="range" min="0.5" max="1.5" step="0.05" value="1" />
             <output id="voiceSpeedOutput">1.00x</output>
           </label>
-          <label>
+          <label class="wide-field">
             Voice direction
             <textarea id="voiceDirectionInput" rows="4" maxlength="700"></textarea>
           </label>
-          <div class="button-row">
-            <button id="previewVoiceButton" type="button" disabled>Preview voice</button>
-            <audio id="voicePreviewAudio" controls></audio>
-          </div>
+        </div>
+        <div class="button-row">
+          <button id="previewVoiceButton" type="button" disabled>Preview voice</button>
+          <audio id="voicePreviewAudio" controls></audio>
+        </div>
+      </section>
+
+      <section class="panel tab-panel" data-tab-panel="script">
+        <p class="eyebrow">What callers hear</p>
+        <h2>Script</h2>
+        <div class="settings-grid">
           <label>
             Greeting
             <input id="greetingInput" maxlength="240" placeholder="Thank you for calling DDD..." />
           </label>
           <label>
+            What the receptionist should say/do
+            <textarea id="customInstructionsInput" rows="5" maxlength="1600"></textarea>
+          </label>
+          <label>
             Business knowledge
             <textarea id="businessKnowledgeInput" rows="7" maxlength="3000"></textarea>
           </label>
-          <div class="admin-subgrid">
-            <label>
-              Service area
-              <textarea id="serviceAreaInput" rows="4" maxlength="900"></textarea>
-            </label>
-            <label>
-              Services DDD offers
-              <textarea id="offeredServicesInput" rows="4" maxlength="1400"></textarea>
-            </label>
-            <label>
-              Do not offer / do not promise
-              <textarea id="notOfferedServicesInput" rows="4" maxlength="1400"></textarea>
-            </label>
-            <label>
-              Pricing rules
-              <textarea id="pricingNotesInput" rows="4" maxlength="1200"></textarea>
-            </label>
-            <label>
-              Emergency handling
-              <textarea id="emergencyInstructionsInput" rows="4" maxlength="1200"></textarea>
-            </label>
-            <label>
-              Emergency questions
-              <textarea id="emergencyQuestionsInput" rows="5" maxlength="1200" placeholder="One question per line"></textarea>
-            </label>
-            <label>
-              Human handoff rules
-              <textarea id="humanHandoffRulesInput" rows="4" maxlength="1200"></textarea>
-            </label>
-            <label>
-              After-hours handling
-              <textarea id="afterHoursInstructionsInput" rows="4" maxlength="900"></textarea>
-            </label>
-            <label>
-              Apply-to-work handling
-              <textarea id="applyInstructionsInput" rows="4" maxlength="1200"></textarea>
-            </label>
-          </div>
+          <label>
+            Call script preview
+            <textarea id="scriptPreview" rows="9" readonly></textarea>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel tab-panel" data-tab-panel="intake">
+        <p class="eyebrow">Caller handling</p>
+        <h2>Intake Rules</h2>
+        <div class="admin-subgrid two-column">
+          <label>
+            Service area
+            <textarea id="serviceAreaInput" rows="4" maxlength="900"></textarea>
+          </label>
+          <label>
+            Services DDD offers
+            <textarea id="offeredServicesInput" rows="4" maxlength="1400"></textarea>
+          </label>
+          <label>
+            Do not offer / do not promise
+            <textarea id="notOfferedServicesInput" rows="4" maxlength="1400"></textarea>
+          </label>
+          <label>
+            Pricing rules
+            <textarea id="pricingNotesInput" rows="4" maxlength="1200"></textarea>
+          </label>
+          <label>
+            Emergency handling
+            <textarea id="emergencyInstructionsInput" rows="4" maxlength="1200"></textarea>
+          </label>
+          <label>
+            Emergency questions
+            <textarea id="emergencyQuestionsInput" rows="5" maxlength="1200" placeholder="One question per line"></textarea>
+          </label>
+          <label>
+            Human handoff rules
+            <textarea id="humanHandoffRulesInput" rows="4" maxlength="1200"></textarea>
+          </label>
+          <label>
+            After-hours handling
+            <textarea id="afterHoursInstructionsInput" rows="4" maxlength="900"></textarea>
+          </label>
+          <label>
+            Apply-to-work handling
+            <textarea id="applyInstructionsInput" rows="4" maxlength="1200"></textarea>
+          </label>
+          <label>
+            Qualifying services
+            <textarea id="qualifyingServicesInput" rows="4" placeholder="One service per line"></textarea>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel tab-panel" data-tab-panel="followup">
+        <p class="eyebrow">Links and texts</p>
+        <h2>Follow-up</h2>
+        <div class="settings-grid">
           <label>
             Booking, app, and apply options
-            <textarea
-              id="bookingDestinationsInput"
-              rows="7"
-              placeholder="Label | URL | When the receptionist should use it"
-            ></textarea>
+            <textarea id="bookingDestinationsInput" rows="7" placeholder="Label | URL | When the receptionist should use it"></textarea>
           </label>
-          <div class="admin-subgrid">
-            <label>
-              Qualifying services
-              <textarea id="qualifyingServicesInput" rows="4" placeholder="One service per line"></textarea>
-            </label>
+          <div class="admin-subgrid two-column">
             <label>
               Out-of-scope handling
               <textarea id="outOfScopeHandlingInput" rows="4"></textarea>
@@ -142,7 +215,7 @@
               <textarea id="otherCallersFlowInput" rows="5"></textarea>
             </label>
           </div>
-          <div class="admin-subgrid">
+          <div class="admin-subgrid two-column compact-options">
             <label>
               Ambient sound preference
               <select id="ambientSoundSelect">
@@ -156,21 +229,19 @@
               <input id="thinkingSoundToggle" type="checkbox" />
               <span>Use short thinking phrases</span>
             </label>
-          </div>
-          <div class="admin-subgrid">
             <label class="switch-row">
               <input id="smsFollowUpToggle" type="checkbox" />
               <span>Send SMS follow-up when connected</span>
             </label>
-            <label>
-              SMS follow-up message
-              <textarea id="smsFollowUpMessageInput" rows="4" maxlength="500"></textarea>
-            </label>
-          </div>
-          <div class="admin-subgrid">
             <label class="switch-row">
               <input id="reviewFollowUpToggle" type="checkbox" />
               <span>Ask for Google review after completed jobs</span>
+            </label>
+          </div>
+          <div class="admin-subgrid two-column">
+            <label>
+              SMS follow-up message
+              <textarea id="smsFollowUpMessageInput" rows="4" maxlength="500"></textarea>
             </label>
             <label>
               Google review link
@@ -181,42 +252,15 @@
               <textarea id="reviewFollowUpMessageInput" rows="4" maxlength="500"></textarea>
             </label>
           </div>
-          <label>
-            What the receptionist should say/do
-            <textarea id="customInstructionsInput" rows="5" maxlength="1600"></textarea>
-          </label>
-          <label>
-            Call script preview
-            <textarea id="scriptPreview" rows="8" readonly></textarea>
-          </label>
-          <div class="test-box">
-            <label>
-              Free receptionist test, no phone call
-              <textarea id="testCallerInput" rows="4" placeholder="Example: I have a flat tire and need help now"></textarea>
-            </label>
-            <button id="testScriptButton" type="button">Run free test</button>
-            <textarea id="testScriptOutput" rows="8" readonly></textarea>
-          </div>
-          <p id="settingsStatus">Settings load from the live receptionist.</p>
         </div>
-        <button id="callButton">Start voice call</button>
-        <button id="hangupButton" disabled>Hang up</button>
-        <p id="status">Idle</p>
       </section>
 
-      <section class="panel">
-        <h2>Setup status</h2>
-        <ul id="setupList"></ul>
-        <p id="webhookUrl"></p>
-      </section>
-
-      <section class="panel">
+      <section class="panel tab-panel" data-tab-panel="inbox">
         <div class="section-title-row">
           <div>
             <p class="eyebrow">Shared DDD inbox</p>
             <h2>Texts</h2>
           </div>
-          <button id="refreshInboxButton" type="button">Refresh</button>
         </div>
         <div class="inbox-auth">
           <label>
@@ -245,20 +289,9 @@
         </div>
       </section>
 
-      <section class="panel">
-        <h2>Lead capture</h2>
-        <form id="leadForm">
-          <label>Name <input name="name" autocomplete="name" /></label>
-          <label>Phone <input name="phone" autocomplete="tel" /></label>
-          <label>Email <input name="email" autocomplete="email" /></label>
-          <label>Reason <textarea name="reason" rows="4"></textarea></label>
-          <button type="submit">Save lead</button>
-        </form>
-        <p id="leadStatus"></p>
-      </section>
-
-      <section class="panel">
-        <h2>Recent activity</h2>
+      <section class="panel tab-panel" data-tab-panel="activity">
+        <p class="eyebrow">Logs</p>
+        <h2>Activity</h2>
         <div class="activity">
           <div>
             <h3>Calls</h3>
@@ -277,8 +310,17 @@
             <ul id="bookingsList"></ul>
           </div>
         </div>
+        <form id="leadForm" class="lead-capture">
+          <h3>Manual lead</h3>
+          <label>Name <input name="name" autocomplete="name" /></label>
+          <label>Phone <input name="phone" autocomplete="tel" /></label>
+          <label>Email <input name="email" autocomplete="email" /></label>
+          <label>Reason <textarea name="reason" rows="4"></textarea></label>
+          <button type="submit">Save lead</button>
+        </form>
+        <p id="leadStatus"></p>
       </section>
     </main>
-    <script type="module" src="/main.js"></script>
+    <script src="/main.js" type="module"></script>
   </body>
 </html>

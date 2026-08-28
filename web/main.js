@@ -62,6 +62,8 @@ const replyForm = document.querySelector("#replyForm");
 const replyMessageInput = document.querySelector("#replyMessageInput");
 const sendReplyButton = document.querySelector("#sendReplyButton");
 const inboxStatus = document.querySelector("#inboxStatus");
+const tabButtons = [...document.querySelectorAll("[data-tab-target]")];
+const tabPanels = [...document.querySelectorAll("[data-tab-panel]")];
 
 let peerConnection;
 let localStream;
@@ -75,6 +77,19 @@ let selectedConversationPhone = "";
 adminPinInput.value = localStorage.getItem("dddStaffPin") || "";
 staffPinInput.value = localStorage.getItem("dddStaffPin") || "";
 staffNameInput.value = localStorage.getItem("dddStaffName") || "";
+
+for (const button of tabButtons) {
+  button.addEventListener("click", () => setActiveTab(button.dataset.tabTarget));
+}
+
+function setActiveTab(tabName) {
+  for (const button of tabButtons) {
+    button.classList.toggle("active", button.dataset.tabTarget === tabName);
+  }
+  for (const panel of tabPanels) {
+    panel.classList.toggle("active", panel.dataset.tabPanel === tabName);
+  }
+}
 
 fetch("/api/business")
   .then((res) => res.json())
@@ -602,6 +617,7 @@ async function refreshInbox() {
 }
 
 refreshInboxButton.addEventListener("click", () => {
+  setActiveTab("inbox");
   refreshInbox().catch((error) => setInboxStatus(error.message));
 });
 
