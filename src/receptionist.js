@@ -825,7 +825,7 @@ function normalizeSettings(settings = {}) {
     voiceSpeed: normalizeSpeed(settings.voiceSpeed),
     voiceDirection: cleanLongText(settings.voiceDirection, defaultVoiceDirection, 700),
     greeting: cleanText(settings.greeting, defaultGreeting, 240),
-    customInstructions: cleanLongText(settings.customInstructions, defaultCustomInstructions, 1600),
+    customInstructions: cleanLongText(settings.customInstructions, defaultCustomInstructions, 2400),
     businessKnowledge: cleanLongText(settings.businessKnowledge, defaultBusinessKnowledge, 3000),
     serviceArea: cleanLongText(settings.serviceArea, defaultServiceArea, 900),
     pricingNotes: cleanLongText(settings.pricingNotes, defaultPricingNotes, 1200),
