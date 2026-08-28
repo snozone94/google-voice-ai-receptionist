@@ -79,6 +79,8 @@ let dataChannel;
 let editMode = false;
 let saveTimer;
 let isLoadingSettings = false;
+let isSavingSettings = false;
+let hasUnsavedSettings = false;
 let conversations = [];
 let selectedConversationPhone = "";
 let callLog = [];
@@ -149,6 +151,20 @@ async function loadSettings() {
   isLoadingSettings = true;
   const response = await fetch("/api/settings", { headers: adminHeaders() });
   const settings = await response.json();
+  applySettings(settings);
+  isLoadingSettings = false;
+  hasUnsavedSettings = false;
+  setEditMode(editMode);
+  previewVoiceButton.disabled = false;
+  updateScriptPreview();
+  updateSaveControls(
+    settings.enabled
+      ? `Live. New calls will use ${voiceSelect.selectedOptions[0]?.textContent || voiceSelect.value}.`
+      : "Paused. New calls will be logged but the AI will not answer."
+  );
+}
+
+function applySettings(settings) {
   voiceSelect.innerHTML = "";
   for (const voice of settings.voiceOptions || []) {
     const option = document.createElement("option");
@@ -193,17 +209,22 @@ async function loadSettings() {
     "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}";
   staffAccessCodesInput.value = formatStaffAccessCodes(settings.staffAccessCodes || []);
   customInstructionsInput.value = settings.customInstructions || "";
-  isLoadingSettings = false;
-  setEditMode(editMode);
-  previewVoiceButton.disabled = false;
-  updateScriptPreview();
-  settingsStatus.textContent = settings.enabled
-    ? `Live. New calls will use ${voiceSelect.selectedOptions[0]?.textContent || voiceSelect.value}.`
-    : "Paused. New calls will be logged but the AI will not answer.";
 }
 
-editSettingsButton.addEventListener("click", () => {
-  setEditMode(!editMode);
+editSettingsButton.addEventListener("click", async () => {
+  if (!editMode) {
+    setEditMode(true);
+    updateSaveControls("Settings unlocked. Changes autosave after you pause.");
+    return;
+  }
+  if (hasUnsavedSettings) {
+    try {
+      await saveSettings("manual");
+    } catch {
+      return;
+    }
+  }
+  setEditMode(false);
 });
 
 saveSettingsButton.addEventListener("click", () => {
@@ -211,9 +232,11 @@ saveSettingsButton.addEventListener("click", () => {
 });
 
 async function saveSettings(reason = "auto") {
+  if (isSavingSettings) return;
+  clearTimeout(saveTimer);
+  isSavingSettings = true;
   voiceSelect.disabled = true;
-  saveSettingsButton.disabled = true;
-  settingsStatus.textContent = reason === "auto" ? "Autosaving..." : "Saving receptionist settings...";
+  updateSaveControls(reason === "auto" ? "Autosaving..." : "Saving receptionist settings...");
   try {
     const response = await fetch("/api/settings", {
       method: "POST",
@@ -265,15 +288,24 @@ async function saveSettings(reason = "auto") {
       const error = await response.json().catch(() => ({}));
       throw new Error(response.status === 403 ? "Enter the admin PIN before saving settings." : error.error || "Could not save receptionist settings.");
     }
-    await loadSettings();
-    settingsStatus.textContent = enabledToggle.checked
-      ? `${reason === "auto" ? "Autosaved" : "Saved"}. New calls will use ${voiceSelect.selectedOptions[0]?.textContent || voiceSelect.value}.`
-      : `${reason === "auto" ? "Autosaved" : "Saved"}. The AI receptionist is paused.`;
+    const savedSettings = await response.json();
+    isLoadingSettings = true;
+    applySettings(savedSettings);
+    isLoadingSettings = false;
+    hasUnsavedSettings = false;
+    updateScriptPreview();
+    updateSaveControls(
+      enabledToggle.checked
+        ? `${reason === "auto" ? "Autosaved" : "Saved"}. New calls will use ${voiceSelect.selectedOptions[0]?.textContent || voiceSelect.value}.`
+        : `${reason === "auto" ? "Autosaved" : "Saved"}. The AI receptionist is paused.`
+    );
   } catch (error) {
-    settingsStatus.textContent = error.message;
-    setEditMode(editMode);
+    updateSaveControls(error.message);
     previewVoiceButton.disabled = false;
     throw error;
+  } finally {
+    isSavingSettings = false;
+    setEditMode(editMode);
   }
 }
 
@@ -352,8 +384,9 @@ voiceSpeedInput.addEventListener("input", () => {
 function handleSettingsChange() {
   updateScriptPreview();
   if (!editMode || isLoadingSettings) return;
+  hasUnsavedSettings = true;
   clearTimeout(saveTimer);
-  settingsStatus.textContent = "Unsaved changes...";
+  updateSaveControls("Unsaved changes. Autosaving soon...");
   saveTimer = setTimeout(() => {
     saveSettings("auto").catch(() => {});
   }, 900);
@@ -396,15 +429,22 @@ function setEditMode(nextEditMode) {
     staffAccessCodesInput,
     customInstructionsInput
   ]) {
-    input.disabled = !editMode;
+    input.disabled = !editMode || isSavingSettings;
   }
-  saveSettingsButton.disabled = !editMode;
+  updateSaveControls();
   previewVoiceButton.disabled = false;
   document.body.classList.toggle("edit-mode", editMode);
   if (!editMode) {
     clearTimeout(saveTimer);
-    settingsStatus.textContent = "Settings locked. Tap Edit settings before changing anything.";
+    hasUnsavedSettings = false;
+    updateSaveControls("Settings locked. Tap Edit settings before changing anything.");
   }
+}
+
+function updateSaveControls(message = "") {
+  saveSettingsButton.disabled = !editMode || !hasUnsavedSettings || isSavingSettings;
+  saveSettingsButton.textContent = isSavingSettings ? "Saving..." : hasUnsavedSettings ? "Save changes" : "Saved";
+  if (message) settingsStatus.textContent = message;
 }
 
 testScriptButton.addEventListener("click", async () => {
