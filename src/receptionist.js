@@ -28,9 +28,9 @@ export const voiceOptions = [
 ];
 
 const supportedVoiceIds = new Set(voiceOptions.map((voice) => voice.id));
-const defaultGreeting = "Thank you for calling DDD, this is the receptionist. How can I help today?";
+const defaultGreeting = "Thank you for calling DDD Mobile. I can help book service or get your message to the team. What can I help with today?";
 const defaultCustomInstructions =
-  "Act like a polished front desk receptionist. Be warm, direct, and fast. Reflect the caller's exact request before asking questions. Reassure them once that this will be quick and that you can make the booking for them when booking applies. Do not repeat that reassurance. Do not keep emergency callers on the phone longer than needed. Collect the key details, point them to the right DDD link, and save a clear next step.";
+  "Act like a polished front desk receptionist. Be warm, direct, and fast. Reflect the caller's exact request before asking questions. If they name a service like oil change, brakes, battery install, tire help, jump start, lockout, or fuel delivery, treat it as a bookable DDD service immediately. Reassure them once that this will be quick and that you can make the booking for them when booking applies. Do not ask generic category questions after they already named the service. Do not repeat that reassurance. Do not keep emergency callers on the phone longer than needed. Collect the key details, point them to the right DDD link, and save a clear next step.";
 const defaultBusinessKnowledge =
   "DDD Mobile helps drivers with roadside/mobile auto service requests, booking, DDD app links, vehicle issue guidance, and work/applicant questions. The receptionist should push callers toward the correct dddcincy.com option instead of holding long conversations. If pricing, exact availability, or service-area details are unknown, collect details and say the DDD team will confirm.";
 const defaultServiceArea = "Greater Cincinnati and nearby service areas DDD confirms case by case.";
@@ -51,7 +51,7 @@ const defaultVoiceDirection =
   "Warm, confident, friendly receptionist. Natural phone cadence, clear pronunciation, and not robotic.";
 const defaultCallerFlows = {
   newClients:
-    "Tell them this will be quick and that you can make the booking for them. Then qualify the service needed, collect name, callback number, location, urgency, vehicle details if relevant, and preferred time. End by saving a lead or booking request and sharing the best DDD link.",
+    "If they already named the service, do not re-qualify it. Tell them this will be quick and that you can make the booking for them. Then collect name, callback number, location, vehicle details if relevant, and preferred time. End by saving a lead or booking request and sharing the best DDD link.",
   existingClients:
     "Collect name, callback number, existing appointment or job details, and what they need changed or answered. Save a clear message for follow-up.",
   sales:
@@ -518,6 +518,7 @@ Voice and manner:
 - Let the caller finish before responding, and do not over-explain.
 - Use natural acknowledgements like "I can help with that" or "Let me grab a few details."
 - For booking or urgent service calls, reassure the caller once: "This will be quick, and I can make the booking for you." Use this idea naturally, then do not repeat it.
+- If the caller names a specific bookable service, such as "oil change", "brakes", "battery install", "jump start", "lockout", "flat tire", or "fuel delivery", do not ask whether they need roadside, routine service, emergency help, or another category. Treat the named service as the intent and ask for the next missing booking detail.
 - Do not repeat the greeting, the same reassurance, or the same question after the caller already answered. If you missed something, ask only for the missing detail.
 - Do not invent business policies, prices, addresses, or availability.
 - If a caller wants to book, collect their name, phone, email if available, service, location, vehicle year/make/model/color when relevant, issue, urgency, and preferred date/time.
@@ -530,7 +531,9 @@ Opening flow:
 - If they ask whether you are human, be honest: say you are DDD's AI receptionist and you can take care of intake or get their message to the team.
 - Identify the caller's intent: booking, pricing, service question, existing appointment, urgent help, apply-to-work, unsupported service, or general message.
 - First reflect the caller's actual words in one short sentence, such as "I hear you need help with a flat tire right now," then ask the next best question.
+- When the service is obvious, use a clean service reflection instead of repeating the caller's whole sentence. For example, say "I can help book the oil change," not "I hear you need help with: I need an oil change."
 - Keep the opening flow fast: reflect need, reassure once if booking applies, ask the highest-priority missing question.
+- Example: if the caller says "I need an oil change," respond like "I can help book the oil change. This will be quick, and I can make the booking for you. What is the best callback number?" Do not ask what type of call it is.
 - If the caller wants Smith.ai-style service, focus on being useful and efficient instead of mentioning Smith.ai.
 
 Intake flow:
@@ -1022,6 +1025,7 @@ export function buildDryRun(settings = {}, callerMessage = "") {
       ? { label: "Referral/directory", url: activeSettings.directoryReferral.url, useWhen: "Unsupported service referral." }
       : destination;
   const reflectedNeed = summarizeCallerNeed(rawMessage, intent);
+  const directBookingNeed = summarizeBookableService(message);
   const baseQuestions =
     intent === "emergency"
       ? activeSettings.emergencyQuestions.slice(0, 6)
@@ -1038,7 +1042,7 @@ export function buildDryRun(settings = {}, callerMessage = "") {
         ? `${reflectedNeed} I can get your info to DDD quickly. What kind of work are you applying for?`
         : intent === "unsupported"
           ? `${reflectedNeed} DDD may not handle that exact service, but I can save your message${activeSettings.directoryReferral.enabled ? " or text the referral/directory link if you want" : ""}.`
-          : `${reflectedNeed} This will be quick, and I can make the booking for you. What is the best callback number?`;
+          : `${directBookingNeed || reflectedNeed} This will be quick, and I can make the booking for you. What is the best callback number?`;
   const action =
     intent === "apply"
       ? "Save an apply-to-work message and send the DDD apply link."
@@ -1047,6 +1051,9 @@ export function buildDryRun(settings = {}, callerMessage = "") {
         : "Collect only missing booking details, including vehicle color when relevant, create the booking during the call, and share/text the returned status link.";
   if (intent === "emergency") {
     questions = questions.filter((question) => !question.toLowerCase().includes("safe"));
+  }
+  if (/callback number/i.test(firstResponse)) {
+    questions = questions.filter((question) => !/callback|phone|number/.test(question.toLowerCase()));
   }
   const bestNextLink =
     intent === "unsupported" && activeSettings.directoryReferral.enabled && activeSettings.directoryReferral.url
@@ -1092,6 +1099,9 @@ function classifyIntent(message) {
   if (/\btow\b|\btowing\b|transmission|engine rebuild|\brebuild\b|body work|\bpaint\b|windshield|glass|impound|sell.*tire|new tire/.test(message)) {
     return "unsupported";
   }
+  if (/oil change|brake|pads|battery install|maintenance|repair|mobile service/.test(message)) {
+    return "booking";
+  }
   if (/stranded|emergency|urgent|now|locked|lockout|flat|tire|jump|battery|dead|fuel|gas|tow/.test(message)) {
     return "emergency";
   }
@@ -1109,7 +1119,7 @@ function classifyIntent(message) {
 
 function detectKnownDetails(message) {
   return {
-    service: /flat|tire|jump|battery|dead|fuel|gas|locked|lockout|tow|book|roadside|maintenance|repair|diagnos|apply|job|work/.test(message),
+    service: /oil change|brake|pads|flat|tire|jump|battery|dead|fuel|gas|locked|lockout|tow|book|roadside|maintenance|repair|diagnos|apply|job|work/.test(message),
     location: /\b(at|near|by|on|in)\b.+/.test(message) || /\b\d{3,}\s+\w+/.test(message),
     vehicle: /\b(toyota|honda|ford|chevy|chevrolet|nissan|hyundai|kia|jeep|dodge|ram|bmw|mercedes|audi|lexus|camry|accord|civic|corolla|malibu|impala|altima|sonata|elantra|soul|wrangler|charger|f-?150)\b/.test(message),
     color: /\b(red|blue|black|white|gray|grey|silver|green|yellow|orange|purple|brown|tan|gold|maroon)\b/.test(message),
@@ -1138,6 +1148,17 @@ function summarizeCallerNeed(rawMessage, intent) {
   if (intent === "apply") return "I hear you want to apply to work with DDD.";
   if (intent === "unsupported") return "I hear you may need a service DDD does not normally handle.";
   return "I can help with that.";
+}
+
+function summarizeBookableService(message) {
+  if (/oil change/.test(message)) return "I can help book the oil change.";
+  if (/brake|pads/.test(message)) return "I can help book the brake service.";
+  if (/battery install/.test(message)) return "I can help book the battery install.";
+  if (/jump/.test(message)) return "I can help book the jump start.";
+  if (/lockout|locked/.test(message)) return "I can help with the lockout request.";
+  if (/flat|tire/.test(message)) return "I can help with the tire service request.";
+  if (/fuel|gas/.test(message)) return "I can help with the fuel delivery request.";
+  return "";
 }
 
 function chooseDestination(destinations, message) {
