@@ -194,6 +194,7 @@ app.post("/api/presence", express.json(), async (req, res, next) => {
       name: staff.name,
       role: staff.role,
       online: true,
+      status: normalizePresenceStatus(req.body?.status),
       typingTo: normalizeE164(req.body?.typingTo || ""),
       viewing: normalizeE164(req.body?.viewing || ""),
       updatedAt: new Date(now).toISOString(),
@@ -673,6 +674,11 @@ function maskAccessCode(code = "") {
   const value = String(code);
   if (value.length <= 2) return "*".repeat(value.length || 1);
   return `${"*".repeat(Math.max(2, value.length - 2))}${value.slice(-2)}`;
+}
+
+function normalizePresenceStatus(status) {
+  const value = String(status || "").trim().toLowerCase().replace(/\s+/g, "-");
+  return ["available", "busy", "on-call", "active-call"].includes(value) ? value : "available";
 }
 
 function hasCustomerLookupAccess(req) {

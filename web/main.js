@@ -58,6 +58,7 @@ const settingsStatus = document.querySelector("#settingsStatus");
 const refreshInboxButton = document.querySelector("#refreshInboxButton");
 const staffPinInput = document.querySelector("#staffPinInput");
 const staffNameInput = document.querySelector("#staffNameInput");
+const staffStatusSelect = document.querySelector("#staffStatusSelect");
 const staffAccessCodesInput = document.querySelector("#staffAccessCodesInput");
 const conversationList = document.querySelector("#conversationList");
 const selectedConversationTitle = document.querySelector("#selectedConversationTitle");
@@ -88,6 +89,7 @@ let activePresence = [];
 adminPinInput.value = localStorage.getItem("dddAdminPin") || localStorage.getItem("dddStaffPin") || "";
 staffPinInput.value = localStorage.getItem("dddStaffCode") || "";
 staffNameInput.value = localStorage.getItem("dddStaffName") || "";
+staffStatusSelect.value = normalizeStaffStatus(localStorage.getItem("dddStaffStatus"));
 
 for (const button of tabButtons) {
   button.addEventListener("click", () => setActiveTab(button.dataset.tabTarget));
@@ -583,8 +585,10 @@ function renderTeamPresence() {
   for (const member of team) {
     const live = byName.get(member.name);
     const pill = document.createElement("span");
-    pill.className = live ? "presence-pill online" : "presence-pill";
+    const status = live?.status || "offline";
+    pill.className = `presence-pill ${live ? "online" : ""} status-${status}`;
     const details = [
+      live ? formatPresenceStatus(status) : "offline",
       member.role || live?.role || "staff",
       member.code ? `code ${member.code}` : "",
       live?.typingTo ? `typing to ${formatPhone(live.typingTo)}` : ""
@@ -599,6 +603,24 @@ function renderTeamPresence() {
 function renderTypingStatus() {
   const typers = activePresence.filter((item) => item.typingTo && item.typingTo === selectedConversationPhone);
   typingStatus.textContent = typers.length ? `${typers.map((item) => item.name).join(", ")} typing...` : "";
+}
+
+function formatPresenceStatus(status = "") {
+  const labels = {
+    available: "Available",
+    busy: "Busy",
+    "on-call": "On-call",
+    "active-call": "Active call",
+    offline: "Offline",
+    online: "Available"
+  };
+  return labels[status] || "Available";
+}
+
+function normalizeStaffStatus(status) {
+  const value = String(status || "").trim().toLowerCase().replace(/\s+/g, "-");
+  if (value === "online") return "available";
+  return ["available", "busy", "on-call", "active-call"].includes(value) ? value : "available";
 }
 
 function renderConversations() {
@@ -679,6 +701,8 @@ function escapeHtml(value) {
 async function refreshInbox() {
   localStorage.setItem("dddStaffCode", staffPinInput.value.trim());
   localStorage.setItem("dddStaffName", staffNameInput.value.trim());
+  staffStatusSelect.value = normalizeStaffStatus(staffStatusSelect.value);
+  localStorage.setItem("dddStaffStatus", staffStatusSelect.value);
   setInboxStatus("Loading texts...");
   const response = await fetch("/api/conversations", { headers: staffHeaders() });
   if (response.status === 403) {
@@ -730,6 +754,7 @@ async function sendPresence() {
     },
     body: JSON.stringify({
       viewing: selectedConversationPhone,
+      status: staffStatusSelect.value,
       typingTo
     })
   });
@@ -763,6 +788,11 @@ staffPinInput.addEventListener("change", () => {
 
 staffNameInput.addEventListener("change", () => {
   localStorage.setItem("dddStaffName", staffNameInput.value.trim());
+});
+
+staffStatusSelect.addEventListener("change", () => {
+  localStorage.setItem("dddStaffStatus", staffStatusSelect.value);
+  sendPresence().catch(() => {});
 });
 
 replyMessageInput.addEventListener("input", () => {
