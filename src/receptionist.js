@@ -32,7 +32,7 @@ const defaultGreeting = "Thank you for calling DDD, this is the receptionist. Ho
 const defaultCustomInstructions =
   "Act like a polished front desk receptionist. Be warm, direct, and fast. Do not keep emergency callers on the phone longer than needed. Collect the key details, point them to the right DDD link, and save a clear next step.";
 const defaultBusinessKnowledge =
-  "DDD Mobile Auto Doc helps drivers with roadside/mobile auto service requests, booking, DDD app links, vehicle issue guidance, and work/applicant questions. The receptionist should push callers toward the correct dddcincy.com option instead of holding long conversations. If pricing, exact availability, or service-area details are unknown, collect details and say the DDD team will confirm.";
+  "DDD Mobile helps drivers with roadside/mobile auto service requests, booking, DDD app links, vehicle issue guidance, and work/applicant questions. The receptionist should push callers toward the correct dddcincy.com option instead of holding long conversations. If pricing, exact availability, or service-area details are unknown, collect details and say the DDD team will confirm.";
 const defaultServiceArea = "Greater Cincinnati and nearby service areas DDD confirms case by case.";
 const defaultPricingNotes =
   "Do not quote exact prices unless the admin has added them. Collect job details and say the DDD team will confirm the final price.";
