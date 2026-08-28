@@ -258,6 +258,53 @@ export async function listBookings(limit) {
   return listRecords(bookingsPath, limit);
 }
 
+export async function listCallLog(limit = 50) {
+  const [calls, summaries, leads, bookings] = await Promise.all([
+    listRecords(callsPath, 1000),
+    listRecords(summariesPath, 1000),
+    listRecords(leadsPath, 1000),
+    listRecords(bookingsPath, 1000)
+  ]);
+  const summariesByCall = groupByCallId(summaries);
+  const leadsByCall = groupByCallId(leads);
+  const bookingsByCall = groupByCallId(bookings);
+  return calls
+    .map((call) => {
+      const callId = call.callId || "";
+      const relatedSummaries = summariesByCall.get(callId) || [];
+      const relatedLeads = leadsByCall.get(callId) || [];
+      const relatedBookings = bookingsByCall.get(callId) || [];
+      const summary = relatedSummaries[0] || {};
+      const transcript = relatedSummaries.flatMap((item) => normalizeTranscript(item.transcript));
+      const caller = firstTruthy(
+        call.from,
+        extractSipHeader(call.sipHeaders, "from"),
+        relatedBookings[0]?.phone,
+        relatedLeads[0]?.phone
+      );
+      const destination = firstTruthy(call.to, extractSipHeader(call.sipHeaders, "to"));
+      return {
+        id: callId || `${call.createdAt || "call"}-${call.type || "event"}`,
+        callId,
+        createdAt: call.createdAt,
+        startedAt: summary.startedAt || call.createdAt,
+        endedAt: summary.endedAt || "",
+        type: call.type || "call",
+        caller,
+        destination,
+        status: call.status || (summary.endedAt ? "completed" : "logged"),
+        recordingUrl: firstTruthy(call.recordingUrl, call.recording_url, summary.recordingUrl, summary.recording_url),
+        transcript,
+        transcriptText: transcript.map((item) => item.text).filter(Boolean).join("\n"),
+        leads: relatedLeads,
+        bookings: relatedBookings,
+        summaries: relatedSummaries
+      };
+    })
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+    .slice(0, limit);
+}
+
 export async function listBookingsByPhone(phone, limit = 20) {
   const target = normalizeE164(phone);
   if (!target) return [];
@@ -278,6 +325,10 @@ export async function saveCallEvent(event) {
     createdAt: new Date().toISOString(),
     type: event.type,
     callId: event.data?.call_id,
+    from: extractSipHeader(event.data?.sip_headers || [], "from"),
+    to: extractSipHeader(event.data?.sip_headers || [], "to"),
+    status: cleanText(event.data?.status || event.data?.call_status || "", "", 80),
+    recordingUrl: cleanText(event.data?.recording_url || event.data?.recordingUrl || "", "", 500),
     sipHeaders: event.data?.sip_headers || []
   };
   await ensureDataDir();
@@ -355,6 +406,46 @@ export async function listConversations(limit = 200) {
       messages: conversation.messages.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
     }))
     .sort((a, b) => String(b.lastMessageAt).localeCompare(String(a.lastMessageAt)));
+}
+
+function groupByCallId(records) {
+  const grouped = new Map();
+  for (const record of records) {
+    const callId = record.callId || "";
+    if (!callId) continue;
+    if (!grouped.has(callId)) grouped.set(callId, []);
+    grouped.get(callId).push(record);
+  }
+  return grouped;
+}
+
+function normalizeTranscript(transcript) {
+  if (!Array.isArray(transcript)) return [];
+  return transcript
+    .map((item) => ({
+      at: item.at || item.createdAt || "",
+      type: item.type || "transcript",
+      speaker: item.speaker || inferTranscriptSpeaker(item.type),
+      text: cleanLongText(item.text || item.transcript || "", "", 4000)
+    }))
+    .filter((item) => item.text);
+}
+
+function inferTranscriptSpeaker(type = "") {
+  const eventType = String(type).toLowerCase();
+  if (eventType.includes("input_audio") || eventType.includes("user")) return "Caller";
+  if (eventType.includes("response") || eventType.includes("assistant")) return "AI";
+  return "Call";
+}
+
+function extractSipHeader(headers = [], name = "") {
+  const target = String(name).toLowerCase();
+  const header = headers.find((item) => String(item.name || "").toLowerCase() === target);
+  return cleanText(header?.value || "", "", 500);
+}
+
+function firstTruthy(...values) {
+  return values.find((value) => String(value || "").trim()) || "";
 }
 
 export function buildReceptionistInstructions(business, settings = {}) {

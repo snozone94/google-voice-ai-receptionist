@@ -8,6 +8,7 @@ import {
   listSms,
   listBookings,
   listBookingsByPhone,
+  listCallLog,
   listLeads,
   listSummaries,
   loadReceptionistSettings,
@@ -28,6 +29,7 @@ import { monitorRealtimeCall } from "./realtime-tools.js";
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
+const presence = new Map();
 
 function openAIClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -154,7 +156,50 @@ app.get("/api/conversations", async (req, res, next) => {
     }
 
     const limit = Math.min(Number(req.query.limit) || 200, 500);
-    res.json({ staff, conversations: await listConversations(limit) });
+    res.json({
+      staff,
+      team: await getVisibleTeam(req),
+      presence: listPresence(),
+      conversations: await listConversations(limit)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/presence", async (req, res, next) => {
+  try {
+    const staff = await getStaffAccess(req);
+    if (!staff.ok) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+    res.json({ staff, team: await getVisibleTeam(req), presence: listPresence() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/presence", express.json(), async (req, res, next) => {
+  try {
+    const staff = await getStaffAccess(req);
+    if (!staff.ok) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+    const now = Date.now();
+    const key = `${staff.role}:${staff.name}`;
+    presence.set(key, {
+      id: key,
+      name: staff.name,
+      role: staff.role,
+      online: true,
+      typingTo: normalizeE164(req.body?.typingTo || ""),
+      viewing: normalizeE164(req.body?.viewing || ""),
+      updatedAt: new Date(now).toISOString(),
+      expiresAt: now + 45000
+    });
+    res.json({ ok: true, staff, presence: listPresence() });
   } catch (error) {
     next(error);
   }
@@ -229,6 +274,30 @@ app.post("/api/twilio/voice-verify/capture", express.urlencoded({ extended: fals
       MessageSid: req.body.CallSid || ""
     });
     res.type("text/xml").send("<Response><Hangup/></Response>");
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/twilio/recording", express.urlencoded({ extended: false }), async (req, res, next) => {
+  try {
+    if (!hasTwilioSmsAccess(req)) {
+      res.status(403).send("Forbidden");
+      return;
+    }
+    await saveCallEvent({
+      type: "twilio.recording.completed",
+      data: {
+        call_id: req.body.CallSid || req.body.callSid || "",
+        status: req.body.RecordingStatus || req.body.recordingStatus || "",
+        recording_url: req.body.RecordingUrl || req.body.recordingUrl || "",
+        sip_headers: [
+          { name: "from", value: req.body.From || "" },
+          { name: "to", value: req.body.To || "" }
+        ]
+      }
+    });
+    res.type("text/xml").send("<Response></Response>");
   } catch (error) {
     next(error);
   }
@@ -406,6 +475,18 @@ app.get("/api/calls", async (req, res, next) => {
   }
 });
 
+app.get("/api/call-log", async (req, res, next) => {
+  try {
+    if (!hasAdminAccess(req)) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+    res.json({ calls: await listCallLog(Number(req.query.limit || 50)) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/summaries", async (req, res, next) => {
   try {
     res.json({ summaries: await listSummaries(Number(req.query.limit || 25)) });
@@ -560,6 +641,38 @@ async function getStaffAccess(req) {
     return { ok: false };
   }
   return { ok: true, name: staff.name, role: "staff" };
+}
+
+async function getVisibleTeam(req) {
+  const admin = hasAdminAccess(req);
+  const settings = await loadReceptionistSettings();
+  const staffCodes = normalizeStaffAccessCodes(settings.staffAccessCodes?.length ? settings.staffAccessCodes : parseStaffAccessCodes(process.env.STAFF_ACCESS_CODES || ""));
+  const adminPin = String(process.env.ADMIN_PIN || "").trim();
+  const team = [
+    ...(adminPin ? [{ name: process.env.ADMIN_STAFF_NAME || "Brianna", code: adminPin, role: "admin" }] : []),
+    ...staffCodes.map((entry) => ({ ...entry, role: "staff" }))
+  ];
+  return team.map((entry) => ({
+    name: entry.name,
+    role: entry.role,
+    code: admin ? entry.code : maskAccessCode(entry.code)
+  }));
+}
+
+function listPresence() {
+  const now = Date.now();
+  for (const [key, value] of presence.entries()) {
+    if (value.expiresAt <= now) presence.delete(key);
+  }
+  return [...presence.values()]
+    .map(({ expiresAt: _expiresAt, ...value }) => value)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
+function maskAccessCode(code = "") {
+  const value = String(code);
+  if (value.length <= 2) return "*".repeat(value.length || 1);
+  return `${"*".repeat(Math.max(2, value.length - 2))}${value.slice(-2)}`;
 }
 
 function hasCustomerLookupAccess(req) {

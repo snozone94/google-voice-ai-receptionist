@@ -58,6 +58,7 @@
         <button class="tab-button" type="button" data-tab-target="intake">Intake</button>
         <button class="tab-button" type="button" data-tab-target="followup">Follow-up</button>
         <button class="tab-button" type="button" data-tab-target="inbox">Inbox</button>
+        <button class="tab-button" type="button" data-tab-target="calls">Calls</button>
         <button class="tab-button" type="button" data-tab-target="activity">Activity</button>
       </nav>
 
@@ -281,6 +282,13 @@
             <textarea id="staffAccessCodesInput" rows="5" placeholder="Brianna | 9706&#10;Tech 1 | 2401&#10;Tech 2 | 2402"></textarea>
           </label>
         </div>
+        <div class="team-strip">
+          <div>
+            <p class="eyebrow">Team</p>
+            <h3>Online now</h3>
+          </div>
+          <div id="teamPresenceList" class="presence-list"></div>
+        </div>
         <div class="inbox-shell">
           <aside class="conversation-list" id="conversationList"></aside>
           <div class="conversation-panel">
@@ -289,6 +297,7 @@
               <span id="selectedConversationMeta"></span>
             </div>
             <div class="message-list" id="messageList"></div>
+            <div id="typingStatus" class="typing-status"></div>
             <form id="replyForm" class="reply-form">
               <textarea id="replyMessageInput" rows="3" maxlength="1000" placeholder="Type a reply from DDD..."></textarea>
               <button id="sendReplyButton" type="submit" disabled>Send text</button>
@@ -296,6 +305,24 @@
             <p id="inboxStatus">Texts will appear here after the number ports to Twilio.</p>
           </div>
         </div>
+      </section>
+
+      <section class="panel tab-panel" data-tab-panel="calls">
+        <div class="section-title-row">
+          <div>
+            <p class="eyebrow">Admin call history</p>
+            <h2>Call Log</h2>
+          </div>
+          <button id="refreshCallLogButton" type="button">Refresh calls</button>
+        </div>
+        <div class="call-log-shell">
+          <aside class="call-log-list" id="callLogList"></aside>
+          <article class="call-detail" id="callDetail">
+            <h3>Select a call</h3>
+            <p class="empty-state">Call transcript, saved intake, booking info, and recording links will appear here.</p>
+          </article>
+        </div>
+        <p id="callLogStatus">Enter the admin PIN to load call details.</p>
       </section>
 
       <section class="panel tab-panel" data-tab-panel="activity">

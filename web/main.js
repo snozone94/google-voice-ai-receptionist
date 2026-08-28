@@ -7,6 +7,10 @@ const callsList = document.querySelector("#callsList");
 const leadsList = document.querySelector("#leadsList");
 const summariesList = document.querySelector("#summariesList");
 const bookingsList = document.querySelector("#bookingsList");
+const callLogList = document.querySelector("#callLogList");
+const callDetail = document.querySelector("#callDetail");
+const callLogStatus = document.querySelector("#callLogStatus");
+const refreshCallLogButton = document.querySelector("#refreshCallLogButton");
 const setupList = document.querySelector("#setupList");
 const webhookUrl = document.querySelector("#webhookUrl");
 const adminPinInput = document.querySelector("#adminPinInput");
@@ -63,6 +67,8 @@ const replyForm = document.querySelector("#replyForm");
 const replyMessageInput = document.querySelector("#replyMessageInput");
 const sendReplyButton = document.querySelector("#sendReplyButton");
 const inboxStatus = document.querySelector("#inboxStatus");
+const teamPresenceList = document.querySelector("#teamPresenceList");
+const typingStatus = document.querySelector("#typingStatus");
 const tabButtons = [...document.querySelectorAll("[data-tab-target]")];
 const tabPanels = [...document.querySelectorAll("[data-tab-panel]")];
 
@@ -74,6 +80,10 @@ let saveTimer;
 let isLoadingSettings = false;
 let conversations = [];
 let selectedConversationPhone = "";
+let callLog = [];
+let selectedCallId = "";
+let teamDirectory = [];
+let activePresence = [];
 
 adminPinInput.value = localStorage.getItem("dddAdminPin") || localStorage.getItem("dddStaffPin") || "";
 staffPinInput.value = localStorage.getItem("dddStaffCode") || "";
@@ -558,6 +568,39 @@ function setInboxStatus(message) {
   inboxStatus.textContent = message;
 }
 
+function renderTeamPresence() {
+  if (!teamPresenceList) return;
+  teamPresenceList.innerHTML = "";
+  const byName = new Map(activePresence.map((item) => [item.name, item]));
+  const team = teamDirectory.length ? teamDirectory : activePresence;
+  if (!team.length) {
+    const empty = document.createElement("span");
+    empty.className = "presence-pill muted";
+    empty.textContent = "Enter staff code to see team";
+    teamPresenceList.append(empty);
+    return;
+  }
+  for (const member of team) {
+    const live = byName.get(member.name);
+    const pill = document.createElement("span");
+    pill.className = live ? "presence-pill online" : "presence-pill";
+    const details = [
+      member.role || live?.role || "staff",
+      member.code ? `code ${member.code}` : "",
+      live?.typingTo ? `typing to ${formatPhone(live.typingTo)}` : ""
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    pill.innerHTML = `<strong>${escapeHtml(member.name)}</strong><small>${escapeHtml(details || "offline")}</small>`;
+    teamPresenceList.append(pill);
+  }
+}
+
+function renderTypingStatus() {
+  const typers = activePresence.filter((item) => item.typingTo && item.typingTo === selectedConversationPhone);
+  typingStatus.textContent = typers.length ? `${typers.map((item) => item.name).join(", ")} typing...` : "";
+}
+
 function renderConversations() {
   conversationList.innerHTML = "";
   if (!conversations.length) {
@@ -590,6 +633,7 @@ function renderConversations() {
   }
 
   renderSelectedConversation();
+  renderTypingStatus();
 }
 
 function renderSelectedConversation() {
@@ -605,6 +649,7 @@ function renderSelectedConversation() {
   selectedConversationTitle.textContent = formatPhone(conversation.phone);
   selectedConversationMeta.textContent = `${conversation.messages.length} message${conversation.messages.length === 1 ? "" : "s"}`;
   sendReplyButton.disabled = !replyMessageInput.value.trim();
+  sendPresence().catch(() => {});
 
   for (const message of conversation.messages) {
     const bubble = document.createElement("article");
@@ -619,6 +664,7 @@ function renderSelectedConversation() {
     messageList.append(bubble);
   }
   messageList.scrollTop = messageList.scrollHeight;
+  renderTypingStatus();
 }
 
 function escapeHtml(value) {
@@ -647,9 +693,51 @@ async function refreshInbox() {
     staffNameInput.value = payload.staff.name;
     localStorage.setItem("dddStaffName", payload.staff.name);
   }
+  teamDirectory = payload.team || [];
+  activePresence = payload.presence || [];
   conversations = payload.conversations || [];
   renderConversations();
+  renderTeamPresence();
   setInboxStatus(conversations.length ? "Inbox is up to date." : "No texts yet. New SMS will appear here after Twilio receives the number.");
+}
+
+async function refreshPresence() {
+  const response = await fetch("/api/presence", { headers: staffHeaders() });
+  if (response.status === 403) {
+    teamDirectory = [];
+    activePresence = [];
+    renderTeamPresence();
+    renderTypingStatus();
+    return;
+  }
+  if (!response.ok) return;
+  const payload = await response.json();
+  teamDirectory = payload.team || [];
+  activePresence = payload.presence || [];
+  renderTeamPresence();
+  renderTypingStatus();
+}
+
+async function sendPresence() {
+  const code = staffPinInput.value.trim() || adminPinInput.value.trim();
+  if (!code) return;
+  const typingTo = replyMessageInput.value.trim() ? selectedConversationPhone : "";
+  const response = await fetch("/api/presence", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...staffHeaders()
+    },
+    body: JSON.stringify({
+      viewing: selectedConversationPhone,
+      typingTo
+    })
+  });
+  if (!response.ok) return;
+  const payload = await response.json();
+  activePresence = payload.presence || [];
+  renderTeamPresence();
+  renderTypingStatus();
 }
 
 refreshInboxButton.addEventListener("click", () => {
@@ -670,6 +758,7 @@ staffPinInput.addEventListener("change", () => {
   const code = staffPinInput.value.trim();
   localStorage.setItem("dddStaffCode", code);
   refreshInbox().catch((error) => setInboxStatus(error.message));
+  sendPresence().catch(() => {});
 });
 
 staffNameInput.addEventListener("change", () => {
@@ -678,6 +767,7 @@ staffNameInput.addEventListener("change", () => {
 
 replyMessageInput.addEventListener("input", () => {
   sendReplyButton.disabled = !selectedConversationPhone || !replyMessageInput.value.trim();
+  sendPresence().catch(() => {});
 });
 
 replyForm.addEventListener("submit", async (event) => {
@@ -745,10 +835,150 @@ async function refreshActivity() {
   );
 }
 
+async function refreshCallLog() {
+  callLogStatus.textContent = "Loading call log...";
+  const response = await fetch("/api/call-log?limit=75", { headers: adminHeaders() });
+  if (response.status === 403) {
+    callLog = [];
+    selectedCallId = "";
+    renderCallLog();
+    callLogStatus.textContent = "Enter the admin PIN to load call details.";
+    return;
+  }
+  if (!response.ok) throw new Error("Could not load call log.");
+  const payload = await response.json();
+  callLog = payload.calls || [];
+  if (!selectedCallId || !callLog.some((call) => call.id === selectedCallId)) {
+    selectedCallId = callLog[0]?.id || "";
+  }
+  renderCallLog();
+  callLogStatus.textContent = callLog.length ? "Call log is up to date." : "No forwarded calls logged yet.";
+}
+
+function renderCallLog() {
+  callLogList.innerHTML = "";
+  if (!callLog.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "No calls yet.";
+    callLogList.append(empty);
+    renderSelectedCall();
+    return;
+  }
+  for (const call of callLog) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = call.id === selectedCallId ? "call-log-item selected" : "call-log-item";
+    const label = call.caller || call.callId || "Unknown caller";
+    const meta = [call.status, call.bookings?.length ? "booking" : "", call.leads?.length ? "lead" : ""]
+      .filter(Boolean)
+      .join(" · ");
+    button.innerHTML = `
+      <strong>${escapeHtml(formatPhone(label))}</strong>
+      <span>${escapeHtml(meta || call.type || "call")}</span>
+      <small>${escapeHtml(formatTime(call.startedAt || call.createdAt))}</small>
+    `;
+    button.addEventListener("click", () => {
+      selectedCallId = call.id;
+      renderCallLog();
+    });
+    callLogList.append(button);
+  }
+  renderSelectedCall();
+}
+
+function renderSelectedCall() {
+  const call = callLog.find((item) => item.id === selectedCallId);
+  if (!call) {
+    callDetail.innerHTML = `
+      <h3>Select a call</h3>
+      <p class="empty-state">Call transcript, saved intake, booking info, and recording links will appear here.</p>
+    `;
+    return;
+  }
+  const recording = call.recordingUrl
+    ? `<a href="${escapeHtml(call.recordingUrl)}" target="_blank" rel="noreferrer">Open recording</a>`
+    : "No recording link stored yet";
+  const transcriptHtml = call.transcript?.length
+    ? call.transcript
+        .map(
+          (line) => `
+            <div class="transcript-line">
+              <small>${escapeHtml([line.speaker, formatTime(line.at)].filter(Boolean).join(" · "))}</small>
+              <p>${escapeHtml(line.text)}</p>
+            </div>
+          `
+        )
+        .join("")
+    : `<p class="empty-state">No transcript saved for this call yet.</p>`;
+  callDetail.innerHTML = `
+    <div class="call-detail-header">
+      <div>
+        <p class="eyebrow">Call detail</p>
+        <h3>${escapeHtml(formatPhone(call.caller) || "Unknown caller")}</h3>
+      </div>
+      <span>${escapeHtml(call.status || "logged")}</span>
+    </div>
+    <dl class="call-facts">
+      <div><dt>Started</dt><dd>${escapeHtml(formatTime(call.startedAt || call.createdAt) || "Unknown")}</dd></div>
+      <div><dt>Ended</dt><dd>${escapeHtml(formatTime(call.endedAt) || "Not recorded")}</dd></div>
+      <div><dt>Call ID</dt><dd>${escapeHtml(call.callId || "Not available")}</dd></div>
+      <div><dt>Recording</dt><dd>${recording}</dd></div>
+    </dl>
+    <div class="call-section">
+      <h4>Saved intake</h4>
+      ${renderRelatedRecords("Bookings", call.bookings)}
+      ${renderRelatedRecords("Leads", call.leads)}
+    </div>
+    <div class="call-section">
+      <h4>Transcript</h4>
+      <div class="transcript-box">${transcriptHtml}</div>
+    </div>
+  `;
+}
+
+function renderRelatedRecords(title, records = []) {
+  if (!records.length) return `<p class="empty-state">${title}: none saved.</p>`;
+  return `
+    <div class="related-records">
+      <strong>${escapeHtml(title)}</strong>
+      ${records
+        .map(
+          (record) => `
+            <p>${escapeHtml(
+              [
+                record.name || record.phone || "Customer",
+                record.serviceType || record.reason || "",
+                record.location || "",
+                record.preferredTime || "",
+                record.status || ""
+              ]
+                .filter(Boolean)
+                .join(" · ")
+            )}</p>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
 refreshActivity().catch(() => {});
 setInterval(() => refreshActivity().catch(() => {}), 15000);
 refreshInbox().catch((error) => setInboxStatus(error.message));
 setInterval(() => refreshInbox().catch(() => {}), 15000);
+refreshCallLog().catch((error) => {
+  callLogStatus.textContent = error.message;
+});
+setInterval(() => refreshCallLog().catch(() => {}), 20000);
+setInterval(() => sendPresence().catch(() => {}), 20000);
+setInterval(() => refreshPresence().catch(() => {}), 10000);
+
+refreshCallLogButton.addEventListener("click", () => {
+  refreshCallLog().catch((error) => {
+    callLogStatus.textContent = error.message;
+  });
+});
 
 callButton.addEventListener("click", async () => {
   callButton.disabled = true;
