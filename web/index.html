@@ -88,6 +88,7 @@
               <button type="button" data-test-scenario="How much is a jump start and can I book today?">Pricing</button>
               <button type="button" data-test-scenario="I already booked and need to change my appointment">Existing job</button>
               <button type="button" data-test-scenario="I want to apply to work with DDD as a mobile tech">Apply</button>
+              <button type="button" data-test-scenario="Can you tow my car to a shop?">Not offered</button>
             </div>
             <textarea id="testScriptOutput" rows="6" readonly></textarea>
           </div>
@@ -166,6 +167,18 @@
           <label>
             Do not offer / do not promise
             <textarea id="notOfferedServicesInput" rows="4" maxlength="1400"></textarea>
+          </label>
+          <label>
+            Referral / directory text link
+            <input id="directoryReferralUrlInput" type="url" maxlength="500" placeholder="Optional directory or referral URL" />
+          </label>
+          <label class="switch-row">
+            <input id="directoryReferralToggle" type="checkbox" />
+            <span>Offer referral/directory text for services DDD does not do</span>
+          </label>
+          <label class="wide-field">
+            Referral / directory wording
+            <textarea id="directoryReferralMessageInput" rows="3" maxlength="500"></textarea>
           </label>
           <label>
             Pricing rules

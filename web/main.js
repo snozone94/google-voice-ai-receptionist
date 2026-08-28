@@ -26,6 +26,9 @@ const businessKnowledgeInput = document.querySelector("#businessKnowledgeInput")
 const serviceAreaInput = document.querySelector("#serviceAreaInput");
 const offeredServicesInput = document.querySelector("#offeredServicesInput");
 const notOfferedServicesInput = document.querySelector("#notOfferedServicesInput");
+const directoryReferralToggle = document.querySelector("#directoryReferralToggle");
+const directoryReferralUrlInput = document.querySelector("#directoryReferralUrlInput");
+const directoryReferralMessageInput = document.querySelector("#directoryReferralMessageInput");
 const pricingNotesInput = document.querySelector("#pricingNotesInput");
 const emergencyInstructionsInput = document.querySelector("#emergencyInstructionsInput");
 const emergencyQuestionsInput = document.querySelector("#emergencyQuestionsInput");
@@ -86,6 +89,7 @@ let localStream;
 let dataChannel;
 let editMode = false;
 let saveTimer;
+let staffRefreshTimer;
 let isLoadingSettings = false;
 let isSavingSettings = false;
 let hasUnsavedSettings = false;
@@ -191,6 +195,11 @@ function applySettings(settings) {
   serviceAreaInput.value = settings.serviceArea || "";
   offeredServicesInput.value = settings.offeredServices || "";
   notOfferedServicesInput.value = settings.notOfferedServices || "";
+  directoryReferralToggle.checked = settings.directoryReferral?.enabled === true;
+  directoryReferralUrlInput.value = settings.directoryReferral?.url || "";
+  directoryReferralMessageInput.value =
+    settings.directoryReferral?.message ||
+    "DDD may not handle that exact service, but we can text you a referral/directory link for nearby mobile mechanics or shops if you want.";
   pricingNotesInput.value = settings.pricingNotes || "";
   emergencyInstructionsInput.value = settings.emergencyInstructions || "";
   emergencyQuestionsInput.value = (settings.emergencyQuestions || []).join("\n");
@@ -263,6 +272,11 @@ async function saveSettings(reason = "auto") {
         serviceArea: serviceAreaInput.value,
         offeredServices: offeredServicesInput.value,
         notOfferedServices: notOfferedServicesInput.value,
+        directoryReferral: {
+          enabled: directoryReferralToggle.checked,
+          url: directoryReferralUrlInput.value,
+          message: directoryReferralMessageInput.value
+        },
         pricingNotes: pricingNotesInput.value,
         emergencyInstructions: emergencyInstructionsInput.value,
         emergencyQuestions: emergencyQuestionsInput.value,
@@ -364,6 +378,9 @@ for (const input of [
   serviceAreaInput,
   offeredServicesInput,
   notOfferedServicesInput,
+  directoryReferralToggle,
+  directoryReferralUrlInput,
+  directoryReferralMessageInput,
   pricingNotesInput,
   emergencyInstructionsInput,
   emergencyQuestionsInput,
@@ -423,6 +440,9 @@ function setEditMode(nextEditMode) {
     serviceAreaInput,
     offeredServicesInput,
     notOfferedServicesInput,
+    directoryReferralToggle,
+    directoryReferralUrlInput,
+    directoryReferralMessageInput,
     pricingNotesInput,
     emergencyInstructionsInput,
     emergencyQuestionsInput,
@@ -450,7 +470,7 @@ function setEditMode(nextEditMode) {
     qaChecklistInput,
     customInstructionsInput
   ]) {
-    input.disabled = !editMode || isSavingSettings;
+    setSettingsControlLock(input, !editMode || isSavingSettings);
   }
   updateSaveControls();
   previewVoiceButton.disabled = false;
@@ -460,6 +480,19 @@ function setEditMode(nextEditMode) {
     hasUnsavedSettings = false;
     updateSaveControls("Settings locked. Tap Edit settings before changing anything.");
   }
+}
+
+function setSettingsControlLock(input, locked) {
+  const canBeReadOnly = input.matches("textarea,input") && !["checkbox", "range"].includes(input.type);
+  if (canBeReadOnly) {
+    input.readOnly = locked;
+    input.disabled = false;
+    input.classList.toggle("locked-field", locked);
+    return;
+  }
+  input.readOnly = false;
+  input.disabled = locked;
+  input.classList.toggle("locked-field", locked);
 }
 
 function updateSaveControls(message = "") {
@@ -523,6 +556,7 @@ function updateScriptPreview() {
     `Service area: ${serviceAreaInput.value || "Greater Cincinnati and nearby service areas."}`,
     `Services offered: ${offeredServicesInput.value || "Roadside assistance, mobile auto service, app help, Auto Doc, and apply-to-work questions."}`,
     `Do not promise: ${notOfferedServicesInput.value || "No exact pricing, exact arrival times, or services DDD has not confirmed."}`,
+    `Referral directory: ${directoryReferralToggle.checked ? "on" : "off"}. ${directoryReferralUrlInput.value || "No URL set."} ${directoryReferralMessageInput.value || ""}`.trim(),
     `Pricing rules: ${pricingNotesInput.value || "Do not quote exact pricing unless added here."}`,
     `Emergency handling: ${emergencyInstructionsInput.value || "Confirm safety, location, vehicle, callback number, and urgent link."}`,
     "Emergency questions:",
@@ -901,14 +935,19 @@ adminPinInput.addEventListener("change", () => {
 });
 
 staffPinInput.addEventListener("change", () => {
-  const code = staffPinInput.value.trim();
-  localStorage.setItem("dddStaffCode", code);
-  refreshInbox().catch((error) => setInboxStatus(error.message));
-  sendPresence().catch(() => {});
+  queueStaffRefresh();
+});
+
+staffPinInput.addEventListener("input", () => {
+  queueStaffRefresh();
 });
 
 staffNameInput.addEventListener("change", () => {
-  localStorage.setItem("dddStaffName", staffNameInput.value.trim());
+  queueStaffRefresh();
+});
+
+staffNameInput.addEventListener("input", () => {
+  queueStaffRefresh();
 });
 
 staffStatusSelect.addEventListener("change", () => {
@@ -920,6 +959,17 @@ replyMessageInput.addEventListener("input", () => {
   sendReplyButton.disabled = !selectedConversationPhone || !replyMessageInput.value.trim();
   sendPresence().catch(() => {});
 });
+
+function queueStaffRefresh() {
+  localStorage.setItem("dddStaffCode", staffPinInput.value.trim());
+  localStorage.setItem("dddStaffName", staffNameInput.value.trim());
+  clearTimeout(staffRefreshTimer);
+  setInboxStatus(staffPinInput.value.trim() || adminPinInput.value.trim() ? "Checking staff access..." : "Enter your staff code to load texts.");
+  staffRefreshTimer = setTimeout(() => {
+    refreshInbox().catch((error) => setInboxStatus(error.message));
+    sendPresence().catch(() => {});
+  }, 450);
+}
 
 replyForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -1101,6 +1151,8 @@ function renderRelatedRecords(title, records = []) {
                 record.name || record.phone || "Customer",
                 record.serviceType || record.reason || "",
                 record.location || "",
+                record.vehicleColor ? `Color: ${record.vehicleColor}` : "",
+                record.vehicle ? `Vehicle: ${record.vehicle}` : "",
                 record.preferredTime || "",
                 record.status || ""
               ]

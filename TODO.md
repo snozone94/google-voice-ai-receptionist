@@ -24,6 +24,8 @@
 - [ ] Add a true end-to-end simulated call tester that scores the AI response against the QA checklist.
 - [ ] Add call outcome tags that staff can manually correct after a call.
 - [ ] Add missed-call automatic SMS: "Sorry we missed you, here is the best DDD link..."
+- [ ] Add optional referral/directory page for services DDD does not do, such as towing, heavy mechanical jobs, body work, glass, paint, impound, or tire sales.
+- [ ] Add optional referral/directory SMS automation once the referral URL and wording are approved.
 - [ ] Add human transfer/handoff once a live transfer number/SIP route is chosen.
 - [ ] Add after-hours scheduling logic with business-hour awareness.
 - [ ] Add admin roles: owner, dispatcher, tech, read-only.

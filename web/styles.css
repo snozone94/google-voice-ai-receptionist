@@ -619,7 +619,7 @@ h2 {
 
 .scenario-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -791,6 +791,14 @@ textarea:disabled {
   color: #55576d;
   cursor: default;
   opacity: 1;
+}
+
+input[readonly],
+textarea[readonly],
+.locked-field {
+  background: #fbf9ff;
+  color: #3f4258;
+  cursor: pointer;
 }
 
 body:not(.edit-mode) .settings-grid label {
