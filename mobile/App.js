@@ -138,7 +138,7 @@ export default function App() {
         voice: settings.voice,
         voiceSpeed: String(settings.voiceSpeed),
         voiceDirection: settings.voiceDirection || "",
-        text: settings.greeting || "Thank you for calling DDD. How can I help today?",
+        text: settings.greeting || "Thank you for calling Triple D Roadside. How can I help today?",
         t: String(Date.now())
       }).toString()}`;
       const created = await Audio.Sound.createAsync({ uri: audioUri }, { shouldPlay: true });
@@ -772,7 +772,7 @@ function buildScriptPreview(settings) {
     settings.enabled ? "AI answers new calls." : "AI is paused.",
     `Voice: ${settings.voice}`,
     `Speed: ${Number(settings.voiceSpeed || 1).toFixed(2)}x`,
-    `Greeting: ${settings.greeting || "Thank you for calling DDD, this is the receptionist. How can I help today?"}`,
+    `Greeting: ${settings.greeting || "Thank you for calling Triple D Roadside, this is the receptionist. How can I help today?"}`,
     "",
     "Business knowledge:",
     settings.businessKnowledge || "Add DDD business details here.",

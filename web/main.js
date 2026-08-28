@@ -351,7 +351,7 @@ previewVoiceButton.addEventListener("click", async () => {
         voice: voiceSelect.value,
         voiceSpeed: voiceSpeedInput.value,
         voiceDirection: voiceDirectionInput.value,
-        text: greetingInput.value || "Thank you for calling DDD. How can I help today?"
+        text: greetingInput.value || "Thank you for calling Triple D Roadside. How can I help today?"
       })
     });
     if (!response.ok) {
@@ -555,7 +555,7 @@ function updateScriptPreview() {
     `Voice: ${voiceSelect.selectedOptions[0]?.textContent || voiceSelect.value || "Marin"}`,
     `Speed: ${Number(voiceSpeedInput.value || 1).toFixed(2)}x`,
     `Voice direction: ${voiceDirectionInput.value || "Warm, confident, friendly receptionist."}`,
-    `Greeting: ${greetingInput.value || "Thank you for calling DDD, this is the receptionist. How can I help today?"}`,
+    `Greeting: ${greetingInput.value || "Thank you for calling Triple D Roadside, this is the receptionist. How can I help today?"}`,
     "",
     "Business knowledge:",
     businessKnowledgeInput.value || "Add DDD services, prices, service areas, hours, policies, and answers here.",

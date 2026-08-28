@@ -408,7 +408,7 @@ app.post("/api/voice-preview", requireOpenAIKey, express.json(), async (req, res
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 700);
-    const input = String(req.body?.text || settings.greeting || "Thank you for calling DDD. How can I help today?")
+    const input = String(req.body?.text || settings.greeting || "Thank you for calling Triple D Roadside. How can I help today?")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 600);
@@ -436,7 +436,7 @@ app.get("/api/voice-preview.mp3", requireOpenAIKey, async (req, res, next) => {
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 700);
-    const input = String(req.query.text || settings.greeting || "Thank you for calling DDD. How can I help today?")
+    const input = String(req.query.text || settings.greeting || "Thank you for calling Triple D Roadside. How can I help today?")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 600);

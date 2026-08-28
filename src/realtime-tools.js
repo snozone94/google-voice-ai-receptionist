@@ -37,7 +37,7 @@ class CallMonitor {
           return;
         }
 
-        const greeting = this.settings.greeting || "Thank you for calling DDD. How can I help today?";
+        const greeting = this.settings.greeting || "Thank you for calling Triple D Roadside. How can I help today?";
         ws.send(
           JSON.stringify({
             type: "response.create",

@@ -28,14 +28,15 @@ export const voiceOptions = [
 ];
 
 const supportedVoiceIds = new Set(voiceOptions.map((voice) => voice.id));
-const defaultGreeting = "Thank you for calling DDD Mobile. I can help book service or get your message to the team. What can I help with today?";
+const customerBusinessName = "Triple D Roadside";
+const defaultGreeting = `Thank you for calling ${customerBusinessName}. I can help book service or get your message to the team. What can I help with today?`;
 const defaultCustomInstructions =
-  "Act like a polished front desk receptionist. Be warm, direct, and fast. Reflect the caller's exact request before asking questions. If they name a service like oil change, brakes, battery install, tire help, jump start, lockout, or fuel delivery, treat it as a bookable DDD service immediately. For oil changes, brakes, rotors, hub bearings, and battery installs, ask whether the customer already has the parts/materials or needs DDD to confirm parts. For tire-related work, ask whether the vehicle has a wheel lock/special key and whether they have it available. Reassure them once that this will be quick and that you can make the booking for them when booking applies. Do not ask generic category questions after they already named the service. Do not repeat that reassurance. Do not keep emergency callers on the phone longer than needed. Collect the key details, point them to the right DDD link, and save a clear next step.";
+  "Act like a polished front desk receptionist. Be warm, direct, and fast. Use Triple D Roadside only in the opening greeting so the business is pronounced correctly; after that, DDD is okay. Reflect the caller's exact request before asking questions. If they name a service like oil change, brakes, battery install, tire help, jump start, lockout, or fuel delivery, treat it as a bookable DDD service immediately. For oil changes, brakes, rotors, hub bearings, and battery installs, ask whether the customer already has the parts/materials or needs DDD to confirm parts. For brake, rotor, tire replacement, tire plug, or spare tire calls, ask quantity/position only if they have not already said it: one wheel, front axle, rear axle, both axles/all four, or spare/tire-specific need. Accept what the customer says and use it for the booking notes and rough starting-price math when possible. For tire-related work, ask whether the vehicle has a wheel lock/special key and whether they have it available. Reassure them once that this will be quick and that you can make the booking for them when booking applies. If callers ask how they can pay, say DDD accepts cash, card, tap pay, and installments, but does not accept checks. Do not ask generic category questions after they already named the service. Do not repeat that reassurance. Do not keep emergency callers on the phone longer than needed. Collect the key details, point them to the right DDD link, and save a clear next step.";
 const defaultBusinessKnowledge =
-  "DDD Mobile is a woman-owned Cincinnati mobile roadside and light mobile maintenance service. DDD helps with jump starts, battery installs, lockouts, fuel delivery, tire inflation, tire plugs, spare tire changes, oil change requests, brake pads, rotors, bolt-in hub bearing requests, light mobile maintenance, DDD Mobile app/status help, DDD Auto Doc vehicle guidance, booking help, existing booking messages, and apply-to-work questions. DDD does not tow. Use dddcincy.com links only for DDD Mobile, DDD Mobile app/status, DDD Auto Doc, roadside service booking, emergency service requests, shop roadside services, and apply-to-work requests. The receptionist should push callers toward booking/status/apply quickly instead of holding long conversations. If pricing, exact availability, or service-area details are unknown, collect details and say the DDD team will confirm.";
+  "DDD Mobile is a woman-owned Cincinnati mobile roadside and light mobile maintenance service. DDD helps with jump starts, battery installs, lockouts, fuel delivery, tire inflation, tire plugs, spare tire changes, oil change requests, brake pads, rotors, bolt-in hub bearing requests, light mobile maintenance, DDD Mobile app/status help, DDD Auto Doc vehicle guidance, booking help, existing booking messages, and apply-to-work questions. DDD does not tow. Accepted payment methods are cash, card, tap pay, and installments. No checks. Use dddcincy.com links only for DDD Mobile, DDD Mobile app/status, DDD Auto Doc, roadside service booking, emergency service requests, shop roadside services, and apply-to-work requests. The receptionist should push callers toward booking/status/apply quickly instead of holding long conversations. If pricing, exact availability, or service-area details are unknown, collect details and say the DDD team will confirm.";
 const defaultServiceArea = "Greater Cincinnati, Liberty Township, Northern Kentucky, and nearby tri-state areas DDD confirms case by case.";
 const defaultPricingNotes =
-  "Public starting points only, not final quotes: standard service fee $25, gas by the gallon $10, 5-gallon fuel refill $35, tire inflation $15, tire plug $20, spare tire change $50, battery jump-start $30, battery installation $40, door unlock $40, oil change labor $25 when customer provides oil/filter, brake pads $50 per axle or listed per-wheel/all-wheel options, rotor add-on +$20 per axle, rotor replacement only $50 per axle, full brake pad replacement four wheels $200, brake and rotor all wheels $280, bolt-in hub bearing $200 per axle. Say DDD will confirm final price before service.";
+  "Public starting points only, not final quotes: standard service fee $25, gas by the gallon $10, 5-gallon fuel refill $35, tire inflation $15, tire plug $20, spare tire change $50, battery jump-start $30, battery installation $40, door unlock $40, oil change labor $25 when customer provides oil/filter, brake pads $50 per axle or listed per-wheel/all-wheel options, rotor add-on +$20 per axle, rotor replacement only $50 per axle, full brake pad replacement four wheels $200, brake and rotor all wheels $280, bolt-in hub bearing $200 per axle. For brakes/rotors/tires, confirm quantity or position before giving a starting estimate. Accepted payment methods: cash, card, tap pay, and installments. No checks. Say DDD will confirm final price before service.";
 const defaultEmergencyInstructions =
   "For stranded or urgent roadside callers, be extremely brief. Ask if they are safe, get exact location, vehicle year/make/model/color, what happened, callback number, and whether they can receive a text. Then direct them to the emergency service request option and save the lead.";
 const defaultHumanHandoffRules =
@@ -521,6 +522,7 @@ Voice and manner:
 - Voice direction: ${activeSettings.voiceDirection}
 - Speaking speed: ${activeSettings.voiceSpeed}x. Keep the same natural pace throughout the call.
 - Speak like a real front desk receptionist: calm, helpful, confident, and not robotic.
+- Use "Triple D Roadside" only in the opening greeting so the business is pronounced correctly. After the greeting, DDD is okay, and DDD Mobile app stays the app name.
 - Keep answers short enough for a phone call, usually one or two sentences.
 - Ask one question at a time.
 - Let the caller finish before responding, and do not over-explain.
@@ -531,6 +533,7 @@ Voice and manner:
 - Do not invent business policies, prices, addresses, or availability.
 - If a caller wants to book, collect their name, phone, email if available, service, location, vehicle year/make/model/color when relevant, issue, urgency, and preferred date/time.
 - For oil changes, brake pads, rotors, bolt-in hub bearings, and battery installs, ask whether the customer already has the parts/materials or needs DDD to confirm parts.
+- For brake pads, rotors, tire replacement, tire plug, and spare tire calls, accept quantity/position if the caller already says it. If they do not, ask whether it is one wheel, front axle, rear axle, both axles/all four, or a spare/tire-specific need.
 - For tire-related jobs, ask whether the vehicle has a wheel lock/special key and whether the caller has that key available.
 - As soon as you have enough booking details and callback information, call save_booking_request. Do not require the caller to fill out a form first.
 - Do not read long URLs out loud. If a text is allowed, say "I'll text that link to you now" instead of speaking the full link.
@@ -550,7 +553,7 @@ Opening flow:
 Intake flow:
 - For every meaningful call, collect and confirm name, best callback number, service needed, location or service area if relevant, urgency, and preferred appointment time when scheduling.
 - For roadside or vehicle-related requests, ask for vehicle year, make, model, color, current location, what happened, and whether the caller is in a safe place.
-- For pricing questions, follow admin pricing guidance, gather job details, and say DDD will confirm final price before service.
+- For pricing or payment questions, follow admin pricing guidance, gather job details when needed, and say DDD will confirm final price before service. Accepted payment methods are cash, card, tap pay, and installments. No checks.
 - For existing customers, collect their name, callback number, and what appointment or job they are calling about.
 - Before ending, summarize the message in one sentence and confirm the next step.
 - Do not turn intake into a long interview. Get the minimum useful details, then move the caller to the link or saved callback.
@@ -1037,6 +1040,7 @@ export function buildDryRun(settings = {}, callerMessage = "") {
       : destination;
   const reflectedNeed = summarizeCallerNeed(rawMessage, intent);
   const directBookingNeed = summarizeBookableService(message);
+  const startingEstimate = estimateStartingPrice(message);
   const baseQuestions =
     intent === "emergency"
       ? buildEmergencyQuestions(activeSettings.emergencyQuestions, message)
@@ -1051,6 +1055,8 @@ export function buildDryRun(settings = {}, callerMessage = "") {
       ? `${reflectedNeed} I'll keep this quick and can create the request for you. First, are you in a safe place right now?`
       : intent === "apply"
         ? `${reflectedNeed} I can get your info to DDD quickly. What kind of work are you applying for?`
+        : intent === "payment"
+          ? "DDD accepts cash, card, tap pay, and installments. We do not accept checks. Do you want me to help make the booking now?"
         : intent === "unsupported"
           ? activeSettings.directoryReferral.enabled
             ? `${reflectedNeed} I can text a referral/directory link if you want.`
@@ -1061,9 +1067,11 @@ export function buildDryRun(settings = {}, callerMessage = "") {
   const action =
     intent === "apply"
       ? "Save an apply-to-work message and send the DDD apply link."
-      : intent === "unsupported"
+      : intent === "payment"
+        ? "Answer accepted payment methods clearly, then offer to book the service if the caller is ready."
+        : intent === "unsupported"
         ? "Do not book an unsupported service as a DDD job. Save a message and offer the referral/directory text if enabled."
-        : "Collect only missing booking details, including vehicle color when relevant, create the booking during the call, and text the best next-step link instead of reading URLs out loud. Do not send a tracking link until a tech is assigned or en route.";
+        : "Collect only missing booking details, including vehicle color and brake/rotor/tire quantity when relevant, create the booking during the call, and text the best next-step link instead of reading URLs out loud. Do not send a tracking link until a tech is assigned or en route.";
   if (intent === "emergency") {
     questions = questions.filter((question) => !question.toLowerCase().includes("safe"));
   }
@@ -1095,11 +1103,14 @@ export function buildDryRun(settings = {}, callerMessage = "") {
       `First response: ${firstResponse}`,
       `Next questions, one at a time: ${questions.join(" | ")}`,
       `Action: ${action}`,
+      startingEstimate ? `Starting price math: ${startingEstimate}` : "",
       `Best next link: ${bestNextLink}`,
       `SMS follow-up: ${smsLine}`,
       `Required outcome: ${activeSettings.callOutcomeRules}`,
       `Fallback if something breaks: ${activeSettings.fallbackRules}`
-    ].join("\n\n"),
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
     questions,
     qaChecklist: activeSettings.qaChecklist
       .split(/[.;]\s+|\n+/)
@@ -1110,9 +1121,40 @@ export function buildDryRun(settings = {}, callerMessage = "") {
   };
 }
 
+function estimateStartingPrice(message) {
+  if (/brake|pads/.test(message) && /rotor/.test(message) && /all four|4|four|all wheels|both axles/.test(message)) {
+    return "Brake pads and rotors all four wheels start around $280 before final confirmation.";
+  }
+  if (/brake|pads/.test(message) && /rotor/.test(message) && /front|rear|back|axle/.test(message)) {
+    return "Brake pads start around $50 per axle, plus rotor add-on around $20 per axle, so one axle starts around $70 before final confirmation.";
+  }
+  if (/brake|pads/.test(message) && /all four|4|four|all wheels|both axles/.test(message)) {
+    return "Full brake pad replacement for four wheels starts around $200 before final confirmation.";
+  }
+  if (/rotor/.test(message) && /all four|4|four|all wheels|both axles/.test(message)) {
+    return "Rotor replacement for both axles starts around $100 before final confirmation.";
+  }
+  if (/brake|pads/.test(message) && /front|rear|back|axle/.test(message)) {
+    return "Brake pads start around $50 per axle before final confirmation.";
+  }
+  if (/rotor/.test(message) && /front|rear|back|axle/.test(message)) {
+    return "Rotor replacement starts around $50 per axle, or rotor add-on starts around $20 per axle before final confirmation.";
+  }
+  if (/tire plug|plug/.test(message) && /\btwo\b|\b2\b/.test(message)) {
+    return "Tire plugs start around $20 per tire, so two starts around $40 before final confirmation.";
+  }
+  if (/tire plug|plug/.test(message)) return "Tire plugs start around $20 per tire before final confirmation.";
+  if (/spare/.test(message)) return "Spare tire change starts around $50 before final confirmation.";
+  if (/tire inflation|inflate/.test(message)) return "Tire inflation starts around $15 before final confirmation.";
+  return "";
+}
+
 function classifyIntent(message) {
   if (/\btow\b|\btowing\b|transmission|engine rebuild|\brebuild\b|body work|\bpaint\b|windshield|glass|impound|sell.*tire|new tire/.test(message)) {
     return "unsupported";
+  }
+  if (/payment|pay|cash|card|tap pay|apple pay|installment|financing|finance|check|checks/.test(message)) {
+    return "payment";
   }
   if (/oil change|brake|pads|battery install|maintenance|repair|mobile service/.test(message)) {
     return "booking";
@@ -1139,6 +1181,9 @@ function buildBookingQuestions(message) {
     "Where are you located?",
     "What is the vehicle year, make, model, and color?"
   ];
+  if (/brake|pads|rotor|tire replacement|replace.*tire|new tire|tire change|plug|spare/.test(message)) {
+    questions.push("Is that for one wheel, the front axle, the rear axle, all four, or a specific tire?");
+  }
   if (/oil change|brake|pads|rotor|hub bearing|battery install/.test(message)) {
     questions.push("Do you already have the parts or materials, or do you need DDD to confirm parts?");
   }
@@ -1168,7 +1213,8 @@ function detectKnownDetails(message) {
     vehicle: /\b(toyota|honda|ford|chevy|chevrolet|nissan|hyundai|kia|jeep|dodge|ram|bmw|mercedes|audi|lexus|camry|accord|civic|corolla|malibu|impala|altima|sonata|elantra|soul|wrangler|charger|f-?150)\b/.test(message),
     color: /\b(red|blue|black|white|gray|grey|silver|green|yellow|orange|purple|brown|tan|gold|maroon)\b/.test(message),
     phone: /\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/.test(message),
-    safe: /\b(safe|parking lot|shoulder|home|driveway|not safe|danger|highway)\b/.test(message)
+    safe: /\b(safe|parking lot|shoulder|home|driveway|not safe|danger|highway)\b/.test(message),
+    quantity: /\b(one|1|two|2|front|rear|back|both|all four|4|four|driver|passenger|left|right|axle|wheel|wheels|tire|tires)\b/.test(message)
   };
 }
 
@@ -1182,6 +1228,7 @@ function filterKnownQuestions(questions, knownDetails) {
     if (knownDetails.location && /location|cross street|located/.test(normalized)) return false;
     if (knownDetails.vehicle && knownDetails.color && /vehicle|year|make|model|color/.test(normalized)) return false;
     if (knownDetails.vehicle && /year, make, model, and color/.test(normalized)) return true;
+    if (knownDetails.quantity && /one wheel|front axle|rear axle|all four|specific tire/.test(normalized)) return false;
     return true;
   });
 }
@@ -1190,6 +1237,7 @@ function summarizeCallerNeed(rawMessage, intent) {
   const cleaned = cleanText(rawMessage, "", 180).replace(/[.!?]+$/g, "");
   if (intent === "emergency") return "I hear this is urgent.";
   if (intent === "apply") return "I can help with the DDD work application.";
+  if (intent === "payment") return "I can answer payment options.";
   if (intent === "unsupported") {
     if (/\btow\b|\btowing\b/i.test(cleaned)) return "DDD does not offer towing, but I can save your message.";
     return "DDD may not handle that exact service.";
@@ -1216,10 +1264,11 @@ function chooseDestination(destinations, message) {
     emergency: /emergency/i,
     apply: /apply/i,
     app: /auto doc|mobile app/i,
+    payment: /shop|service|book/i,
     shopping: /shop|service/i,
     booking: /book/i
   }[intent];
-  return destinations.find((destination) => wanted.test(`${destination.label} ${destination.useWhen}`)) || destinations[0] || null;
+  return destinations.find((destination) => wanted?.test(`${destination.label} ${destination.useWhen}`)) || destinations[0] || null;
 }
 
 function cleanText(value, fallback, maxLength) {

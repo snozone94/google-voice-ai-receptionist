@@ -44,7 +44,11 @@
     },
     {
       "question": "What are the public starting prices?",
-      "answer": "Use these only as public starting points, not final quotes: standard service fee $25, gas by the gallon $10, 5-gallon fuel refill $35, tire inflation $15, tire plug $20, spare tire change $50, battery jump-start $30, battery installation $40, door unlock $40, oil change labor $25 when customer provides oil/filter, brake pads $50 per axle or listed per-wheel/all-wheel options, rotor add-on +$20 per axle, rotor replacement only $50 per axle, full brake pad replacement four wheels $200, brake and rotor all wheels $280, bolt-in hub bearing $200 per axle."
+      "answer": "Use these only as public starting points, not final quotes: standard service fee $25, gas by the gallon $10, 5-gallon fuel refill $35, tire inflation $15, tire plug $20, spare tire change $50, battery jump-start $30, battery installation $40, door unlock $40, oil change labor $25 when customer provides oil/filter, brake pads $50 per axle or listed per-wheel/all-wheel options, rotor add-on +$20 per axle, rotor replacement only $50 per axle, full brake pad replacement four wheels $200, brake and rotor all wheels $280, bolt-in hub bearing $200 per axle. For brakes, rotors, and tire work, confirm quantity or position first. Accepted payment methods are cash, card, tap pay, and installments. No checks."
+    },
+    {
+      "question": "What payment methods do you accept?",
+      "answer": "DDD accepts cash, card, tap pay, and installments. DDD does not accept checks."
     },
     {
       "question": "Where are you located?",
