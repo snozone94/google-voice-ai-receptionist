@@ -432,8 +432,9 @@
           <button id="refreshInsightsButton" type="button">Refresh insights</button>
         </div>
         <div id="insightHighlights" class="insight-highlights"></div>
+        <div id="insightFocusStrip" class="insight-focus-strip"></div>
         <div class="insight-suggestions">
-          <h3>Suggestions</h3>
+          <h3>Recommended moves</h3>
           <div id="insightSuggestionsList" class="insight-list"></div>
         </div>
         <div class="insight-grid">
@@ -477,23 +478,22 @@
           </div>
           <button id="refreshActivityButton" type="button">Refresh activity</button>
         </div>
-        <div class="activity">
-          <div class="activity-card">
-            <h3>Calls</h3>
-            <ul id="callsList"></ul>
+        <div class="activity-shell">
+          <div class="activity-overview" id="activityOverview"></div>
+          <div class="activity-filter-row" aria-label="Activity filters">
+            <button class="activity-filter active" type="button" data-activity-filter="all">All</button>
+            <button class="activity-filter" type="button" data-activity-filter="call">Calls</button>
+            <button class="activity-filter" type="button" data-activity-filter="booking">Bookings</button>
+            <button class="activity-filter" type="button" data-activity-filter="lead">Leads</button>
+            <button class="activity-filter" type="button" data-activity-filter="summary">Summaries</button>
           </div>
-          <div class="activity-card">
-            <h3>Leads</h3>
-            <ul id="leadsList"></ul>
-          </div>
-          <div class="activity-card">
-            <h3>Summaries</h3>
-            <ul id="summariesList"></ul>
-          </div>
-          <div class="activity-card">
-            <h3>Bookings</h3>
-            <ul id="bookingsList"></ul>
-          </div>
+          <ul id="activityTimeline" class="activity-timeline"></ul>
+        </div>
+        <div class="activity legacy-activity" aria-hidden="true">
+          <ul id="callsList"></ul>
+          <ul id="leadsList"></ul>
+          <ul id="summariesList"></ul>
+          <ul id="bookingsList"></ul>
         </div>
         <form id="leadForm" class="lead-capture">
           <h3>Manual lead</h3>

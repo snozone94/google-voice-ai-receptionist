@@ -461,6 +461,8 @@ function summarizeInsightWindow(window, records) {
   const completed = calls.filter((call) => call.completion === "complete").length;
   const missed = calls.filter((call) => call.completion === "incomplete" || /busy|missed|failed|no-answer|canceled|cancelled/i.test(call.status || "")).length;
   const needsReview = calls.filter((call) => call.completion === "needs-review").length;
+  const outboundSms = sms.filter((message) => String(message.direction || "").toLowerCase() === "outbound").length;
+  const capturedPeople = bookings.length + leads.length;
   const durations = calls.map((call) => Number(call.durationSeconds || 0)).filter((seconds) => seconds > 0);
   const transcriptText = calls.map((call) => call.transcriptText || "").filter(Boolean).join("\n").slice(0, 20000);
   const serviceCounts = countTopValues([
@@ -486,7 +488,10 @@ function summarizeInsightWindow(window, records) {
     completed,
     missed,
     needsReview,
-    smsSent: sms.filter((message) => String(message.direction || "").toLowerCase() === "outbound").length,
+    bookingRate: calls.length ? Math.round((bookings.length / calls.length) * 100) : 0,
+    completionRate: calls.length ? Math.round((completed / calls.length) * 100) : 0,
+    smsCoverageRate: capturedPeople ? Math.min(100, Math.round((outboundSms / capturedPeople) * 100)) : 0,
+    smsSent: outboundSms,
     smsReceived: sms.filter((message) => String(message.direction || "").toLowerCase() === "inbound").length,
     recordings: calls.filter((call) => call.recordingUrl).length,
     transcripts: calls.filter((call) => call.transcriptText).length,

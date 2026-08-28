@@ -14,6 +14,7 @@ const refreshActivityButton = document.querySelector("#refreshActivityButton");
 const refreshCallLogButton = document.querySelector("#refreshCallLogButton");
 const refreshInsightsButton = document.querySelector("#refreshInsightsButton");
 const insightHighlights = document.querySelector("#insightHighlights");
+const insightFocusStrip = document.querySelector("#insightFocusStrip");
 const insightSuggestionsList = document.querySelector("#insightSuggestionsList");
 const insightsStatus = document.querySelector("#insightsStatus");
 const insightCards = {
@@ -74,6 +75,9 @@ const notifyQaIssuesToggle = document.querySelector("#notifyQaIssuesToggle");
 const notifyDailySummaryToggle = document.querySelector("#notifyDailySummaryToggle");
 const notifyWeeklySummaryToggle = document.querySelector("#notifyWeeklySummaryToggle");
 const notifyMonthlySummaryToggle = document.querySelector("#notifyMonthlySummaryToggle");
+const activityOverview = document.querySelector("#activityOverview");
+const activityTimeline = document.querySelector("#activityTimeline");
+const activityFilterButtons = document.querySelectorAll("[data-activity-filter]");
 const customInstructionsInput = document.querySelector("#customInstructionsInput");
 const scriptPreview = document.querySelector("#scriptPreview");
 const testCallerInput = document.querySelector("#testCallerInput");
@@ -113,6 +117,8 @@ let dataChannel;
 let editMode = false;
 let saveTimer;
 let staffRefreshTimer;
+let activityFilter = "all";
+let activityItems = [];
 let isLoadingSettings = false;
 let isSavingSettings = false;
 let hasUnsavedSettings = false;
@@ -726,6 +732,7 @@ async function refreshInsights() {
   const response = await fetch("/api/insights", { headers: adminHeaders() });
   if (response.status === 403) {
     insightHighlights.innerHTML = "";
+    if (insightFocusStrip) insightFocusStrip.innerHTML = "";
     insightSuggestionsList.innerHTML = `<p class="empty-state">Enter the admin PIN to load daily, weekly, and monthly insights.</p>`;
     for (const card of Object.values(insightCards)) {
       if (card) card.innerHTML = "";
@@ -735,20 +742,50 @@ async function refreshInsights() {
   }
   if (!response.ok) throw new Error("Could not load insights.");
   const payload = await response.json();
-  insightHighlights.innerHTML = (payload.highlights || [])
+  const sections = payload.sections || {};
+  const daily = sections.daily || {};
+  const weekly = sections.weekly || {};
+  const monthly = sections.monthly || {};
+  insightHighlights.innerHTML = [
+    {
+      label: "Today",
+      value: `${daily.bookings || 0}/${daily.calls || 0}`,
+      detail: "bookings from calls",
+      change: daily.changes?.bookings
+    },
+    {
+      label: "Needs follow-up",
+      value: String((daily.missed || 0) + (daily.needsReview || 0)),
+      detail: "missed or review calls",
+      change: daily.changes?.missed
+    },
+    {
+      label: "SMS coverage",
+      value: `${weekly.smsSent || 0}`,
+      detail: "texts sent this week",
+      change: weekly.changes?.smsSent
+    },
+    {
+      label: "Avg call",
+      value: formatDuration(weekly.averageDurationSeconds || 0) || "0s",
+      detail: "this week",
+      change: weekly.changes?.averageDurationSeconds
+    }
+  ]
     .map(
       (item) => `
         <div class="insight-highlight">
           <span>${escapeHtml(item.label)}</span>
           <strong>${escapeHtml(item.value)}</strong>
-          <small>${escapeHtml(formatInsightChange(item.change))}</small>
+          <small>${escapeHtml(item.detail)} · ${escapeHtml(formatInsightChange(item.change))}</small>
         </div>
       `
     )
     .join("");
-  insightSuggestionsList.innerHTML = (payload.suggestions || [])
-    .map((suggestion) => `<div class="suggestion-pill">${escapeHtml(suggestion)}</div>`)
-    .join("");
+  if (insightFocusStrip) {
+    insightFocusStrip.innerHTML = renderInsightFocusStrip(daily, weekly, monthly);
+  }
+  insightSuggestionsList.innerHTML = renderInsightSuggestions(payload.suggestions || []);
   renderInsightCard("daily", payload.sections?.daily);
   renderInsightCard("weekly", payload.sections?.weekly);
   renderInsightCard("monthly", payload.sections?.monthly);
@@ -770,7 +807,10 @@ function renderInsightCard(key, report) {
       ${renderInsightMetric("Bookings", report.bookings, report.changes?.bookings)}
       ${renderInsightMetric("Leads", report.leads, report.changes?.leads)}
       ${renderInsightMetric("Missed", report.missed, report.changes?.missed)}
-      ${renderInsightMetric("Avg time", formatDuration(report.averageDurationSeconds), report.changes?.averageDurationSeconds)}
+      ${renderInsightMetric("Needs review", report.needsReview || 0)}
+      ${renderInsightMetric("Conversion", formatPercent(report.bookingRate))}
+      ${renderInsightMetric("SMS coverage", formatPercent(report.smsCoverageRate))}
+      ${renderInsightMetric("Avg time", formatDuration(report.averageDurationSeconds) || "0s", report.changes?.averageDurationSeconds)}
       ${renderInsightMetric("SMS sent", report.smsSent, report.changes?.smsSent)}
       ${renderInsightMetric("Transcripts", report.transcripts)}
     </div>
@@ -784,11 +824,68 @@ function renderInsightCard(key, report) {
       <strong>What changed</strong>
       ${(report.changed || []).map((change) => `<p>${escapeHtml(change)}</p>`).join("")}
     </div>
+    <div class="insight-change-box action-box">
+      <strong>What to watch</strong>
+      ${renderInsightWatchList(report)}
+    </div>
     <div class="recent-call-strip">
       <strong>Recent calls</strong>
       ${renderRecentInsightCalls(report.recentCalls)}
     </div>
   `;
+}
+
+function renderInsightFocusStrip(daily = {}, weekly = {}, monthly = {}) {
+  const topService = weekly.topServices?.[0]?.label || monthly.topServices?.[0]?.label || "No clear service yet";
+  const topLocation = weekly.topLocations?.[0]?.label || monthly.topLocations?.[0]?.label || "No clear location yet";
+  const riskCount = (daily.missed || 0) + (daily.needsReview || 0);
+  const trend = weekly.calls > weekly.previous?.calls
+    ? "Call volume is moving up."
+    : weekly.calls < weekly.previous?.calls
+      ? "Call volume is lighter than last week."
+      : "Call volume is steady.";
+  return `
+    <div class="focus-card priority-${riskCount ? "high" : "normal"}">
+      <span>Priority</span>
+      <strong>${escapeHtml(riskCount ? `${riskCount} call${riskCount === 1 ? "" : "s"} need attention` : "No urgent cleanup")}</strong>
+      <p>${escapeHtml(riskCount ? "Open Calls/Inbox and text these callers first." : "Keep monitoring completion and SMS delivery.")}</p>
+    </div>
+    <div class="focus-card">
+      <span>Demand</span>
+      <strong>${escapeHtml(topService)}</strong>
+      <p>${escapeHtml(`${trend} Keep this intake path short.`)}</p>
+    </div>
+    <div class="focus-card">
+      <span>Area</span>
+      <strong>${escapeHtml(topLocation)}</strong>
+      <p>Use this to spot where calls are clustering.</p>
+    </div>
+  `;
+}
+
+function renderInsightSuggestions(suggestions = []) {
+  if (!suggestions.length) return `<p class="empty-state">No suggested changes yet.</p>`;
+  return suggestions
+    .slice(0, 5)
+    .map(
+      (suggestion, index) => `
+        <div class="suggestion-row">
+          <span>${index + 1}</span>
+          <p>${escapeHtml(suggestion)}</p>
+        </div>
+      `
+    )
+    .join("");
+}
+
+function renderInsightWatchList(report = {}) {
+  const items = [];
+  if ((report.missed || 0) > 0) items.push(`${report.missed} missed/incomplete call${report.missed === 1 ? "" : "s"}.`);
+  if ((report.needsReview || 0) > 0) items.push(`${report.needsReview} call${report.needsReview === 1 ? "" : "s"} need QA review.`);
+  if ((report.calls || 0) > 0 && (report.smsCoverageRate || 0) < 80) items.push("SMS coverage is under 80%.");
+  if ((report.averageDurationSeconds || 0) > 150) items.push("Calls are getting long; shorten the script.");
+  if (!items.length) items.push("No obvious problem in this period.");
+  return items.map((item) => `<p>${escapeHtml(item)}</p>`).join("");
 }
 
 function renderInsightMetric(label, value, change) {
@@ -799,6 +896,11 @@ function renderInsightMetric(label, value, change) {
       ${change ? `<small>${escapeHtml(formatInsightChange(change))}</small>` : ""}
     </div>
   `;
+}
+
+function formatPercent(value) {
+  const number = Number(value || 0);
+  return `${Math.round(number)}%`;
 }
 
 function renderTopList(title, items = []) {
@@ -1236,6 +1338,7 @@ replyForm.addEventListener("submit", async (event) => {
 });
 
 async function refreshActivity() {
+  if (activityTimeline) activityTimeline.innerHTML = `<li class="activity-item empty-state">Loading activity...</li>`;
   const [callsResponse, leadsResponse, summariesResponse, bookingsResponse] = await Promise.all([
     fetch("/api/calls"),
     fetch("/api/leads"),
@@ -1248,48 +1351,92 @@ async function refreshActivity() {
     summariesResponse.json(),
     bookingsResponse.json()
   ]);
-  renderActivityFeed(callsList, calls, "No forwarded calls yet.", (call) => ({
-    title: call.callId || "Forwarded call",
-    meta: [formatTime(call.createdAt), call.status || call.type].filter(Boolean).join(" · "),
-    body: call.from ? `From ${formatPhone(call.from)}` : "Call event saved."
-  }));
-  renderActivityFeed(leadsList, leads, "No leads yet.", (lead) => ({
-    title: lead.name || formatPhone(lead.phone) || "Lead",
-    meta: [formatTime(lead.createdAt), lead.urgency, lead.serviceType].filter(Boolean).join(" · "),
-    body: lead.reason || lead.nextStep || "Lead saved."
-  }));
-  renderActivityFeed(summariesList, summaries, "No summaries yet.", (summary) => ({
-    title: summary.callId || "Call summary",
-    meta: [formatTime(summary.endedAt || summary.createdAt), summary.recordingUrl ? "recording" : ""].filter(Boolean).join(" · "),
-    body: summary.transcript?.length ? `${summary.transcript.length} transcript lines saved.` : "Summary saved."
-  }));
-  renderActivityFeed(bookingsList, bookings, "No booking requests yet.", (booking) => ({
-    title: booking.name || formatPhone(booking.phone) || "Booking",
-    meta: [formatTime(booking.createdAt), booking.status || "Requested", booking.externalSync?.ok ? "synced" : "local"].filter(Boolean).join(" · "),
-    body: [booking.serviceType || booking.reason, booking.location, booking.vehicleColor ? `Color: ${booking.vehicleColor}` : ""].filter(Boolean).join(" · ")
-  }));
+  activityItems = buildActivityItems({ calls, leads, summaries, bookings });
+  renderActivityOverview({ calls, leads, summaries, bookings });
+  renderActivityTimeline();
 }
 
-function renderActivityFeed(element, records, emptyMessage, formatter) {
-  element.innerHTML = "";
-  if (!records.length) {
-    const item = document.createElement("li");
-    item.className = "activity-item empty-state";
-    item.textContent = emptyMessage;
-    element.append(item);
+function buildActivityItems({ calls = [], leads = [], summaries = [], bookings = [] }) {
+  return [
+    ...calls.map((call) => ({
+      type: "call",
+      at: call.createdAt,
+      title: call.from ? `Call from ${formatPhone(call.from)}` : "Forwarded call",
+      eyebrow: call.status || call.type || "Call",
+      detail: call.callId || "Call event saved",
+      accent: "blue"
+    })),
+    ...bookings.map((booking) => ({
+      type: "booking",
+      at: booking.createdAt,
+      title: booking.name || formatPhone(booking.phone) || "Booking request",
+      eyebrow: booking.status || "Booking",
+      detail: [booking.serviceType || booking.reason, booking.location, booking.vehicleColor ? `${booking.vehicleColor} vehicle` : ""].filter(Boolean).join(" · ") || "Booking saved",
+      accent: "green"
+    })),
+    ...leads.map((lead) => ({
+      type: "lead",
+      at: lead.createdAt,
+      title: lead.name || formatPhone(lead.phone) || "Lead saved",
+      eyebrow: [lead.urgency, lead.serviceType || "Lead"].filter(Boolean).join(" · "),
+      detail: lead.reason || lead.nextStep || "Lead captured",
+      accent: "pink"
+    })),
+    ...summaries.map((summary) => ({
+      type: "summary",
+      at: summary.endedAt || summary.createdAt,
+      title: summary.callId || "Call summary",
+      eyebrow: summary.recordingUrl ? "Summary · recording" : "Summary",
+      detail: summary.transcript?.length ? `${summary.transcript.length} transcript lines saved` : "Summary saved",
+      accent: "violet"
+    }))
+  ]
+    .filter((item) => item.at)
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+    .slice(0, 40);
+}
+
+function renderActivityOverview({ calls = [], leads = [], summaries = [], bookings = [] }) {
+  if (!activityOverview) return;
+  const today = new Date().toDateString();
+  const todayCount = [...calls, ...leads, ...summaries, ...bookings].filter((item) => {
+    const date = new Date(item.createdAt || item.endedAt || "");
+    return !Number.isNaN(date.valueOf()) && date.toDateString() === today;
+  }).length;
+  activityOverview.innerHTML = [
+    ["Today", todayCount],
+    ["Calls", calls.length],
+    ["Bookings", bookings.length],
+    ["Leads", leads.length]
+  ]
+    .map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`)
+    .join("");
+}
+
+function renderActivityTimeline() {
+  if (!activityTimeline) return;
+  const visibleItems = activityItems.filter((item) => activityFilter === "all" || item.type === activityFilter).slice(0, 18);
+  if (!visibleItems.length) {
+    activityTimeline.innerHTML = `<li class="activity-item empty-state">No ${activityFilter === "all" ? "" : `${activityFilter} `}activity yet.</li>`;
     return;
   }
-  for (const record of records.slice(0, 8)) {
-    const view = formatter(record);
-    const item = document.createElement("li");
-    item.className = "activity-item";
-    item.innerHTML = `
-      <strong>${escapeHtml(view.title || "Activity")}</strong>
-      <span>${escapeHtml(view.meta || "")}</span>
-      <p>${escapeHtml(view.body || "")}</p>
-    `;
-    element.append(item);
-  }
+  activityTimeline.innerHTML = visibleItems
+    .map(
+      (item) => `
+        <li class="activity-item ${escapeHtml(item.accent)}">
+          <div class="activity-dot" aria-hidden="true"></div>
+          <div class="activity-copy">
+            <div>
+              <strong>${escapeHtml(item.title)}</strong>
+              <time>${escapeHtml(formatTime(item.at))}</time>
+            </div>
+            <span>${escapeHtml(item.eyebrow)}</span>
+            <p>${escapeHtml(item.detail)}</p>
+          </div>
+        </li>
+      `
+    )
+    .join("");
 }
 
 async function refreshCallLog() {
@@ -1576,6 +1723,16 @@ refreshQaButton?.addEventListener("click", () => {
 refreshActivityButton?.addEventListener("click", () => {
   refreshActivity().catch(() => {});
 });
+
+for (const button of activityFilterButtons) {
+  button.addEventListener("click", () => {
+    activityFilter = button.dataset.activityFilter || "all";
+    for (const option of activityFilterButtons) {
+      option.classList.toggle("active", option === button);
+    }
+    renderActivityTimeline();
+  });
+}
 
 refreshInsightsButton?.addEventListener("click", () => {
   refreshInsights().catch((error) => {
