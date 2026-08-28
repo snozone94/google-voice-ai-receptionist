@@ -303,45 +303,79 @@ export async function listBookings(limit) {
 }
 
 export async function listCallLog(limit = 50) {
-  const [calls, summaries, leads, bookings] = await Promise.all([
+  const [calls, summaries, leads, bookings, sms] = await Promise.all([
     listRecords(callsPath, 1000),
     listRecords(summariesPath, 1000),
     listRecords(leadsPath, 1000),
-    listRecords(bookingsPath, 1000)
+    listRecords(bookingsPath, 1000),
+    listRecords(smsPath, 1000)
   ]);
+  const callsByCall = groupByCallId(calls);
   const summariesByCall = groupByCallId(summaries);
   const leadsByCall = groupByCallId(leads);
   const bookingsByCall = groupByCallId(bookings);
-  return calls
-    .map((call) => {
-      const callId = call.callId || "";
+  return [...callsByCall.entries()]
+    .map(([callId, events]) => {
+      const sortedEvents = events.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+      const firstEvent = sortedEvents[0] || {};
+      const latestEvent = sortedEvents[sortedEvents.length - 1] || firstEvent;
       const relatedSummaries = summariesByCall.get(callId) || [];
       const relatedLeads = leadsByCall.get(callId) || [];
       const relatedBookings = bookingsByCall.get(callId) || [];
       const summary = relatedSummaries[0] || {};
       const transcript = relatedSummaries.flatMap((item) => normalizeTranscript(item.transcript));
       const caller = firstTruthy(
-        call.from,
-        extractSipHeader(call.sipHeaders, "from"),
+        latestEvent.from,
+        firstEvent.from,
+        extractSipHeader(latestEvent.sipHeaders, "from"),
+        extractSipHeader(firstEvent.sipHeaders, "from"),
         relatedBookings[0]?.phone,
         relatedLeads[0]?.phone
       );
-      const destination = firstTruthy(call.to, extractSipHeader(call.sipHeaders, "to"));
+      const destination = firstTruthy(
+        latestEvent.to,
+        firstEvent.to,
+        extractSipHeader(latestEvent.sipHeaders, "to"),
+        extractSipHeader(firstEvent.sipHeaders, "to")
+      );
+      const relatedSms = findRelatedSms(sms, caller, summary.startedAt || firstEvent.createdAt, summary.endedAt || latestEvent.createdAt);
+      const durationSeconds = getCallDurationSeconds(sortedEvents, summary);
+      const finalStatus = firstTruthy(latestEvent.status, firstEvent.status, summary.endedAt ? "completed" : "logged");
+      const outcome = summarizeCallOutcome({ status: finalStatus, transcript, relatedLeads, relatedBookings, relatedSms, durationSeconds });
       return {
-        id: callId || `${call.createdAt || "call"}-${call.type || "event"}`,
+        id: callId || `${firstEvent.createdAt || "call"}-${firstEvent.type || "event"}`,
         callId,
-        createdAt: call.createdAt,
-        startedAt: summary.startedAt || call.createdAt,
-        endedAt: summary.endedAt || "",
-        type: call.type || "call",
+        createdAt: firstEvent.createdAt,
+        startedAt: summary.startedAt || firstEvent.createdAt,
+        endedAt: summary.endedAt || latestEvent.createdAt || "",
+        type: latestEvent.type || firstEvent.type || "call",
         caller,
         destination,
-        status: call.status || (summary.endedAt ? "completed" : "logged"),
-        recordingUrl: firstTruthy(call.recordingUrl, call.recording_url, summary.recordingUrl, summary.recording_url),
+        status: finalStatus,
+        statusEvents: sortedEvents.map((event) => ({
+          at: event.createdAt,
+          type: event.type,
+          status: event.status || "",
+          durationSeconds: event.durationSeconds || 0
+        })),
+        durationSeconds,
+        durationLabel: formatDuration(durationSeconds),
+        recordingUrl: firstTruthy(
+          ...sortedEvents.map((event) => firstTruthy(event.recordingUrl, event.recording_url)),
+          summary.recordingUrl,
+          summary.recording_url
+        ),
+        recordingStatus: sortedEvents.some((event) => firstTruthy(event.recordingUrl, event.recording_url))
+          ? "available"
+          : "none",
+        smsStatus: summarizeSmsStatus(relatedSms),
+        outcome,
+        completion: outcome.completion,
         transcript,
         transcriptText: transcript.map((item) => item.text).filter(Boolean).join("\n"),
         leads: relatedLeads,
         bookings: relatedBookings,
+        sms: relatedSms,
         summaries: relatedSummaries
       };
     })
@@ -372,6 +406,7 @@ export async function saveCallEvent(event) {
     from: extractSipHeader(event.data?.sip_headers || [], "from"),
     to: extractSipHeader(event.data?.sip_headers || [], "to"),
     status: cleanText(event.data?.status || event.data?.call_status || "", "", 80),
+    durationSeconds: Number(event.data?.durationSeconds || event.data?.duration_seconds || event.data?.CallDuration || 0) || 0,
     recordingUrl: cleanText(event.data?.recording_url || event.data?.recordingUrl || "", "", 500),
     sipHeaders: event.data?.sip_headers || []
   };
@@ -473,6 +508,81 @@ function normalizeTranscript(transcript) {
       text: cleanLongText(item.text || item.transcript || "", "", 4000)
     }))
     .filter((item) => item.text);
+}
+
+function findRelatedSms(messages, caller, startedAt, endedAt) {
+  const phone = normalizeE164(caller);
+  if (!phone) return [];
+  const start = Date.parse(startedAt || "") || 0;
+  const end = Date.parse(endedAt || "") || Date.now();
+  const windowStart = start ? start - 10 * 60 * 1000 : 0;
+  const windowEnd = end + 24 * 60 * 60 * 1000;
+  return messages.filter((message) => {
+    const relatedPhone = normalizeE164(message.direction === "outbound" ? message.to : message.from);
+    if (relatedPhone !== phone) return false;
+    const created = Date.parse(message.createdAt || "") || 0;
+    return !created || (created >= windowStart && created <= windowEnd);
+  });
+}
+
+function getCallDurationSeconds(events, summary = {}) {
+  const explicit = Math.max(0, ...events.map((event) => Number(event.durationSeconds || 0) || 0));
+  if (explicit) return explicit;
+  const started = Date.parse(summary.startedAt || events[0]?.createdAt || "");
+  const ended = Date.parse(summary.endedAt || events.at(-1)?.createdAt || "");
+  if (!Number.isFinite(started) || !Number.isFinite(ended) || ended <= started) return 0;
+  return Math.round((ended - started) / 1000);
+}
+
+function summarizeSmsStatus(messages = []) {
+  if (!messages.length) return "none";
+  if (messages.some((message) => String(message.status || "").toLowerCase() === "failed")) return "failed";
+  if (messages.some((message) => String(message.direction || "").toLowerCase() === "outbound")) return "sent";
+  return "inbound only";
+}
+
+function summarizeCallOutcome({ status, transcript, relatedLeads, relatedBookings, relatedSms, durationSeconds }) {
+  const normalizedStatus = String(status || "").toLowerCase();
+  const hasBooking = relatedBookings.length > 0;
+  const hasLead = relatedLeads.length > 0;
+  const smsStatus = summarizeSmsStatus(relatedSms);
+  const hungUpEarly = durationSeconds > 0 && durationSeconds < 25 && !hasBooking && !hasLead;
+  const failed = /busy|failed|no-answer|canceled|cancelled|missed/.test(normalizedStatus);
+  const completed = hasBooking || hasLead;
+  let label = "Logged";
+  let detail = "Call reached the system, but no final intake outcome is attached yet.";
+  if (hasBooking) {
+    label = "Booking captured";
+    detail = "The AI saved a booking request.";
+  } else if (hasLead) {
+    label = "Message saved";
+    detail = "The AI saved a lead or callback message.";
+  } else if (hungUpEarly) {
+    label = "Caller hung up early";
+    detail = "The call ended before intake was completed.";
+  } else if (failed) {
+    label = "Missed or failed";
+    detail = `Twilio reported ${status || "a missed/failed status"}.`;
+  } else if (!transcript.length) {
+    label = "No transcript yet";
+    detail = "No transcript was stored for this call.";
+  }
+  return {
+    label,
+    detail,
+    completion: completed ? "complete" : hungUpEarly || failed ? "incomplete" : "needs-review",
+    callerStayedOn: durationSeconds >= 25,
+    hungUpEarly,
+    smsStatus
+  };
+}
+
+function formatDuration(seconds) {
+  const total = Math.max(0, Number(seconds || 0) || 0);
+  if (!total) return "Unknown";
+  const minutes = Math.floor(total / 60);
+  const remainder = total % 60;
+  return minutes ? `${minutes}m ${String(remainder).padStart(2, "0")}s` : `${remainder}s`;
 }
 
 function inferTranscriptSpeaker(type = "") {

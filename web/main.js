@@ -1090,10 +1090,16 @@ function renderCallLog() {
     button.type = "button";
     button.className = call.id === selectedCallId ? "call-log-item selected" : "call-log-item";
     const label = call.caller || call.callId || "Unknown caller";
-    const meta = [call.status, call.bookings?.length ? "booking" : "", call.leads?.length ? "lead" : ""]
+    const meta = [
+      call.outcome?.label || call.status,
+      call.durationLabel,
+      call.smsStatus && call.smsStatus !== "none" ? `SMS ${call.smsStatus}` : "",
+      call.recordingStatus === "available" ? "recording" : ""
+    ]
       .filter(Boolean)
       .join(" · ");
     button.innerHTML = `
+      <span class="call-outcome-dot ${escapeHtml(call.completion || "needs-review")}"></span>
       <strong>${escapeHtml(formatPhone(label))}</strong>
       <span>${escapeHtml(meta || call.type || "call")}</span>
       <small>${escapeHtml(formatTime(call.startedAt || call.createdAt))}</small>
@@ -1119,11 +1125,23 @@ function renderSelectedCall() {
   const recording = call.recordingUrl
     ? `<a href="${escapeHtml(call.recordingUrl)}" target="_blank" rel="noreferrer">Open recording</a>`
     : "No recording link stored yet";
+  const statusEventsHtml = call.statusEvents?.length
+    ? call.statusEvents
+        .map(
+          (event) => `
+            <li>
+              <strong>${escapeHtml(event.status || event.type || "event")}</strong>
+              <span>${escapeHtml([formatTime(event.at), event.durationSeconds ? formatDuration(event.durationSeconds) : ""].filter(Boolean).join(" · "))}</span>
+            </li>
+          `
+        )
+        .join("")
+    : `<li><span>No status events stored.</span></li>`;
   const transcriptHtml = call.transcript?.length
     ? call.transcript
         .map(
           (line) => `
-            <div class="transcript-line">
+            <div class="transcript-line ${escapeHtml(String(line.speaker || "call").toLowerCase())}">
               <small>${escapeHtml([line.speaker, formatTime(line.at)].filter(Boolean).join(" · "))}</small>
               <p>${escapeHtml(line.text)}</p>
             </div>
@@ -1137,11 +1155,25 @@ function renderSelectedCall() {
         <p class="eyebrow">Call detail</p>
         <h3>${escapeHtml(formatPhone(call.caller) || "Unknown caller")}</h3>
       </div>
-      <span>${escapeHtml(call.status || "logged")}</span>
+      <span class="status-pill ${escapeHtml(call.completion || "needs-review")}">${escapeHtml(call.outcome?.label || call.status || "logged")}</span>
+    </div>
+    <div class="call-outcome-summary">
+      <strong>${escapeHtml(call.outcome?.detail || "Call reached the system.")}</strong>
+      <span>${escapeHtml(call.outcome?.callerStayedOn ? "Caller stayed on" : call.outcome?.hungUpEarly ? "Caller hung up early" : "Needs review")}</span>
+    </div>
+    <div class="call-metrics">
+      ${renderMetric("Duration", call.durationLabel || "Unknown", call.durationSeconds ? "ok" : "warn")}
+      ${renderMetric("Booking", call.bookings?.length ? "Saved" : "Not saved", call.bookings?.length ? "ok" : "warn")}
+      ${renderMetric("Lead", call.leads?.length ? "Saved" : "Not saved", call.leads?.length ? "ok" : "neutral")}
+      ${renderMetric("SMS", formatSmsStatus(call.smsStatus), call.smsStatus === "sent" ? "ok" : call.smsStatus === "failed" ? "bad" : "neutral")}
+      ${renderMetric("Recording", call.recordingStatus === "available" ? "Available" : "None yet", call.recordingStatus === "available" ? "ok" : "neutral")}
+      ${renderMetric("Transcript", call.transcript?.length ? `${call.transcript.length} lines` : "None yet", call.transcript?.length ? "ok" : "warn")}
     </div>
     <dl class="call-facts">
       <div><dt>Started</dt><dd>${escapeHtml(formatTime(call.startedAt || call.createdAt) || "Unknown")}</dd></div>
       <div><dt>Ended</dt><dd>${escapeHtml(formatTime(call.endedAt) || "Not recorded")}</dd></div>
+      <div><dt>Duration</dt><dd>${escapeHtml(call.durationLabel || "Unknown")}</dd></div>
+      <div><dt>Final status</dt><dd>${escapeHtml(call.status || "logged")}</dd></div>
       <div><dt>Call ID</dt><dd>${escapeHtml(call.callId || "Not available")}</dd></div>
       <div><dt>Recording</dt><dd>${recording}</dd></div>
     </dl>
@@ -1154,7 +1186,39 @@ function renderSelectedCall() {
       <h4>Transcript</h4>
       <div class="transcript-box">${transcriptHtml}</div>
     </div>
+    <div class="call-section">
+      <h4>Status timeline</h4>
+      <ul class="status-timeline">${statusEventsHtml}</ul>
+    </div>
   `;
+}
+
+function renderMetric(label, value, tone = "neutral") {
+  return `
+    <div class="call-metric ${escapeHtml(tone)}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value || "Unknown")}</strong>
+    </div>
+  `;
+}
+
+function formatSmsStatus(status = "") {
+  const value = String(status || "none").toLowerCase();
+  const labels = {
+    sent: "Sent",
+    failed: "Failed",
+    none: "None",
+    "inbound only": "Inbound only"
+  };
+  return labels[value] || value;
+}
+
+function formatDuration(seconds) {
+  const total = Math.max(0, Number(seconds || 0) || 0);
+  if (!total) return "";
+  const minutes = Math.floor(total / 60);
+  const remainder = total % 60;
+  return minutes ? `${minutes}m ${String(remainder).padStart(2, "0")}s` : `${remainder}s`;
 }
 
 function renderRelatedRecords(title, records = []) {

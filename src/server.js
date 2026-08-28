@@ -378,6 +378,7 @@ app.post("/api/twilio/call-status", express.urlencoded({ extended: false }), asy
       data: {
         call_id: req.body.CallSid || req.body.callSid || "",
         status,
+        durationSeconds: req.body.CallDuration || req.body.callDuration || 0,
         sip_headers: [
           { name: "from", value: req.body.From || "" },
           { name: "to", value: req.body.To || "" }
