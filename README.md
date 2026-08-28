@@ -218,3 +218,11 @@ DDD_TECH_TEAM_SECRET
 ```
 
 `ADMIN_PIN` controls settings edits. `STAFF_ACCESS_CODES` controls Inbox access and replies with a comma-separated list like `Owner:1111,Tech 1:2222,Tech 2:3333,Dispatch:4444`.
+
+Twilio voice webhook:
+
+```text
+https://google-voice-ai-receptionist.onrender.com/api/twilio/voice?secret=TWILIO_SMS_WEBHOOK_SECRET
+```
+
+Set `TRANSFER_SIP_URI` or `OPENAI_SIP_URI` to the OpenAI SIP destination. The Twilio webhook logs the incoming call, dials the SIP destination, and sends call status/recording callbacks back into the admin dashboard.

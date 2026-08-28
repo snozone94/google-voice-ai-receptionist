@@ -5,6 +5,7 @@
 - [x] Upgrade the Render service from Free to Starter so the persistent disk can attach.
 - [x] Confirm `DATA_DIR=/var/data/ddd-ai-dispatch` is set on Render.
 - [x] Confirm `/api/setup-status` shows `persistentStorage: true`.
+- [x] Route main Twilio number `513-409-1342` to the `DDD OpenAI Receptionist` SIP trunk.
 - [ ] Confirm desktop admin edits show on phone browser after reload.
 - [ ] Add Twilio voice status callback to the active number: `/api/twilio/call-status?secret=TWILIO_SMS_WEBHOOK_SECRET`.
 - [ ] Confirm Twilio recording callback is wired: `/api/twilio/recording?secret=TWILIO_SMS_WEBHOOK_SECRET`.

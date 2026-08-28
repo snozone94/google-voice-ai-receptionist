@@ -32,10 +32,10 @@ const defaultGreeting = "Thank you for calling DDD Mobile. I can help book servi
 const defaultCustomInstructions =
   "Act like a polished front desk receptionist. Be warm, direct, and fast. Reflect the caller's exact request before asking questions. If they name a service like oil change, brakes, battery install, tire help, jump start, lockout, or fuel delivery, treat it as a bookable DDD service immediately. Reassure them once that this will be quick and that you can make the booking for them when booking applies. Do not ask generic category questions after they already named the service. Do not repeat that reassurance. Do not keep emergency callers on the phone longer than needed. Collect the key details, point them to the right DDD link, and save a clear next step.";
 const defaultBusinessKnowledge =
-  "DDD Mobile helps drivers with roadside/mobile auto service requests, booking, DDD app links, vehicle issue guidance, and work/applicant questions. The receptionist should push callers toward the correct dddcincy.com option instead of holding long conversations. If pricing, exact availability, or service-area details are unknown, collect details and say the DDD team will confirm.";
-const defaultServiceArea = "Greater Cincinnati and nearby service areas DDD confirms case by case.";
+  "DDD Mobile is a woman-owned Cincinnati mobile roadside and light mobile maintenance service. DDD helps with jump starts, battery installs, lockouts, fuel delivery, tire inflation, tire plugs, spare tire changes, oil change requests, brake pads, rotors, bolt-in hub bearing requests, light mobile maintenance, DDD Mobile app/status help, DDD Auto Doc vehicle guidance, booking help, existing booking messages, and apply-to-work questions. DDD does not tow. Use dddcincy.com links only for DDD Mobile, DDD Mobile app/status, DDD Auto Doc, roadside service booking, emergency service requests, shop roadside services, and apply-to-work requests. The receptionist should push callers toward booking/status/apply quickly instead of holding long conversations. If pricing, exact availability, or service-area details are unknown, collect details and say the DDD team will confirm.";
+const defaultServiceArea = "Greater Cincinnati, Liberty Township, Northern Kentucky, and nearby tri-state areas DDD confirms case by case.";
 const defaultPricingNotes =
-  "Do not quote exact prices unless the admin has added them. Collect job details and say the DDD team will confirm the final price.";
+  "Public starting points only, not final quotes: standard service fee $25, gas by the gallon $10, 5-gallon fuel refill $35, tire inflation $15, tire plug $20, spare tire change $50, battery jump-start $30, battery installation $40, door unlock $40, oil change labor $25 when customer provides oil/filter, brake pads $50 per axle or listed per-wheel/all-wheel options, rotor add-on +$20 per axle, rotor replacement only $50 per axle, full brake pad replacement four wheels $200, brake and rotor all wheels $280, bolt-in hub bearing $200 per axle. Say DDD will confirm final price before service.";
 const defaultEmergencyInstructions =
   "For stranded or urgent roadside callers, be extremely brief. Ask if they are safe, get exact location, vehicle year/make/model/color, what happened, callback number, and whether they can receive a text. Then direct them to the emergency service request option and save the lead.";
 const defaultHumanHandoffRules =
@@ -63,9 +63,17 @@ const defaultQualifyingServices = [
   "Roadside assistance",
   "Mobile auto service",
   "Battery or jump start",
+  "Battery installation",
   "Flat tire or tire help",
+  "Tire inflation",
+  "Tire plug",
+  "Spare tire change",
   "Lockout",
   "Fuel delivery",
+  "Oil change",
+  "Brake pads",
+  "Rotors",
+  "Bolt-in hub bearings",
   "Maintenance or repair",
   "Existing appointment",
   "DDD Mobile app help",
@@ -81,9 +89,9 @@ const defaultEmergencyQuestions = [
   "Can DDD text you the best link?"
 ];
 const defaultOfferedServices =
-  "Roadside assistance, mobile auto service, jump starts, lockouts, tire help, fuel delivery, basic mobile maintenance/repair requests, DDD Mobile app help, DDD Auto Doc guidance, and apply-to-work questions.";
+  "Roadside assistance, mobile auto service, jump starts, battery help and battery installation, lockouts/door unlocks, tire inflation, tire plugs, spare tire changes, fuel delivery/gas refill, oil change requests, brake pads, rotors, bolt-in hub bearing requests, light mobile maintenance/repair requests, DDD Mobile app/status help, DDD Auto Doc guidance, booking help, existing appointment messages, Track My Tech/status questions, and apply-to-work questions.";
 const defaultNotOfferedServices =
-  "Do not promise towing, exact arrival times, exact pricing, dealership-level repairs, engine/transmission rebuilds, body work, glass replacement, paint, tire sales, impound releases, or emergency medical/police help unless DDD explicitly adds those services.";
+  "Do not promise towing, exact arrival times, exact final pricing, dealership-level repairs, engine/transmission rebuilds, body work, glass or windshield replacement, paint, tire sales, impound releases, emergency medical/police help, or services DDD has not confirmed.";
 const defaultDirectoryReferral = {
   enabled: false,
   url: "",

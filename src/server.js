@@ -265,6 +265,63 @@ app.post("/api/twilio/voice-verify", express.urlencoded({ extended: false }), as
 </Response>`);
 });
 
+app.get("/api/twilio/voice", async (req, res, next) => {
+  handleTwilioVoice(req, res, next);
+});
+
+app.post("/api/twilio/voice", express.urlencoded({ extended: false }), async (req, res, next) => {
+  handleTwilioVoice(req, res, next);
+});
+
+async function handleTwilioVoice(req, res, next) {
+  try {
+    if (!hasTwilioSmsAccess(req)) {
+      res.status(403).send("Forbidden");
+      return;
+    }
+
+    const sipUri = normalizeSipUri(process.env.TRANSFER_SIP_URI || process.env.OPENAI_SIP_URI || "");
+    const secret = encodeURIComponent(req.query.secret || "");
+    const publicBaseUrl = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+    const statusCallback = publicBaseUrl
+      ? `${publicBaseUrl}/api/twilio/call-status?secret=${secret}`
+      : `/api/twilio/call-status?secret=${secret}`;
+    const recordingCallback = publicBaseUrl
+      ? `${publicBaseUrl}/api/twilio/recording?secret=${secret}`
+      : `/api/twilio/recording?secret=${secret}`;
+
+    await saveCallEvent({
+      type: "twilio.voice.incoming",
+      data: {
+        call_id: req.body?.CallSid || req.query?.CallSid || "",
+        status: sipUri ? "routing-to-sip" : "missing-sip-uri",
+        sip_headers: [
+          { name: "from", value: req.body?.From || req.query?.From || "" },
+          { name: "to", value: req.body?.To || req.query?.To || "" }
+        ]
+      }
+    });
+
+    if (!sipUri) {
+      res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">DDD AI Dispatch is not fully connected yet. Please try again shortly.</Say>
+  <Hangup/>
+</Response>`);
+      return;
+    }
+
+    res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial timeout="30" answerOnBridge="true" record="record-from-answer" recordingStatusCallback="${xmlEscape(recordingCallback)}" recordingStatusCallbackMethod="POST">
+    <Sip statusCallback="${xmlEscape(statusCallback)}" statusCallbackMethod="POST">${xmlEscape(sipUri)}</Sip>
+  </Dial>
+</Response>`);
+  } catch (error) {
+    next(error);
+  }
+}
+
 app.post("/api/twilio/voice-verify/capture", express.urlencoded({ extended: false }), async (req, res, next) => {
   try {
     if (!hasTwilioSmsAccess(req)) {
@@ -725,6 +782,21 @@ function hasTwilioSmsAccess(req) {
   const secret = process.env.TWILIO_SMS_WEBHOOK_SECRET;
   if (!secret) return false;
   return req.query.secret === secret || req.get("x-twilio-sms-secret") === secret;
+}
+
+function normalizeSipUri(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+  return trimmed.startsWith("sip:") ? trimmed : `sip:${trimmed}`;
+}
+
+function xmlEscape(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 function hasSmsReadAccess(req) {

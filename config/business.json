@@ -1,6 +1,6 @@
 {
-  "name": "DDD",
-  "tone": "warm, concise, professional",
+  "name": "DDD Mobile",
+  "tone": "warm, concise, professional, direct, and fast",
   "hours": {
     "monday": "9:00 AM - 5:00 PM",
     "tuesday": "9:00 AM - 5:00 PM",
@@ -11,25 +11,48 @@
     "sunday": "closed"
   },
   "services": [
-    "Roadside assistance intake",
+    "Roadside assistance intake and booking",
     "Mobile auto service booking requests",
-    "Jump start and battery-help requests",
-    "Flat tire and tire-help requests",
-    "Vehicle lockout requests",
-    "Fuel delivery requests",
+    "Battery jump starts",
+    "Battery installation when parts/availability allow",
+    "Door unlock and lockout requests",
+    "Fuel delivery and gas refill requests",
+    "Tire inflation",
+    "Tire plug repair",
+    "Spare tire change",
+    "Tire change and tire replacement requests when DDD confirms availability",
+    "Oil change requests when the customer provides oil and filter unless DDD confirms parts",
+    "Brake pad service",
+    "Rotor add-on or rotor replacement requests",
+    "Bolt-in hub bearing replacement requests",
+    "Light mobile maintenance requests",
+    "Roadside diagnostics and vehicle symptom guidance",
     "DDD Mobile app help",
     "DDD Auto Doc app guidance",
+    "Track My Tech/status questions",
     "Apply-to-work intake",
     "Messages for DDD staff"
   ],
   "faqs": [
     {
+      "question": "What does DDD do?",
+      "answer": "DDD is a woman-owned Cincinnati mobile roadside and light mobile maintenance service. DDD helps with jump starts, lockouts, tire help, fuel delivery, batteries, oil changes, brakes/rotors, hub bearings by request, app/status help, and booking requests. DDD does not tow."
+    },
+    {
+      "question": "What does DDD not do?",
+      "answer": "Do not promise towing, emergency medical or police help, dealership-level repairs, engine or transmission rebuilds, body work, glass/windshield replacement, paint, tire sales, impound release work, or exact arrival times."
+    },
+    {
+      "question": "What are the public starting prices?",
+      "answer": "Use these only as public starting points, not final quotes: standard service fee $25, gas by the gallon $10, 5-gallon fuel refill $35, tire inflation $15, tire plug $20, spare tire change $50, battery jump-start $30, battery installation $40, door unlock $40, oil change labor $25 when customer provides oil/filter, brake pads $50 per axle or listed per-wheel/all-wheel options, rotor add-on +$20 per axle, rotor replacement only $50 per axle, full brake pad replacement four wheels $200, brake and rotor all wheels $280, bolt-in hub bearing $200 per axle."
+    },
+    {
       "question": "Where are you located?",
-      "answer": "Collect the caller's exact location or service area, then say the DDD team will confirm availability."
+      "answer": "DDD serves Greater Cincinnati, Liberty Township, Northern Kentucky, and surrounding tri-state areas depending on technician availability. Collect the caller's exact location, then say DDD will confirm availability."
     },
     {
       "question": "How do appointments work?",
-      "answer": "Collect the caller's preferred date and time, save the request, and send or share the best DDD booking link."
+      "answer": "Collect the caller's preferred date and time, save/create the request during the call when possible, and send or share the best DDD booking/status link."
     },
     {
       "question": "Can I apply to work with DDD?",
@@ -38,6 +61,10 @@
     {
       "question": "Can you tell me what is wrong with my car?",
       "answer": "Collect the main symptoms and direct the caller to DDD Auto Doc for vehicle issue guidance. Do not diagnose with certainty."
+    },
+    {
+      "question": "Can customers track the service?",
+      "answer": "Send callers to DDD Mobile app or Track My Tech/status links when available. Customers should use the same phone number or email so their booking can match their account."
     }
   ],
   "escalationRules": [
