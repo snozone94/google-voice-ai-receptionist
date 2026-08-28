@@ -1049,7 +1049,11 @@ export function buildDryRun(settings = {}, callerMessage = "") {
       : intent === "apply"
         ? `${reflectedNeed} I can get your info to DDD quickly. What kind of work are you applying for?`
         : intent === "unsupported"
-          ? `${reflectedNeed} ${activeSettings.directoryReferral.enabled ? "I can text a referral/directory link if you want." : "I can save your message for the team."}`
+          ? activeSettings.directoryReferral.enabled
+            ? `${reflectedNeed} I can text a referral/directory link if you want.`
+            : reflectedNeed.includes("save your message")
+              ? reflectedNeed
+              : `${reflectedNeed} I can save your message for the team.`
           : `${directBookingNeed || reflectedNeed} This will be quick, and I can make the booking for you. What is the best callback number?`;
   const action =
     intent === "apply"
