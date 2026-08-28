@@ -30,7 +30,7 @@ export const voiceOptions = [
 const supportedVoiceIds = new Set(voiceOptions.map((voice) => voice.id));
 const defaultGreeting = "Thank you for calling DDD Mobile. I can help book service or get your message to the team. What can I help with today?";
 const defaultCustomInstructions =
-  "Act like a polished front desk receptionist. Be warm, direct, and fast. Reflect the caller's exact request before asking questions. If they name a service like oil change, brakes, battery install, tire help, jump start, lockout, or fuel delivery, treat it as a bookable DDD service immediately. Reassure them once that this will be quick and that you can make the booking for them when booking applies. Do not ask generic category questions after they already named the service. Do not repeat that reassurance. Do not keep emergency callers on the phone longer than needed. Collect the key details, point them to the right DDD link, and save a clear next step.";
+  "Act like a polished front desk receptionist. Be warm, direct, and fast. Reflect the caller's exact request before asking questions. If they name a service like oil change, brakes, battery install, tire help, jump start, lockout, or fuel delivery, treat it as a bookable DDD service immediately. For oil changes, brakes, rotors, hub bearings, and battery installs, ask whether the customer already has the parts/materials or needs DDD to confirm parts. For tire-related work, ask whether the vehicle has a wheel lock/special key and whether they have it available. Reassure them once that this will be quick and that you can make the booking for them when booking applies. Do not ask generic category questions after they already named the service. Do not repeat that reassurance. Do not keep emergency callers on the phone longer than needed. Collect the key details, point them to the right DDD link, and save a clear next step.";
 const defaultBusinessKnowledge =
   "DDD Mobile is a woman-owned Cincinnati mobile roadside and light mobile maintenance service. DDD helps with jump starts, battery installs, lockouts, fuel delivery, tire inflation, tire plugs, spare tire changes, oil change requests, brake pads, rotors, bolt-in hub bearing requests, light mobile maintenance, DDD Mobile app/status help, DDD Auto Doc vehicle guidance, booking help, existing booking messages, and apply-to-work questions. DDD does not tow. Use dddcincy.com links only for DDD Mobile, DDD Mobile app/status, DDD Auto Doc, roadside service booking, emergency service requests, shop roadside services, and apply-to-work requests. The receptionist should push callers toward booking/status/apply quickly instead of holding long conversations. If pricing, exact availability, or service-area details are unknown, collect details and say the DDD team will confirm.";
 const defaultServiceArea = "Greater Cincinnati, Liberty Township, Northern Kentucky, and nearby tri-state areas DDD confirms case by case.";
@@ -51,7 +51,7 @@ const defaultVoiceDirection =
   "Warm, confident, friendly receptionist. Natural phone cadence, clear pronunciation, and not robotic.";
 const defaultCallerFlows = {
   newClients:
-    "If they already named the service, do not re-qualify it. Tell them this will be quick and that you can make the booking for them. Then collect name, callback number, location, vehicle details if relevant, and preferred time. End by saving a lead or booking request and sharing the best DDD link.",
+    "If they already named the service, do not re-qualify it. Tell them this will be quick and that you can make the booking for them. Then collect name, callback number, location, vehicle details if relevant, parts/materials status for oil/brakes/rotors/hub/battery jobs, wheel-lock/special-key status for tire jobs, and preferred time. End by saving a lead or booking request and sharing the best DDD link.",
   existingClients:
     "Collect name, callback number, existing appointment or job details, and what they need changed or answered. Save a clear message for follow-up.",
   sales:
@@ -530,6 +530,8 @@ Voice and manner:
 - Do not repeat the greeting, the same reassurance, or the same question after the caller already answered. If you missed something, ask only for the missing detail.
 - Do not invent business policies, prices, addresses, or availability.
 - If a caller wants to book, collect their name, phone, email if available, service, location, vehicle year/make/model/color when relevant, issue, urgency, and preferred date/time.
+- For oil changes, brake pads, rotors, bolt-in hub bearings, and battery installs, ask whether the customer already has the parts/materials or needs DDD to confirm parts.
+- For tire-related jobs, ask whether the vehicle has a wheel lock/special key and whether the caller has that key available.
 - As soon as you have enough booking details and callback information, call save_booking_request. Do not require the caller to fill out a form first.
 - If save_booking_request returns a customerStatusUrl or trackingUrl, use that as the caller's booking/status link and offer to text it.
 ${bookingUrl ? `- The booking link is ${bookingUrl}. Offer it verbally and include it in saved lead next steps.` : "- A booking link is not configured yet because the public deployment URL is not set. Tell callers DDD will text or call them with the booking link after their details are saved."}
@@ -1041,8 +1043,8 @@ export function buildDryRun(settings = {}, callerMessage = "") {
         ? ["What kind of DDD work are you applying for?", "What experience do you have?", "What is your best callback number and email?"]
         : intent === "unsupported"
           ? ["What service were you looking for?", "What is your name and best callback number if you want DDD to follow up?", "Can DDD text you a referral or directory link if available?"]
-          : ["What service do you need?", "What is your name and best callback number?", "Where are you located?", "What is the vehicle year, make, model, and color?", "What date or time works best?"];
-  let questions = filterKnownQuestions(baseQuestions, knownDetails).slice(0, 5);
+          : buildBookingQuestions(message);
+  let questions = filterKnownQuestions(baseQuestions, knownDetails).slice(0, 6);
   const firstResponse =
     intent === "emergency"
       ? `${reflectedNeed} I'll keep this quick and can create the request for you. First, are you in a safe place right now?`
@@ -1127,6 +1129,23 @@ function classifyIntent(message) {
     return "shopping";
   }
   return "booking";
+}
+
+function buildBookingQuestions(message) {
+  const questions = [
+    "What service do you need?",
+    "What is your name and best callback number?",
+    "Where are you located?",
+    "What is the vehicle year, make, model, and color?"
+  ];
+  if (/oil change|brake|pads|rotor|hub bearing|battery install/.test(message)) {
+    questions.push("Do you already have the parts or materials, or do you need DDD to confirm parts?");
+  }
+  if (/flat|tire|spare|plug|inflation|wheel/.test(message)) {
+    questions.push("Does the vehicle have a wheel lock or special key, and do you have it available?");
+  }
+  questions.push("What date or time works best?");
+  return questions;
 }
 
 function detectKnownDetails(message) {
