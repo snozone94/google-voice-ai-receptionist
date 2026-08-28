@@ -1038,7 +1038,7 @@ export function buildDryRun(settings = {}, callerMessage = "") {
   const directBookingNeed = summarizeBookableService(message);
   const baseQuestions =
     intent === "emergency"
-      ? activeSettings.emergencyQuestions.slice(0, 6)
+      ? buildEmergencyQuestions(activeSettings.emergencyQuestions, message)
       : intent === "apply"
         ? ["What kind of DDD work are you applying for?", "What experience do you have?", "What is your best callback number and email?"]
         : intent === "unsupported"
@@ -1145,6 +1145,14 @@ function buildBookingQuestions(message) {
     questions.push("Does the vehicle have a wheel lock or special key, and do you have it available?");
   }
   questions.push("What date or time works best?");
+  return questions;
+}
+
+function buildEmergencyQuestions(emergencyQuestions, message) {
+  const questions = emergencyQuestions.slice(0, 6);
+  if (/flat|tire|spare|plug|inflation|wheel/.test(message)) {
+    questions.push("Does the vehicle have a wheel lock or special key, and do you have it available?");
+  }
   return questions;
 }
 
