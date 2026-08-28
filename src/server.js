@@ -158,9 +158,11 @@ app.get("/api/conversations", async (req, res, next) => {
     }
 
     const limit = Math.min(Number(req.query.limit) || 200, 500);
+    const teamInfo = await getVisibleTeamInfo(req);
     res.json({
       staff,
-      team: await getVisibleTeam(req),
+      team: teamInfo.team,
+      teamSource: teamInfo.source,
       presence: listPresence(),
       conversations: await listConversations(limit)
     });
@@ -176,7 +178,8 @@ app.get("/api/presence", async (req, res, next) => {
       res.status(403).json({ ok: false, error: "Forbidden" });
       return;
     }
-    res.json({ staff, team: await getVisibleTeam(req), presence: listPresence() });
+    const teamInfo = await getVisibleTeamInfo(req);
+    res.json({ staff, team: teamInfo.team, teamSource: teamInfo.source, presence: listPresence() });
   } catch (error) {
     next(error);
   }
@@ -418,6 +421,7 @@ app.get("/api/qa-dashboard", async (req, res, next) => {
       listBookings(200),
       listSms(200)
     ]);
+    const teamInfo = await getVisibleTeamInfo(req);
     const recentCalls = callLog.slice(0, 25);
     const missedStatuses = new Set(["busy", "no-answer", "failed", "canceled", "cancelled", "missed"]);
     const missedCalls = recentCalls.filter((call) => missedStatuses.has(String(call.status || "").toLowerCase()));
@@ -436,7 +440,16 @@ app.get("/api/qa-dashboard", async (req, res, next) => {
       qaCheck("Recording hook", !recentCalls.length || callsWithRecordings.length > 0, callsWithRecordings.length ? `${callsWithRecordings.length} recent calls have recording links.` : "No recording links stored yet."),
       qaCheck("Transcript capture", !recentCalls.length || callsWithTranscripts.length > 0, callsWithTranscripts.length ? `${callsWithTranscripts.length} recent calls have transcripts.` : "No transcripts stored yet."),
       qaCheck("Booking sync", bookingSyncFailures.length === 0, bookingSyncFailures.length ? `${bookingSyncFailures.length} booking sync failures need review.` : "No booking sync failures found."),
-      qaCheck("SMS delivery", smsFailures.length === 0, smsFailures.length ? `${smsFailures.length} failed texts found.` : "No failed texts found.")
+      qaCheck("SMS delivery", smsFailures.length === 0, smsFailures.length ? `${smsFailures.length} failed texts found.` : "No failed texts found."),
+      qaCheck(
+        "DDD team sync",
+        teamInfo.source !== "unconfigured" && teamInfo.team.length > 0,
+        teamInfo.source === "ddd-platform"
+          ? `${teamInfo.team.length} team members loaded from DDD platform.`
+          : teamInfo.source === "manual"
+            ? `${teamInfo.team.length} manual/fallback team members loaded.`
+            : "DDD platform team sync is not configured yet."
+      )
     ];
 
     res.json({
@@ -735,8 +748,7 @@ async function getStaffAccess(req) {
     return { ok: true, name: process.env.ADMIN_STAFF_NAME || "Brianna", role: "admin" };
   }
 
-  const settings = await loadReceptionistSettings();
-  const staffCodes = normalizeStaffAccessCodes(settings.staffAccessCodes?.length ? settings.staffAccessCodes : parseStaffAccessCodes(process.env.STAFF_ACCESS_CODES || ""));
+  const staffCodes = await getStaffDirectoryForAuth();
   const staff = staffCodes.find((entry) => entry.code === submittedCode);
   if (!staff) {
     return { ok: false };
@@ -744,20 +756,122 @@ async function getStaffAccess(req) {
   return { ok: true, name: staff.name, role: "staff" };
 }
 
-async function getVisibleTeam(req) {
+async function getVisibleTeamInfo(req) {
   const admin = hasAdminAccess(req);
-  const settings = await loadReceptionistSettings();
-  const staffCodes = normalizeStaffAccessCodes(settings.staffAccessCodes?.length ? settings.staffAccessCodes : parseStaffAccessCodes(process.env.STAFF_ACCESS_CODES || ""));
   const adminPin = String(process.env.ADMIN_PIN || "").trim();
+  const directory = await getStaffDirectory();
   const team = [
     ...(adminPin ? [{ name: process.env.ADMIN_STAFF_NAME || "Brianna", code: adminPin, role: "admin" }] : []),
-    ...staffCodes.map((entry) => ({ ...entry, role: "staff" }))
+    ...directory.team
   ];
-  return team.map((entry) => ({
-    name: entry.name,
-    role: entry.role,
-    code: admin ? entry.code : maskAccessCode(entry.code)
-  }));
+  return {
+    source: directory.source,
+    team: dedupeTeam(team).map((entry) => ({
+      id: entry.id || "",
+      name: entry.name,
+      phone: admin ? entry.phone || "" : maskPhone(entry.phone || ""),
+      role: entry.role,
+      active: entry.active !== false,
+      code: admin ? entry.code || "" : maskAccessCode(entry.code || "")
+    }))
+  };
+}
+
+async function getStaffDirectoryForAuth() {
+  const directory = await getStaffDirectory();
+  return directory.team.filter((entry) => entry.code);
+}
+
+async function getStaffDirectory() {
+  const settings = await loadReceptionistSettings();
+  const manualCodes = normalizeStaffAccessCodes(settings.staffAccessCodes?.length ? settings.staffAccessCodes : parseStaffAccessCodes(process.env.STAFF_ACCESS_CODES || ""))
+    .map((entry) => ({ ...entry, role: "staff", active: true, source: "manual" }));
+  const platformTeam = await fetchDddPlatformTeam();
+  const team = dedupeTeam([...platformTeam.team, ...manualCodes]);
+  if (platformTeam.team.length) return { source: "ddd-platform", team };
+  if (manualCodes.length) return { source: "manual", team };
+  return { source: platformTeam.configured ? "ddd-platform-empty" : "unconfigured", team };
+}
+
+async function fetchDddPlatformTeam() {
+  const url = String(process.env.DDD_TECH_TEAM_URL || "").trim();
+  if (!url) return { configured: false, team: [] };
+  const headers = { Accept: "application/json" };
+  const secret = String(process.env.DDD_TECH_TEAM_SECRET || "").trim();
+  if (secret) headers["x-ddd-ai-secret"] = secret;
+
+  try {
+    const response = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(5000)
+    });
+    if (!response.ok) {
+      console.warn(`DDD team sync failed: ${response.status}`);
+      return { configured: true, team: [] };
+    }
+    const payload = await response.json();
+    const records = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload.technicians)
+        ? payload.technicians
+        : Array.isArray(payload.team)
+          ? payload.team
+          : Array.isArray(payload.data)
+            ? payload.data
+            : [];
+    return {
+      configured: true,
+      team: records.map(normalizePlatformTeamMember).filter((entry) => entry.name)
+    };
+  } catch (error) {
+    console.warn(`DDD team sync failed: ${error.message}`);
+    return { configured: true, team: [] };
+  }
+}
+
+function normalizePlatformTeamMember(member = {}) {
+  const code = String(
+    member.inbox_code ||
+      member.dispatch_code ||
+      member.staff_code ||
+      member.access_code ||
+      member.pin ||
+      member.code ||
+      ""
+  )
+    .replace(/\s+/g, "")
+    .slice(0, 32);
+  return {
+    id: String(member.id || member.user_id || member.uuid || ""),
+    name: String(member.name || member.full_name || member.display_name || member.email || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80),
+    phone: normalizeE164(member.phone || member.mobile_phone || member.phone_number || ""),
+    code,
+    role: String(member.role || member.type || "tech")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 40),
+    active: member.active !== false && member.disabled !== true,
+    source: "ddd-platform"
+  };
+}
+
+function dedupeTeam(team) {
+  const seen = new Set();
+  return team.filter((entry) => {
+    const key = entry.code ? `code:${entry.code}` : entry.id ? `id:${entry.id}` : `name:${String(entry.name).toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return entry.active !== false;
+  });
+}
+
+function maskPhone(phone = "") {
+  const digits = String(phone).replace(/\D/g, "");
+  if (digits.length < 4) return "";
+  return `***-${digits.slice(-4)}`;
 }
 
 function listPresence() {

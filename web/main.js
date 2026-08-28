@@ -76,6 +76,7 @@ const sendReplyButton = document.querySelector("#sendReplyButton");
 const inboxStatus = document.querySelector("#inboxStatus");
 const teamPresenceList = document.querySelector("#teamPresenceList");
 const typingStatus = document.querySelector("#typingStatus");
+const teamSourceStatus = document.querySelector("#teamSourceStatus");
 const refreshQaButton = document.querySelector("#refreshQaButton");
 const qaChecksList = document.querySelector("#qaChecksList");
 const qaIssuesList = document.querySelector("#qaIssuesList");
@@ -99,6 +100,7 @@ let callLog = [];
 let selectedCallId = "";
 let teamDirectory = [];
 let activePresence = [];
+let teamSource = "";
 
 adminPinInput.value = localStorage.getItem("dddAdminPin") || localStorage.getItem("dddStaffPin") || "";
 staffPinInput.value = localStorage.getItem("dddStaffCode") || "";
@@ -728,6 +730,15 @@ function setInboxStatus(message) {
 function renderTeamPresence() {
   if (!teamPresenceList) return;
   teamPresenceList.innerHTML = "";
+  if (teamSourceStatus) {
+    const labels = {
+      "ddd-platform": "Team source: DDD platform / Tech Assist",
+      manual: "Team source: manual fallback codes",
+      "ddd-platform-empty": "Team source: DDD platform connected, no active techs returned",
+      unconfigured: "Team source: manual until DDD platform sync is configured"
+    };
+    teamSourceStatus.textContent = labels[teamSource] || "Team source: checking...";
+  }
   const byName = new Map(activePresence.map((item) => [item.name, item]));
   const team = teamDirectory.length ? teamDirectory : activePresence;
   if (!team.length) {
@@ -745,6 +756,7 @@ function renderTeamPresence() {
     const details = [
       live ? formatPresenceStatus(status) : "offline",
       member.role || live?.role || "staff",
+      member.phone || "",
       member.code ? `code ${member.code}` : "",
       live?.typingTo ? `typing to ${formatPhone(live.typingTo)}` : ""
     ]
@@ -873,6 +885,7 @@ async function refreshInbox() {
     localStorage.setItem("dddStaffName", payload.staff.name);
   }
   teamDirectory = payload.team || [];
+  teamSource = payload.teamSource || "";
   activePresence = payload.presence || [];
   conversations = payload.conversations || [];
   renderConversations();
@@ -892,6 +905,7 @@ async function refreshPresence() {
   if (!response.ok) return;
   const payload = await response.json();
   teamDirectory = payload.team || [];
+  teamSource = payload.teamSource || "";
   activePresence = payload.presence || [];
   renderTeamPresence();
   renderTypingStatus();

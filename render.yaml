@@ -33,6 +33,10 @@ services:
         value: Brianna
       - key: STAFF_ACCESS_CODES
         sync: false
+      - key: DDD_TECH_TEAM_URL
+        sync: false
+      - key: DDD_TECH_TEAM_SECRET
+        sync: false
       - key: BOOKING_URL
         sync: false
       - key: LEAD_WEBHOOK_URL

@@ -8,6 +8,7 @@
 - [ ] Confirm desktop admin edits show on phone browser after reload.
 - [ ] Add Twilio voice status callback to the active number: `/api/twilio/call-status?secret=TWILIO_SMS_WEBHOOK_SECRET`.
 - [ ] Confirm Twilio recording callback is wired: `/api/twilio/recording?secret=TWILIO_SMS_WEBHOOK_SECRET`.
+- [ ] Deploy the DDD platform `/api/technicians` GET endpoint and set `DDD_TECH_TEAM_URL` / `DDD_TECH_TEAM_SECRET` on AI Dispatch.
 - [ ] Run a live call test from a non-linked phone and confirm call log, intake, transcript, and SMS behavior.
 
 ## Smith-Level Features
@@ -20,6 +21,7 @@
 - [x] Missed-call/fallback rules for busy, failed, no-answer, dropped, or incomplete calls.
 - [x] Admin call log with intake, recordings, transcripts, and call details.
 - [x] Shared inbox with separate staff codes, replies, typing, and status.
+- [x] Shared inbox can use DDD platform/Tech Assist team sync when configured, with manual codes as fallback.
 - [x] QA dashboard with health checks and recent issue visibility.
 - [ ] Add a true end-to-end simulated call tester that scores the AI response against the QA checklist.
 - [ ] Add call outcome tags that staff can manually correct after a call.

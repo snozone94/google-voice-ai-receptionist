@@ -152,6 +152,25 @@ VOIPMS_SMS_DID=5136445016
 
 Cheapest SMS option: use the same VoIP.ms account. Outbound follow-up texts use the VoIP.ms `sendSMS` API from `VOIPMS_SMS_DID`, which avoids Twilio. VoIP.ms still requires API access to be enabled, the Render outbound IP/domain to be allowed in the VoIP.ms API settings, and any required business texting/A2P approval for production business SMS.
 
+## Tech Team Sync
+
+The shared inbox can pull the real tech roster from the DDD platform/Tech Assist instead of using a separate fake staff list.
+
+Configure AI Dispatch with:
+
+```text
+DDD_TECH_TEAM_URL=https://ddd-auto-hub-you-are-an.vercel.app/api/technicians
+DDD_TECH_TEAM_SECRET=shared-secret
+```
+
+Configure the DDD platform/Tech Assist API with the matching:
+
+```text
+DDD_AI_TEAM_SYNC_SECRET=shared-secret
+```
+
+When `DDD_TECH_TEAM_URL` is set, AI Dispatch loads active technicians from the platform and shows them in the Inbox team strip. If the platform returns an `inbox_code`, `dispatch_code`, `staff_code`, `access_code`, `pin`, or `code`, that code can be used to log into the shared inbox. Manual `STAFF_ACCESS_CODES` remain as a fallback/override so the existing flow keeps working if team sync is not configured or temporarily fails.
+
 ## Recommended Production Shape
 
 - Keep your Google Voice number as the number customers know.
@@ -194,6 +213,8 @@ CALL_SUMMARY_WEBHOOK_URL
 DDD_BOOKING_WEBHOOK_URL
 DDD_BOOKING_WEBHOOK_SECRET
 CUSTOMER_LOOKUP_SECRET
+DDD_TECH_TEAM_URL
+DDD_TECH_TEAM_SECRET
 ```
 
 `ADMIN_PIN` controls settings edits. `STAFF_ACCESS_CODES` controls Inbox access and replies with a comma-separated list like `Owner:1111,Tech 1:2222,Tech 2:3333,Dispatch:4444`.
