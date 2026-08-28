@@ -17,10 +17,12 @@ import {
 
 const defaultApiBaseUrl = "https://google-voice-ai-receptionist.onrender.com";
 const apiStorageKey = "ddd-ai-receptionist-api-base-url";
+const adminPinStorageKey = "ddd-ai-receptionist-admin-pin";
 
 export default function App() {
   const [apiBaseUrl, setApiBaseUrl] = useState(defaultApiBaseUrl);
   const [savedApiBaseUrl, setSavedApiBaseUrl] = useState(defaultApiBaseUrl);
+  const [adminPin, setAdminPin] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -71,12 +73,13 @@ export default function App() {
 
   useEffect(() => {
     let mounted = true;
-    AsyncStorage.getItem(apiStorageKey)
-      .then((value) => {
+    Promise.all([AsyncStorage.getItem(apiStorageKey), AsyncStorage.getItem(adminPinStorageKey)])
+      .then(([value, savedPin]) => {
         if (!mounted) return;
         const nextUrl = normalizeBaseUrl(value || defaultApiBaseUrl);
         setApiBaseUrl(nextUrl);
         setSavedApiBaseUrl(nextUrl);
+        setAdminPin(savedPin || "");
         loadAll(nextUrl);
       })
       .catch(() => loadAll(defaultApiBaseUrl));
@@ -109,7 +112,7 @@ export default function App() {
   async function saveSettings(reason = "manual") {
     setSaving(true);
     try {
-      const saved = await apiPost(cleanBaseUrl, "/api/settings", fromFormSettings(settings));
+      const saved = await apiPost(cleanBaseUrl, "/api/settings", fromFormSettings(settings), adminPin);
       const formSettings = toFormSettings(saved);
       setSettings(formSettings);
       lastSavedSettingsRef.current = JSON.stringify(fromFormSettings(formSettings));
@@ -118,7 +121,7 @@ export default function App() {
         : `${reason === "auto" ? "Autosaved" : "Saved"}. AI answering is paused.`
       );
     } catch (error) {
-      setStatus(error.message);
+      setStatus(error.message.includes("Forbidden") ? "Enter the admin PIN before saving settings." : error.message);
     } finally {
       setSaving(false);
     }
@@ -177,9 +180,10 @@ export default function App() {
       <StatusBar style="dark" />
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.eyebrow}>DDD AI receptionist</Text>
+          <View style={styles.rainbowBar} />
+          <Text style={styles.eyebrow}>DDD phone AI</Text>
           <Text style={styles.title}>{business?.name || "AI Receptionist"}</Text>
-          <Text style={styles.subtitle}>Google Voice {business?.googleVoiceNumber || "513-409-1342"}</Text>
+          <Text style={styles.subtitle}>Calls, voice, bookings, texts, and reviews.</Text>
         </View>
 
         <View style={styles.card}>
@@ -197,6 +201,20 @@ export default function App() {
             <ActionButton label="Refresh" onPress={loadAll} variant="light" />
           </View>
           <Text style={styles.muted}>Using {savedApiBaseUrl}</Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Admin Access</Text>
+          <Field
+            label="Admin PIN"
+            onChangeText={(value) => {
+              setAdminPin(value);
+              AsyncStorage.setItem(adminPinStorageKey, value).catch(() => {});
+            }}
+            secureTextEntry
+            value={adminPin}
+          />
+          <Text style={styles.muted}>Required before the app can save live AI settings.</Text>
         </View>
 
         <View style={styles.card}>
@@ -458,6 +476,45 @@ export default function App() {
             }
             value={settings.smsFollowUp.message}
           />
+          <View style={styles.statusRow}>
+            <View>
+              <Text style={styles.label}>Google review follow-up</Text>
+              <Text style={styles.muted}>Used after completed jobs.</Text>
+            </View>
+            <Switch
+              disabled={!editMode}
+              onValueChange={(enabled) =>
+                setSettings((current) => ({
+                  ...current,
+                  reviewFollowUp: { ...current.reviewFollowUp, enabled }
+                }))
+              }
+              value={settings.reviewFollowUp.enabled}
+            />
+          </View>
+          <Field
+            editable={editMode}
+            label="Google review link"
+            onChangeText={(url) =>
+              setSettings((current) => ({
+                ...current,
+                reviewFollowUp: { ...current.reviewFollowUp, url }
+              }))
+            }
+            value={settings.reviewFollowUp.url}
+          />
+          <Field
+            editable={editMode}
+            label="Review follow-up message"
+            multiline
+            onChangeText={(message) =>
+              setSettings((current) => ({
+                ...current,
+                reviewFollowUp: { ...current.reviewFollowUp, message }
+              }))
+            }
+            value={settings.reviewFollowUp.message}
+          />
         </View>
 
         <View style={styles.card}>
@@ -509,6 +566,11 @@ const blankSettings = {
     message:
       "Thanks for calling DDD. Here is the best next link for your request: {{link}}. The DDD team will follow up if anything else is needed."
   },
+  reviewFollowUp: {
+    enabled: true,
+    url: "https://g.page/r/CfVinSqxHOIDEAE/review",
+    message: "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}"
+  },
   callerFlows: {
     newClients: "",
     existingClients: "",
@@ -522,7 +584,7 @@ const blankSettings = {
   voiceOptions: []
 };
 
-function Field({ editable = true, label, multiline = false, onChangeText, value }) {
+function Field({ editable = true, label, multiline = false, onChangeText, secureTextEntry = false, value }) {
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
@@ -530,6 +592,7 @@ function Field({ editable = true, label, multiline = false, onChangeText, value 
         multiline={multiline}
         editable={editable}
         onChangeText={onChangeText}
+        secureTextEntry={secureTextEntry}
         style={[styles.input, !editable && styles.lockedInput, multiline && styles.textarea]}
         textAlignVertical={multiline ? "top" : "center"}
         value={value}
@@ -617,10 +680,10 @@ async function apiGet(baseUrl, path) {
   return response.json();
 }
 
-async function apiPost(baseUrl, path, payload) {
+async function apiPost(baseUrl, path, payload, adminPin = "") {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(adminPin ? { "x-admin-pin": adminPin } : {}) },
     body: JSON.stringify(payload)
   });
   if (!response.ok) {
@@ -649,6 +712,10 @@ function toFormSettings(settings) {
       ...blankSettings.smsFollowUp,
       ...(settings.smsFollowUp || {})
     },
+    reviewFollowUp: {
+      ...blankSettings.reviewFollowUp,
+      ...(settings.reviewFollowUp || {})
+    },
     voiceOptions: settings.voiceOptions || []
   };
 }
@@ -673,6 +740,7 @@ function fromFormSettings(settings) {
     callerFlows: settings.callerFlows,
     soundPreferences: settings.soundPreferences,
     smsFollowUp: settings.smsFollowUp,
+    reviewFollowUp: settings.reviewFollowUp,
     bookingDestinations: parseBookingDestinations(settings.bookingDestinationsText)
   };
 }
@@ -714,6 +782,7 @@ function buildScriptPreview(settings) {
     `Emergency: ${settings.emergencyInstructions || "Collect safety, location, vehicle, and callback number."}`,
     `Apply-to-work: ${settings.applyInstructions || "Collect applicant details and share the apply link."}`,
     `SMS follow-up: ${settings.smsFollowUp.enabled ? "on" : "off"}. ${settings.smsFollowUp.message || "Text the best DDD link after permission."}`,
+    `Google review: ${settings.reviewFollowUp.enabled ? "on" : "off"}. ${settings.reviewFollowUp.message || "Ask after completed jobs."}`,
     "",
     "Caller handling:",
     `New: ${settings.callerFlows.newClients || "Qualify and collect booking details."}`,
@@ -729,7 +798,7 @@ function buildScriptPreview(settings) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#fff8fd"
+    backgroundColor: "#fff7fb"
   },
   container: {
     gap: 14,
@@ -737,8 +806,20 @@ const styles = StyleSheet.create({
     paddingBottom: 42
   },
   header: {
-    gap: 5,
-    paddingBottom: 4
+    gap: 6,
+    overflow: "hidden",
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    padding: 18,
+    shadowColor: "#2b1d52",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20
+  },
+  rainbowBar: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: "#ff3ea5"
   },
   eyebrow: {
     color: "#b7218f",
@@ -748,7 +829,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: "#202236",
-    fontSize: 34,
+    fontSize: 32,
     fontWeight: "900"
   },
   subtitle: {
@@ -759,7 +840,7 @@ const styles = StyleSheet.create({
   card: {
     gap: 12,
     overflow: "hidden",
-    borderColor: "rgba(124, 118, 255, 0.22)",
+    borderColor: "rgba(118, 87, 255, 0.2)",
     borderRadius: 8,
     borderWidth: 1,
     backgroundColor: "#ffffff",
@@ -820,12 +901,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     minHeight: 46,
     borderRadius: 6,
-    backgroundColor: "#7d4dff",
+    backgroundColor: "#7657ff",
     paddingHorizontal: 16,
     paddingVertical: 10
   },
   lightButton: {
-    backgroundColor: "#f3edff"
+    backgroundColor: "#fff0fa"
   },
   disabledButton: {
     opacity: 0.55
@@ -838,7 +919,7 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   lightButtonText: {
-    color: "#603be4"
+    color: "#a81586"
   },
   speedRow: {
     flexDirection: "row",
@@ -861,7 +942,7 @@ const styles = StyleSheet.create({
     opacity: 0.72
   },
   segmentSelected: {
-    borderColor: "#e640a5",
+    borderColor: "#ff3ea5",
     backgroundColor: "#fff0fa"
   },
   segmentText: {
@@ -912,7 +993,7 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   },
   testOutput: {
-    borderColor: "#d9d3ee",
+    borderColor: "#ddd8ec",
     borderRadius: 6,
     borderWidth: 1,
     backgroundColor: "#fffaff",
