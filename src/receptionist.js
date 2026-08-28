@@ -570,11 +570,31 @@ function countTopValues(values, limit = 6) {
 }
 
 function cleanInsightLabel(value) {
-  return String(value || "")
+  const cleaned = String(value || "")
     .replace(/\s+/g, " ")
     .replace(/^customer$/i, "")
     .trim()
     .slice(0, 80);
+  const lower = cleaned.toLowerCase();
+  const canonical = {
+    "oil change": "Oil change",
+    "roadside help": "Roadside service",
+    "roadside service": "Roadside service",
+    "brakes / rotors": "Brakes / rotors",
+    "tire / flat": "Tire / flat",
+    "jump start / battery": "Jump start / battery",
+    lockout: "Lockout",
+    "fuel delivery": "Fuel delivery",
+    "hub bearing": "Hub bearing",
+    "apply to work": "Apply to work",
+    "existing appointment": "Existing appointment",
+    "unsupported service": "Unsupported service",
+    "potential customer": "Potential customer",
+    "existing customer": "Existing customer",
+    sales: "Sales",
+    other: "Other"
+  };
+  return canonical[lower] || cleaned;
 }
 
 function classifyCallerType(call) {
@@ -627,7 +647,7 @@ function extractCommonQuestions(text = "") {
   return String(text)
     .split(/\n+/)
     .map((line) => line.trim())
-    .filter((line) => line.includes("?"))
+    .filter((line) => line.includes("?") && line.replace(/[?\s]/g, "").length > 8)
     .map((line) => line.replace(/^(caller|ai|call)\s*[:\-]\s*/i, "").slice(0, 100))
     .slice(0, 40);
 }

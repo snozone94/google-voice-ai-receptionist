@@ -848,9 +848,14 @@ function staffHeaders() {
 }
 
 function formatPhone(phone) {
-  const digits = String(phone || "").replace(/\D/g, "");
+  const raw = String(phone || "");
+  const sipPhone = raw.match(/\+?1?\d{10,11}/)?.[0] || "";
+  const digits = (sipPhone || raw).replace(/\D/g, "");
   if (digits.length === 11 && digits.startsWith("1")) {
     return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+  }
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
   }
   return phone || "Unknown";
 }
