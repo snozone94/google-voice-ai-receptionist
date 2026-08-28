@@ -139,13 +139,14 @@ app.get("/api/sms", async (req, res, next) => {
 
 app.get("/api/conversations", async (req, res, next) => {
   try {
-    if (!hasAdminAccess(req)) {
+    const staff = getStaffAccess(req);
+    if (!staff.ok) {
       res.status(403).json({ ok: false, error: "Forbidden" });
       return;
     }
 
     const limit = Math.min(Number(req.query.limit) || 200, 500);
-    res.json({ conversations: await listConversations(limit) });
+    res.json({ staff, conversations: await listConversations(limit) });
   } catch (error) {
     next(error);
   }
@@ -153,14 +154,18 @@ app.get("/api/conversations", async (req, res, next) => {
 
 app.post("/api/sms/reply", express.json(), async (req, res, next) => {
   try {
-    if (!hasAdminAccess(req)) {
+    const staff = getStaffAccess(req);
+    if (!staff.ok) {
       res.status(403).json({ ok: false, error: "Forbidden" });
       return;
     }
 
     const to = normalizeE164(req.body?.to);
     const message = String(req.body?.message || "").replace(/\s+/g, " ").trim();
-    const agentName = String(req.body?.agentName || "DDD team").replace(/\s+/g, " ").trim().slice(0, 80);
+    const agentName = String(staff.name || req.body?.agentName || "DDD team")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80);
     if (!to) {
       res.status(400).json({ ok: false, error: "Enter a valid customer phone number." });
       return;
@@ -179,7 +184,7 @@ app.post("/api/sms/reply", express.json(), async (req, res, next) => {
       status: delivery.status || (delivery.ok ? "sent" : "failed"),
       agentName
     });
-    res.status(delivery.ok ? 201 : 502).json({ ok: delivery.ok, delivery, sms: record });
+    res.status(delivery.ok ? 201 : 502).json({ ok: delivery.ok, delivery, staff, sms: record });
   } catch (error) {
     next(error);
   }
@@ -527,6 +532,53 @@ function hasAdminAccess(req) {
   const pin = process.env.ADMIN_PIN;
   if (!pin) return process.env.ALLOW_UNPROTECTED_ADMIN === "true";
   return req.get("x-admin-pin") === pin || req.query.adminPin === pin;
+}
+
+function getStaffAccess(req) {
+  const submittedCode = String(req.get("x-staff-code") || req.get("x-admin-pin") || req.query.staffCode || req.query.adminPin || "")
+    .trim();
+  const adminPin = String(process.env.ADMIN_PIN || "").trim();
+  if (!submittedCode) {
+    return { ok: false };
+  }
+  if (adminPin && submittedCode === adminPin) {
+    return { ok: true, name: process.env.ADMIN_STAFF_NAME || "Brianna", role: "admin" };
+  }
+
+  const staffCodes = parseStaffAccessCodes(process.env.STAFF_ACCESS_CODES || "");
+  const staff = staffCodes.find((entry) => entry.code === submittedCode);
+  if (!staff) {
+    return { ok: false };
+  }
+  return { ok: true, name: staff.name, role: "staff" };
+}
+
+function parseStaffAccessCodes(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((entry) => ({
+          name: String(entry.name || "").trim(),
+          code: String(entry.code || "").trim()
+        }))
+        .filter((entry) => entry.name && entry.code);
+    }
+  } catch {
+    // Fall back to compact Name:Code,Name:Code format.
+  }
+  return raw
+    .split(",")
+    .map((pair) => {
+      const [name, ...codeParts] = pair.split(":");
+      return {
+        name: String(name || "").trim(),
+        code: codeParts.join(":").trim()
+      };
+    })
+    .filter((entry) => entry.name && entry.code);
 }
 
 function hasCustomerLookupAccess(req) {

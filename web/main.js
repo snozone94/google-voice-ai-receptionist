@@ -74,8 +74,8 @@ let isLoadingSettings = false;
 let conversations = [];
 let selectedConversationPhone = "";
 
-adminPinInput.value = localStorage.getItem("dddStaffPin") || "";
-staffPinInput.value = localStorage.getItem("dddStaffPin") || "";
+adminPinInput.value = localStorage.getItem("dddAdminPin") || localStorage.getItem("dddStaffPin") || "";
+staffPinInput.value = localStorage.getItem("dddStaffCode") || "";
 staffNameInput.value = localStorage.getItem("dddStaffName") || "";
 
 for (const button of tabButtons) {
@@ -500,8 +500,13 @@ function renderList(element, records, emptyMessage, formatter) {
 }
 
 function adminHeaders() {
-  const pin = adminPinInput.value.trim() || staffPinInput.value.trim();
+  const pin = adminPinInput.value.trim();
   return pin ? { "x-admin-pin": pin } : {};
+}
+
+function staffHeaders() {
+  const code = staffPinInput.value.trim() || adminPinInput.value.trim();
+  return code ? { "x-staff-code": code } : {};
 }
 
 function formatPhone(phone) {
@@ -599,18 +604,22 @@ function escapeHtml(value) {
 }
 
 async function refreshInbox() {
-  localStorage.setItem("dddStaffPin", staffPinInput.value.trim());
+  localStorage.setItem("dddStaffCode", staffPinInput.value.trim());
   localStorage.setItem("dddStaffName", staffNameInput.value.trim());
   setInboxStatus("Loading texts...");
-  const response = await fetch("/api/conversations", { headers: adminHeaders() });
+  const response = await fetch("/api/conversations", { headers: staffHeaders() });
   if (response.status === 403) {
-    setInboxStatus("Enter the staff PIN to load texts.");
+    setInboxStatus("Enter your staff code to load texts.");
     conversations = [];
     renderConversations();
     return;
   }
   if (!response.ok) throw new Error("Could not load text inbox.");
   const payload = await response.json();
+  if (payload.staff?.name) {
+    staffNameInput.value = payload.staff.name;
+    localStorage.setItem("dddStaffName", payload.staff.name);
+  }
   conversations = payload.conversations || [];
   renderConversations();
   setInboxStatus(conversations.length ? "Inbox is up to date." : "No texts yet. New SMS will appear here after Twilio receives the number.");
@@ -623,15 +632,13 @@ refreshInboxButton.addEventListener("click", () => {
 
 adminPinInput.addEventListener("change", () => {
   const pin = adminPinInput.value.trim();
-  localStorage.setItem("dddStaffPin", pin);
-  staffPinInput.value = pin;
+  localStorage.setItem("dddAdminPin", pin);
   refreshInbox().catch((error) => setInboxStatus(error.message));
 });
 
 staffPinInput.addEventListener("change", () => {
-  const pin = staffPinInput.value.trim();
-  localStorage.setItem("dddStaffPin", pin);
-  adminPinInput.value = pin;
+  const code = staffPinInput.value.trim();
+  localStorage.setItem("dddStaffCode", code);
   refreshInbox().catch((error) => setInboxStatus(error.message));
 });
 
@@ -655,7 +662,7 @@ replyForm.addEventListener("submit", async (event) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...adminHeaders()
+        ...staffHeaders()
       },
       body: JSON.stringify({
         to: selectedConversationPhone,
