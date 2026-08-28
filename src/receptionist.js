@@ -1049,7 +1049,7 @@ export function buildDryRun(settings = {}, callerMessage = "") {
       : intent === "apply"
         ? `${reflectedNeed} I can get your info to DDD quickly. What kind of work are you applying for?`
         : intent === "unsupported"
-          ? `${reflectedNeed} DDD may not handle that exact service, but I can save your message${activeSettings.directoryReferral.enabled ? " or text the referral/directory link if you want" : ""}.`
+          ? `${reflectedNeed} ${activeSettings.directoryReferral.enabled ? "I can text a referral/directory link if you want." : "I can save your message for the team."}`
           : `${directBookingNeed || reflectedNeed} This will be quick, and I can make the booking for you. What is the best callback number?`;
   const action =
     intent === "apply"
@@ -1151,10 +1151,13 @@ function filterKnownQuestions(questions, knownDetails) {
 
 function summarizeCallerNeed(rawMessage, intent) {
   const cleaned = cleanText(rawMessage, "", 180).replace(/[.!?]+$/g, "");
-  if (cleaned) return `I hear you need help with: ${cleaned}.`;
   if (intent === "emergency") return "I hear this is urgent.";
-  if (intent === "apply") return "I hear you want to apply to work with DDD.";
-  if (intent === "unsupported") return "I hear you may need a service DDD does not normally handle.";
+  if (intent === "apply") return "I can help with the DDD work application.";
+  if (intent === "unsupported") {
+    if (/\btow\b|\btowing\b/i.test(cleaned)) return "DDD does not offer towing, but I can save your message.";
+    return "DDD may not handle that exact service.";
+  }
+  if (cleaned) return `I can help with ${cleaned}.`;
   return "I can help with that.";
 }
 
