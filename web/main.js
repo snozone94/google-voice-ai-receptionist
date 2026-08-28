@@ -114,6 +114,9 @@ for (const button of tabButtons) {
 function setActiveTab(tabName) {
   for (const button of tabButtons) {
     button.classList.toggle("active", button.dataset.tabTarget === tabName);
+    if (button.dataset.tabTarget === tabName) {
+      button.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    }
   }
   for (const panel of tabPanels) {
     panel.classList.toggle("active", panel.dataset.tabPanel === tabName);
