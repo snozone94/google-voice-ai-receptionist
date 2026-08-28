@@ -306,6 +306,30 @@ app.post("/api/twilio/recording", express.urlencoded({ extended: false }), async
   }
 });
 
+app.post("/api/twilio/call-status", express.urlencoded({ extended: false }), async (req, res, next) => {
+  try {
+    if (!hasTwilioSmsAccess(req)) {
+      res.status(403).send("Forbidden");
+      return;
+    }
+    const status = req.body.CallStatus || req.body.callStatus || "";
+    await saveCallEvent({
+      type: "twilio.call.status",
+      data: {
+        call_id: req.body.CallSid || req.body.callSid || "",
+        status,
+        sip_headers: [
+          { name: "from", value: req.body.From || "" },
+          { name: "to", value: req.body.To || "" }
+        ]
+      }
+    });
+    res.type("text/xml").send("<Response></Response>");
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/voice-preview", requireOpenAIKey, express.json(), async (req, res, next) => {
   try {
     const voice = normalizeVoice(req.body?.voice);
@@ -380,6 +404,80 @@ app.post("/api/test-script", express.json(), async (req, res, next) => {
     next(error);
   }
 });
+
+app.get("/api/qa-dashboard", async (req, res, next) => {
+  try {
+    if (!hasAdminAccess(req)) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+    const [settings, callLog, leads, bookings, sms] = await Promise.all([
+      loadReceptionistSettings(),
+      listCallLog(200),
+      listLeads(200),
+      listBookings(200),
+      listSms(200)
+    ]);
+    const recentCalls = callLog.slice(0, 25);
+    const missedStatuses = new Set(["busy", "no-answer", "failed", "canceled", "cancelled", "missed"]);
+    const missedCalls = recentCalls.filter((call) => missedStatuses.has(String(call.status || "").toLowerCase()));
+    const callsWithIntake = recentCalls.filter((call) => (call.leads?.length || 0) + (call.bookings?.length || 0) > 0);
+    const callsWithRecordings = recentCalls.filter((call) => call.recordingUrl);
+    const callsWithTranscripts = recentCalls.filter((call) => call.transcriptText);
+    const bookingSyncFailures = bookings.filter((booking) => booking.externalSync && !booking.externalSync.ok && !booking.externalSync.skipped);
+    const smsFailures = sms.filter((message) => String(message.status || "").toLowerCase() === "failed");
+
+    const checks = [
+      qaCheck("AI answering", settings.enabled, settings.enabled ? "AI is on." : "AI is paused."),
+      qaCheck("Persistent storage", getStorageInfo().persistent, getStorageInfo().persistent ? "Settings/logs are on persistent storage." : "Render disk is not active yet."),
+      qaCheck("Recent calls captured", recentCalls.length > 0, recentCalls.length ? `${recentCalls.length} recent calls found.` : "No forwarded calls logged yet."),
+      qaCheck("Intake saved", !recentCalls.length || callsWithIntake.length > 0, callsWithIntake.length ? `${callsWithIntake.length} recent calls have leads/bookings.` : "No recent calls have saved intake yet."),
+      qaCheck("Missed-call visibility", missedCalls.length === 0, missedCalls.length ? `${missedCalls.length} recent calls show missed/busy/failure states.` : "No missed/busy calls in recent log."),
+      qaCheck("Recording hook", !recentCalls.length || callsWithRecordings.length > 0, callsWithRecordings.length ? `${callsWithRecordings.length} recent calls have recording links.` : "No recording links stored yet."),
+      qaCheck("Transcript capture", !recentCalls.length || callsWithTranscripts.length > 0, callsWithTranscripts.length ? `${callsWithTranscripts.length} recent calls have transcripts.` : "No transcripts stored yet."),
+      qaCheck("Booking sync", bookingSyncFailures.length === 0, bookingSyncFailures.length ? `${bookingSyncFailures.length} booking sync failures need review.` : "No booking sync failures found."),
+      qaCheck("SMS delivery", smsFailures.length === 0, smsFailures.length ? `${smsFailures.length} failed texts found.` : "No failed texts found.")
+    ];
+
+    res.json({
+      ok: checks.every((check) => check.ok),
+      generatedAt: new Date().toISOString(),
+      counts: {
+        recentCalls: recentCalls.length,
+        leads: leads.length,
+        bookings: bookings.length,
+        missedCalls: missedCalls.length,
+        sms: sms.length
+      },
+      checks,
+      qaChecklist: settings.qaChecklist,
+      fallbackRules: settings.fallbackRules,
+      recentIssues: [
+        ...missedCalls.slice(0, 5).map((call) => ({
+          type: "missed-call",
+          message: `${call.caller || "Unknown caller"} ended as ${call.status || "missed"}.`,
+          at: call.startedAt || call.createdAt || ""
+        })),
+        ...bookingSyncFailures.slice(0, 5).map((booking) => ({
+          type: "booking-sync",
+          message: `${booking.name || booking.phone || "Booking"} did not sync: ${booking.externalSync?.error || booking.externalSync?.reason || "unknown error"}.`,
+          at: booking.createdAt || ""
+        })),
+        ...smsFailures.slice(0, 5).map((message) => ({
+          type: "sms",
+          message: `Text to ${message.to || "customer"} failed.`,
+          at: message.createdAt || ""
+        }))
+      ]
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+function qaCheck(label, ok, detail) {
+  return { label, ok: Boolean(ok), detail };
+}
 
 function clampSpeechSpeed(value) {
   const speed = Number(value);

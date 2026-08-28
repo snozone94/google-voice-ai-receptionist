@@ -59,6 +59,7 @@
         <button class="tab-button" type="button" data-tab-target="followup">Follow-up</button>
         <button class="tab-button" type="button" data-tab-target="inbox">Inbox</button>
         <button class="tab-button" type="button" data-tab-target="calls">Calls</button>
+        <button class="tab-button" type="button" data-tab-target="qa">QA</button>
         <button class="tab-button" type="button" data-tab-target="activity">Activity</button>
       </nav>
 
@@ -82,6 +83,12 @@
               <textarea id="testCallerInput" rows="4" placeholder="Example: I have a flat tire and need help now"></textarea>
             </label>
             <button id="testScriptButton" type="button">Run free test</button>
+            <div class="scenario-row" aria-label="Free test scenarios">
+              <button type="button" data-test-scenario="I have a flat tire on I-75 and need help now">Emergency</button>
+              <button type="button" data-test-scenario="How much is a jump start and can I book today?">Pricing</button>
+              <button type="button" data-test-scenario="I already booked and need to change my appointment">Existing job</button>
+              <button type="button" data-test-scenario="I want to apply to work with DDD as a mobile tech">Apply</button>
+            </div>
             <textarea id="testScriptOutput" rows="6" readonly></textarea>
           </div>
         </div>
@@ -124,6 +131,14 @@
           <label>
             What the receptionist should say/do
             <textarea id="customInstructionsInput" rows="5" maxlength="1600"></textarea>
+          </label>
+          <label>
+            Call outcome rules
+            <textarea id="callOutcomeRulesInput" rows="5" maxlength="1400"></textarea>
+          </label>
+          <label>
+            Missed-call / fallback rules
+            <textarea id="fallbackRulesInput" rows="5" maxlength="1400"></textarea>
           </label>
           <label>
             Business knowledge
@@ -332,6 +347,31 @@
           </article>
         </div>
         <p id="callLogStatus">Enter the admin PIN to load call details.</p>
+      </section>
+
+      <section class="panel tab-panel" data-tab-panel="qa">
+        <div class="section-title-row">
+          <div>
+            <p class="eyebrow">Quality control</p>
+            <h2>QA Dashboard</h2>
+          </div>
+          <button id="refreshQaButton" type="button">Refresh QA</button>
+        </div>
+        <div class="qa-grid">
+          <div class="qa-card">
+            <h3>Health checks</h3>
+            <div id="qaChecksList" class="qa-list"></div>
+          </div>
+          <div class="qa-card">
+            <h3>Recent issues</h3>
+            <div id="qaIssuesList" class="qa-list"></div>
+          </div>
+          <label class="qa-card wide-field">
+            QA checklist
+            <textarea id="qaChecklistInput" rows="6" maxlength="1400"></textarea>
+          </label>
+        </div>
+        <p id="qaStatus">Enter the admin PIN to load QA.</p>
       </section>
 
       <section class="panel tab-panel" data-tab-panel="activity">

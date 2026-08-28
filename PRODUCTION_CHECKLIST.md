@@ -24,6 +24,7 @@
 - Confirm OpenAI sends webhooks to `/openai/sip-webhook`.
 - Set `OPENAI_WEBHOOK_SECRET`.
 - Enable Twilio call recording only after consent/legal wording is decided, and send the recording callback to `/api/twilio/recording?secret=TWILIO_SMS_WEBHOOK_SECRET` so audio links appear in the admin Calls tab.
+- Send Twilio voice status callbacks to `/api/twilio/call-status?secret=TWILIO_SMS_WEBHOOK_SECRET` so busy, failed, no-answer, cancelled, and completed calls show in the QA dashboard.
 - Call the AI forwarding number directly before testing through Google Voice.
 
 ## Launch Test
@@ -33,6 +34,7 @@
 - Ask a common FAQ.
 - Ask for a callback, confirm your details, and verify the lead appears on the dashboard.
 - Hang up and confirm the call appears under recent activity.
+- Open the QA tab and confirm there are no missed-call, booking-sync, SMS, recording, or transcript issues that need review.
 
 ## After Launch
 

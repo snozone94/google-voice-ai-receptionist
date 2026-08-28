@@ -86,6 +86,12 @@ const defaultNotOfferedServices =
   "Do not promise towing, exact arrival times, exact pricing, dealership-level repairs, or emergency medical/police help unless DDD explicitly adds those services.";
 const defaultAfterHoursInstructions =
   "If DDD is closed or availability is unclear, still collect the message and push the right link. Say the team will follow up as soon as possible.";
+const defaultCallOutcomeRules =
+  "For every call, end with one clear outcome: booking created, lead/message saved, best DDD link shared, apply-to-work info captured, existing job message captured, sales message captured, spam/irrelevant declined, or human follow-up needed. Do not leave the caller unsure what happens next.";
+const defaultFallbackRules =
+  "If the AI cannot hear the caller, the caller is upset, the caller requests a human twice, the call is urgent and details are incomplete, booking sync fails, or the call drops before intake is complete, save a missed/fallback lead with caller ID if available and mark the next step as urgent human follow-up.";
+const defaultQaChecklist =
+  "QA should confirm: AI answered, caller intent identified, name/phone captured when possible, emergency callers were handled quickly, booking or lead was saved, correct DDD link was selected, SMS consent was asked before texting, transcript/recording was attached when available, and call ended with a clear next step.";
 const defaultSoundPreferences = {
   ambientSound: "none",
   thinkingSound: true
@@ -190,6 +196,9 @@ export async function saveReceptionistSettings(settings) {
         notOfferedServices: next.notOfferedServices,
         afterHoursInstructions: next.afterHoursInstructions,
         humanHandoffRules: next.humanHandoffRules,
+        callOutcomeRules: next.callOutcomeRules,
+        fallbackRules: next.fallbackRules,
+        qaChecklist: next.qaChecklist,
         applyInstructions: next.applyInstructions,
         smsFollowUp: next.smsFollowUp,
         reviewFollowUp: next.reviewFollowUp,
@@ -539,6 +548,12 @@ Out-of-scope callers:
 Follow-up style:
 - ${activeSettings.followUpStyle}
 
+Call outcome rules:
+${activeSettings.callOutcomeRules}
+
+Missed-call and fallback handling:
+${activeSettings.fallbackRules}
+
 Emergency handling:
 - ${activeSettings.emergencyInstructions}
 
@@ -611,6 +626,9 @@ ${business.escalationRules.map((rule) => `- ${rule}`).join("\n")}
 
 Human handoff rules:
 ${activeSettings.humanHandoffRules}
+
+Quality checklist:
+${activeSettings.qaChecklist}
 
 Apply-to-work handling:
 ${activeSettings.applyInstructions}
@@ -779,6 +797,9 @@ function normalizeSettings(settings = {}) {
     notOfferedServices: cleanLongText(settings.notOfferedServices, defaultNotOfferedServices, 1400),
     afterHoursInstructions: cleanLongText(settings.afterHoursInstructions, defaultAfterHoursInstructions, 900),
     humanHandoffRules: cleanLongText(settings.humanHandoffRules, defaultHumanHandoffRules, 1200),
+    callOutcomeRules: cleanLongText(settings.callOutcomeRules, defaultCallOutcomeRules, 1400),
+    fallbackRules: cleanLongText(settings.fallbackRules, defaultFallbackRules, 1400),
+    qaChecklist: cleanLongText(settings.qaChecklist, defaultQaChecklist, 1400),
     applyInstructions: cleanLongText(settings.applyInstructions, defaultApplyInstructions, 1200),
     smsFollowUp: normalizeSmsFollowUp(settings.smsFollowUp),
     reviewFollowUp: normalizeReviewFollowUp(settings.reviewFollowUp),
@@ -990,9 +1011,16 @@ export function buildDryRun(settings = {}, callerMessage = "") {
       destination ? `Best next link: ${destination.label} - ${destination.url}` : "Best next link: use the main DDD booking option if one applies.",
       activeSettings.smsFollowUp.enabled
         ? `SMS follow-up: ask permission, then text "${renderSmsTemplate(activeSettings.smsFollowUp.message, destination, activeSettings)}"`
-        : "SMS follow-up: off"
+        : "SMS follow-up: off",
+      `Required outcome: ${activeSettings.callOutcomeRules}`,
+      `Fallback if something breaks: ${activeSettings.fallbackRules}`
     ].join("\n\n"),
     questions,
+    qaChecklist: activeSettings.qaChecklist
+      .split(/[.;]\s+|\n+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 12),
     note: "Free dry run. This does not place a phone call and does not use OpenAI voice minutes."
   };
 }

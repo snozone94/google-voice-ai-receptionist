@@ -617,6 +617,75 @@ h2 {
   width: min(100%, 340px);
 }
 
+.scenario-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.scenario-row button {
+  min-height: 38px;
+  margin: 0;
+  padding: 0 10px;
+  background: linear-gradient(90deg, rgba(22, 184, 255, 0.92), rgba(35, 199, 121, 0.92));
+  box-shadow: 0 8px 18px rgba(22, 184, 255, 0.18);
+  font-size: 0.86rem;
+}
+
+.qa-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.qa-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  border: 1px solid rgba(124, 118, 255, 0.2);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.qa-list {
+  display: grid;
+  gap: 8px;
+}
+
+.qa-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  border: 1px solid rgba(217, 211, 238, 0.9);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff;
+}
+
+.qa-row p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #55576d;
+  line-height: 1.35;
+}
+
+.qa-row span {
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #fff;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.qa-row.ok span {
+  background: var(--green);
+}
+
+.qa-row.warn span {
+  background: linear-gradient(90deg, var(--orange), var(--pink));
+}
+
 .switch-row {
   width: fit-content;
   display: flex;
@@ -737,6 +806,8 @@ textarea#pricingNotesInput,
 textarea#emergencyInstructionsInput,
 textarea#emergencyQuestionsInput,
 textarea#humanHandoffRulesInput,
+textarea#callOutcomeRulesInput,
+textarea#fallbackRulesInput,
 textarea#afterHoursInstructionsInput,
 textarea#applyInstructionsInput,
 textarea#bookingDestinationsInput,
@@ -750,6 +821,7 @@ textarea#otherCallersFlowInput,
 textarea#smsFollowUpMessageInput,
 textarea#reviewFollowUpMessageInput,
 textarea#staffAccessCodesInput,
+textarea#qaChecklistInput,
 textarea#customInstructionsInput,
 textarea#scriptPreview,
 textarea#testCallerInput,
@@ -806,6 +878,8 @@ li.missing {
   .numbers,
   .activity,
   .flow-grid,
+  .qa-grid,
+  .scenario-row,
   .overview-grid,
   .two-column,
   .lead-capture,

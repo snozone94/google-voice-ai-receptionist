@@ -30,6 +30,8 @@ const pricingNotesInput = document.querySelector("#pricingNotesInput");
 const emergencyInstructionsInput = document.querySelector("#emergencyInstructionsInput");
 const emergencyQuestionsInput = document.querySelector("#emergencyQuestionsInput");
 const humanHandoffRulesInput = document.querySelector("#humanHandoffRulesInput");
+const callOutcomeRulesInput = document.querySelector("#callOutcomeRulesInput");
+const fallbackRulesInput = document.querySelector("#fallbackRulesInput");
 const afterHoursInstructionsInput = document.querySelector("#afterHoursInstructionsInput");
 const applyInstructionsInput = document.querySelector("#applyInstructionsInput");
 const bookingDestinationsInput = document.querySelector("#bookingDestinationsInput");
@@ -52,6 +54,7 @@ const scriptPreview = document.querySelector("#scriptPreview");
 const testCallerInput = document.querySelector("#testCallerInput");
 const testScriptButton = document.querySelector("#testScriptButton");
 const testScriptOutput = document.querySelector("#testScriptOutput");
+const testScenarioButtons = [...document.querySelectorAll("[data-test-scenario]")];
 const saveSettingsButton = document.querySelector("#saveSettingsButton");
 const editSettingsButton = document.querySelector("#editSettingsButton");
 const settingsStatus = document.querySelector("#settingsStatus");
@@ -70,6 +73,11 @@ const sendReplyButton = document.querySelector("#sendReplyButton");
 const inboxStatus = document.querySelector("#inboxStatus");
 const teamPresenceList = document.querySelector("#teamPresenceList");
 const typingStatus = document.querySelector("#typingStatus");
+const refreshQaButton = document.querySelector("#refreshQaButton");
+const qaChecksList = document.querySelector("#qaChecksList");
+const qaIssuesList = document.querySelector("#qaIssuesList");
+const qaChecklistInput = document.querySelector("#qaChecklistInput");
+const qaStatus = document.querySelector("#qaStatus");
 const tabButtons = [...document.querySelectorAll("[data-tab-target]")];
 const tabPanels = [...document.querySelectorAll("[data-tab-panel]")];
 
@@ -187,6 +195,8 @@ function applySettings(settings) {
   emergencyInstructionsInput.value = settings.emergencyInstructions || "";
   emergencyQuestionsInput.value = (settings.emergencyQuestions || []).join("\n");
   humanHandoffRulesInput.value = settings.humanHandoffRules || "";
+  callOutcomeRulesInput.value = settings.callOutcomeRules || "";
+  fallbackRulesInput.value = settings.fallbackRules || "";
   afterHoursInstructionsInput.value = settings.afterHoursInstructions || "";
   applyInstructionsInput.value = settings.applyInstructions || "";
   bookingDestinationsInput.value = formatBookingDestinations(settings.bookingDestinations || []);
@@ -209,6 +219,7 @@ function applySettings(settings) {
     settings.reviewFollowUp?.message ||
     "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}";
   staffAccessCodesInput.value = formatStaffAccessCodes(settings.staffAccessCodes || []);
+  qaChecklistInput.value = settings.qaChecklist || "";
   customInstructionsInput.value = settings.customInstructions || "";
 }
 
@@ -256,6 +267,8 @@ async function saveSettings(reason = "auto") {
         emergencyInstructions: emergencyInstructionsInput.value,
         emergencyQuestions: emergencyQuestionsInput.value,
         humanHandoffRules: humanHandoffRulesInput.value,
+        callOutcomeRules: callOutcomeRulesInput.value,
+        fallbackRules: fallbackRulesInput.value,
         afterHoursInstructions: afterHoursInstructionsInput.value,
         applyInstructions: applyInstructionsInput.value,
         bookingDestinations: parseBookingDestinations(bookingDestinationsInput.value),
@@ -282,6 +295,7 @@ async function saveSettings(reason = "auto") {
           message: reviewFollowUpMessageInput.value
         },
         staffAccessCodes: parseStaffAccessCodesInput(staffAccessCodesInput.value),
+        qaChecklist: qaChecklistInput.value,
         customInstructions: customInstructionsInput.value
       })
     });
@@ -354,6 +368,8 @@ for (const input of [
   emergencyInstructionsInput,
   emergencyQuestionsInput,
   humanHandoffRulesInput,
+  callOutcomeRulesInput,
+  fallbackRulesInput,
   afterHoursInstructionsInput,
   applyInstructionsInput,
   bookingDestinationsInput,
@@ -372,6 +388,7 @@ for (const input of [
   reviewFollowUpUrlInput,
   reviewFollowUpMessageInput,
   staffAccessCodesInput,
+  qaChecklistInput,
   customInstructionsInput
 ]) {
   input.addEventListener("input", handleSettingsChange);
@@ -410,6 +427,8 @@ function setEditMode(nextEditMode) {
     emergencyInstructionsInput,
     emergencyQuestionsInput,
     humanHandoffRulesInput,
+    callOutcomeRulesInput,
+    fallbackRulesInput,
     afterHoursInstructionsInput,
     applyInstructionsInput,
     bookingDestinationsInput,
@@ -428,6 +447,7 @@ function setEditMode(nextEditMode) {
     reviewFollowUpUrlInput,
     reviewFollowUpMessageInput,
     staffAccessCodesInput,
+    qaChecklistInput,
     customInstructionsInput
   ]) {
     input.disabled = !editMode || isSavingSettings;
@@ -449,7 +469,19 @@ function updateSaveControls(message = "") {
 }
 
 testScriptButton.addEventListener("click", async () => {
+  await runFreeTest(testCallerInput.value);
+});
+
+for (const button of testScenarioButtons) {
+  button.addEventListener("click", async () => {
+    testCallerInput.value = button.dataset.testScenario || "";
+    await runFreeTest(testCallerInput.value);
+  });
+}
+
+async function runFreeTest(callerMessage) {
   testScriptButton.disabled = true;
+  for (const button of testScenarioButtons) button.disabled = true;
   testScriptOutput.value = "Testing...";
   try {
     const response = await fetch("/api/test-script", {
@@ -465,14 +497,17 @@ testScriptButton.addEventListener("click", async () => {
       "",
       result.likelyReply,
       "",
+      result.qaChecklist?.length ? `QA checklist:\n- ${result.qaChecklist.join("\n- ")}` : "",
+      "",
       result.note
     ].join("\n");
   } catch (error) {
     testScriptOutput.value = error.message;
   } finally {
     testScriptButton.disabled = false;
+    for (const button of testScenarioButtons) button.disabled = false;
   }
-});
+}
 
 function updateScriptPreview() {
   scriptPreview.value = [
@@ -493,6 +528,8 @@ function updateScriptPreview() {
     "Emergency questions:",
     emergencyQuestionsInput.value || "Are you in a safe place right now?\nWhat is your exact location?\nWhat vehicle are you with?\nWhat happened?\nWhat is the best callback number?",
     `Human handoff: ${humanHandoffRulesInput.value || "Save details; do not promise a live transfer."}`,
+    `Outcome rules: ${callOutcomeRulesInput.value || "End every call with a clear outcome."}`,
+    `Fallback rules: ${fallbackRulesInput.value || "Save missed/fallback leads when calls fail or details are incomplete."}`,
     `After-hours: ${afterHoursInstructionsInput.value || "Collect the message and say the team will follow up as soon as possible."}`,
     `Apply-to-work: ${applyInstructionsInput.value || "Collect applicant details and share the apply link."}`,
     "",
@@ -515,8 +552,51 @@ function updateScriptPreview() {
     `Google review follow-up: ${reviewFollowUpToggle.checked ? "on" : "off"}. ${reviewFollowUpMessageInput.value || "Ask for a Google review after completed jobs."} ${reviewFollowUpUrlInput.value || ""}`.trim(),
     "",
     "Behavior:",
-    customInstructionsInput.value || "Tell the receptionist exactly how to handle callers."
+    customInstructionsInput.value || "Tell the receptionist exactly how to handle callers.",
+    "",
+    "QA checklist:",
+    qaChecklistInput.value || "Confirm answer, intake, correct link, saved lead/booking, SMS consent, transcript, recording, and clear next step."
   ].join("\n");
+}
+
+async function refreshQaDashboard() {
+  if (!qaChecksList || !qaIssuesList || !qaStatus) return;
+  qaStatus.textContent = "Loading QA...";
+  const response = await fetch("/api/qa-dashboard", { headers: adminHeaders() });
+  if (response.status === 403) {
+    qaChecksList.innerHTML = `<p class="empty-state">Enter the admin PIN to load checks.</p>`;
+    qaIssuesList.innerHTML = `<p class="empty-state">Enter the admin PIN to load issues.</p>`;
+    qaStatus.textContent = "Enter the admin PIN to load QA.";
+    return;
+  }
+  if (!response.ok) throw new Error("Could not load QA dashboard.");
+  const payload = await response.json();
+  qaChecksList.innerHTML = (payload.checks || [])
+    .map(
+      (check) => `
+        <div class="qa-row ${check.ok ? "ok" : "warn"}">
+          <strong>${escapeHtml(check.label)}</strong>
+          <span>${escapeHtml(check.ok ? "OK" : "Needs review")}</span>
+          <p>${escapeHtml(check.detail || "")}</p>
+        </div>
+      `
+    )
+    .join("");
+  qaIssuesList.innerHTML = payload.recentIssues?.length
+    ? payload.recentIssues
+        .map(
+          (issue) => `
+            <div class="qa-row warn">
+              <strong>${escapeHtml(issue.type || "issue")}</strong>
+              <span>${escapeHtml(formatTime(issue.at) || "")}</span>
+              <p>${escapeHtml(issue.message || "")}</p>
+            </div>
+          `
+        )
+        .join("")
+    : `<p class="empty-state">No recent issues found.</p>`;
+  if (!qaChecklistInput.value && payload.qaChecklist) qaChecklistInput.value = payload.qaChecklist;
+  qaStatus.textContent = payload.ok ? "QA looks clean." : "Some QA items need review.";
 }
 
 function formatBookingDestinations(destinations) {
@@ -1042,12 +1122,22 @@ refreshCallLog().catch((error) => {
   callLogStatus.textContent = error.message;
 });
 setInterval(() => refreshCallLog().catch(() => {}), 20000);
+refreshQaDashboard().catch((error) => {
+  if (qaStatus) qaStatus.textContent = error.message;
+});
+setInterval(() => refreshQaDashboard().catch(() => {}), 30000);
 setInterval(() => sendPresence().catch(() => {}), 20000);
 setInterval(() => refreshPresence().catch(() => {}), 10000);
 
 refreshCallLogButton.addEventListener("click", () => {
   refreshCallLog().catch((error) => {
     callLogStatus.textContent = error.message;
+  });
+});
+
+refreshQaButton?.addEventListener("click", () => {
+  refreshQaDashboard().catch((error) => {
+    qaStatus.textContent = error.message;
   });
 });
 
