@@ -1174,6 +1174,7 @@ function detectKnownDetails(message) {
 function filterKnownQuestions(questions, knownDetails) {
   return questions.filter((question) => {
     const normalized = question.toLowerCase();
+    if (/wheel lock|special key/.test(normalized)) return true;
     if (knownDetails.safe && normalized.includes("safe")) return false;
     if (knownDetails.service && /service|what happened|looking for/.test(normalized)) return false;
     if (knownDetails.phone && /callback|phone|number/.test(normalized)) return false;
