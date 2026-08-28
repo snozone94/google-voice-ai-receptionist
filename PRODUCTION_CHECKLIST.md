@@ -22,6 +22,7 @@
 - Confirm inbound calls route to OpenAI Realtime SIP.
 - Confirm OpenAI sends webhooks to `/openai/sip-webhook`.
 - Set `OPENAI_WEBHOOK_SECRET`.
+- Enable Twilio call recording only after consent/legal wording is decided, and send the recording callback to `/api/twilio/recording?secret=TWILIO_SMS_WEBHOOK_SECRET` so audio links appear in the admin Calls tab.
 - Call the AI forwarding number directly before testing through Google Voice.
 
 ## Launch Test
@@ -37,4 +38,4 @@
 - Set `LEAD_WEBHOOK_URL` to send leads into a CRM, Google Sheet automation, email tool, or database.
 - Set `CALL_SUMMARY_WEBHOOK_URL` for call summary notifications.
 - Add a human handoff route for urgent calls.
-- Review call recording and consent requirements for your state and caller locations.
+- Review call recording and consent requirements for your state and caller locations before turning recording on.
