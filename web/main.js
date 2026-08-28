@@ -10,6 +10,7 @@ const bookingsList = document.querySelector("#bookingsList");
 const callLogList = document.querySelector("#callLogList");
 const callDetail = document.querySelector("#callDetail");
 const callLogStatus = document.querySelector("#callLogStatus");
+const refreshActivityButton = document.querySelector("#refreshActivityButton");
 const refreshCallLogButton = document.querySelector("#refreshCallLogButton");
 const refreshInsightsButton = document.querySelector("#refreshInsightsButton");
 const insightHighlights = document.querySelector("#insightHighlights");
@@ -56,11 +57,23 @@ const salesFlowInput = document.querySelector("#salesFlowInput");
 const otherCallersFlowInput = document.querySelector("#otherCallersFlowInput");
 const ambientSoundSelect = document.querySelector("#ambientSoundSelect");
 const thinkingSoundToggle = document.querySelector("#thinkingSoundToggle");
+const thinkingPhraseInput = document.querySelector("#thinkingPhraseInput");
+const backgroundAudioModeSelect = document.querySelector("#backgroundAudioModeSelect");
+const backgroundAudioLabelInput = document.querySelector("#backgroundAudioLabelInput");
+const backgroundAudioUrlInput = document.querySelector("#backgroundAudioUrlInput");
 const smsFollowUpToggle = document.querySelector("#smsFollowUpToggle");
 const smsFollowUpMessageInput = document.querySelector("#smsFollowUpMessageInput");
 const reviewFollowUpToggle = document.querySelector("#reviewFollowUpToggle");
 const reviewFollowUpUrlInput = document.querySelector("#reviewFollowUpUrlInput");
 const reviewFollowUpMessageInput = document.querySelector("#reviewFollowUpMessageInput");
+const notifyNewCallsToggle = document.querySelector("#notifyNewCallsToggle");
+const notifyMissedCallsToggle = document.querySelector("#notifyMissedCallsToggle");
+const notifyBookingsToggle = document.querySelector("#notifyBookingsToggle");
+const notifyTextsToggle = document.querySelector("#notifyTextsToggle");
+const notifyQaIssuesToggle = document.querySelector("#notifyQaIssuesToggle");
+const notifyDailySummaryToggle = document.querySelector("#notifyDailySummaryToggle");
+const notifyWeeklySummaryToggle = document.querySelector("#notifyWeeklySummaryToggle");
+const notifyMonthlySummaryToggle = document.querySelector("#notifyMonthlySummaryToggle");
 const customInstructionsInput = document.querySelector("#customInstructionsInput");
 const scriptPreview = document.querySelector("#scriptPreview");
 const testCallerInput = document.querySelector("#testCallerInput");
@@ -232,6 +245,11 @@ function applySettings(settings) {
   otherCallersFlowInput.value = settings.callerFlows?.otherCallers || "";
   ambientSoundSelect.value = settings.soundPreferences?.ambientSound || "none";
   thinkingSoundToggle.checked = settings.soundPreferences?.thinkingSound !== false;
+  thinkingPhraseInput.value = settings.soundPreferences?.thinkingPhrase || "One moment while I get that into the request.";
+  const backgroundAudio = settings.soundPreferences?.backgroundAudio || {};
+  backgroundAudioModeSelect.value = backgroundAudio.enabled ? backgroundAudio.mode || "licensed-music" : "off";
+  backgroundAudioLabelInput.value = backgroundAudio.label || "None";
+  backgroundAudioUrlInput.value = backgroundAudio.url || "";
   smsFollowUpToggle.checked = settings.smsFollowUp?.enabled !== false;
   smsFollowUpMessageInput.value =
     settings.smsFollowUp?.message ||
@@ -243,6 +261,14 @@ function applySettings(settings) {
     "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}";
   staffAccessCodesInput.value = formatStaffAccessCodes(settings.staffAccessCodes || []);
   qaChecklistInput.value = settings.qaChecklist || "";
+  notifyNewCallsToggle.checked = settings.notificationPreferences?.newCalls !== false;
+  notifyMissedCallsToggle.checked = settings.notificationPreferences?.missedCalls !== false;
+  notifyBookingsToggle.checked = settings.notificationPreferences?.bookings !== false;
+  notifyTextsToggle.checked = settings.notificationPreferences?.texts !== false;
+  notifyQaIssuesToggle.checked = settings.notificationPreferences?.qaIssues !== false;
+  notifyDailySummaryToggle.checked = settings.notificationPreferences?.dailySummary !== false;
+  notifyWeeklySummaryToggle.checked = settings.notificationPreferences?.weeklySummary !== false;
+  notifyMonthlySummaryToggle.checked = settings.notificationPreferences?.monthlySummary !== false;
   customInstructionsInput.value = settings.customInstructions || "";
 }
 
@@ -311,7 +337,14 @@ async function saveSettings(reason = "auto") {
         },
         soundPreferences: {
           ambientSound: ambientSoundSelect.value,
-          thinkingSound: thinkingSoundToggle.checked
+          thinkingSound: thinkingSoundToggle.checked,
+          thinkingPhrase: thinkingPhraseInput.value,
+          backgroundAudio: {
+            enabled: backgroundAudioModeSelect.value !== "off",
+            mode: backgroundAudioModeSelect.value,
+            label: backgroundAudioLabelInput.value,
+            url: backgroundAudioUrlInput.value
+          }
         },
         smsFollowUp: {
           enabled: smsFollowUpToggle.checked,
@@ -323,6 +356,16 @@ async function saveSettings(reason = "auto") {
           message: reviewFollowUpMessageInput.value
         },
         staffAccessCodes: parseStaffAccessCodesInput(staffAccessCodesInput.value),
+        notificationPreferences: {
+          newCalls: notifyNewCallsToggle.checked,
+          missedCalls: notifyMissedCallsToggle.checked,
+          bookings: notifyBookingsToggle.checked,
+          texts: notifyTextsToggle.checked,
+          qaIssues: notifyQaIssuesToggle.checked,
+          dailySummary: notifyDailySummaryToggle.checked,
+          weeklySummary: notifyWeeklySummaryToggle.checked,
+          monthlySummary: notifyMonthlySummaryToggle.checked
+        },
         qaChecklist: qaChecklistInput.value,
         customInstructions: customInstructionsInput.value
       })
@@ -413,11 +456,23 @@ for (const input of [
   otherCallersFlowInput,
   ambientSoundSelect,
   thinkingSoundToggle,
+  thinkingPhraseInput,
+  backgroundAudioModeSelect,
+  backgroundAudioLabelInput,
+  backgroundAudioUrlInput,
   smsFollowUpToggle,
   smsFollowUpMessageInput,
   reviewFollowUpToggle,
   reviewFollowUpUrlInput,
   reviewFollowUpMessageInput,
+  notifyNewCallsToggle,
+  notifyMissedCallsToggle,
+  notifyBookingsToggle,
+  notifyTextsToggle,
+  notifyQaIssuesToggle,
+  notifyDailySummaryToggle,
+  notifyWeeklySummaryToggle,
+  notifyMonthlySummaryToggle,
   staffAccessCodesInput,
   qaChecklistInput,
   customInstructionsInput
@@ -475,11 +530,23 @@ function setEditMode(nextEditMode) {
     otherCallersFlowInput,
     ambientSoundSelect,
     thinkingSoundToggle,
+    thinkingPhraseInput,
+    backgroundAudioModeSelect,
+    backgroundAudioLabelInput,
+    backgroundAudioUrlInput,
     smsFollowUpToggle,
     smsFollowUpMessageInput,
     reviewFollowUpToggle,
     reviewFollowUpUrlInput,
     reviewFollowUpMessageInput,
+    notifyNewCallsToggle,
+    notifyMissedCallsToggle,
+    notifyBookingsToggle,
+    notifyTextsToggle,
+    notifyQaIssuesToggle,
+    notifyDailySummaryToggle,
+    notifyWeeklySummaryToggle,
+    notifyMonthlySummaryToggle,
     staffAccessCodesInput,
     qaChecklistInput,
     customInstructionsInput
@@ -600,7 +667,8 @@ function updateScriptPreview() {
     "",
     `Out-of-scope: ${outOfScopeHandlingInput.value || "Take a message unless unsafe or unrelated."}`,
     `Follow-up: ${followUpStyleInput.value || "Share booking link or save a callback message."}`,
-    `Sound: ${ambientSoundSelect.value || "none"}; thinking phrases ${thinkingSoundToggle.checked ? "on" : "off"}.`,
+    `Sound: ${ambientSoundSelect.value || "none"}; thinking bridge ${thinkingSoundToggle.checked ? thinkingPhraseInput.value || "on" : "off"}; background audio ${backgroundAudioModeSelect.value}.`,
+    `Notifications: calls ${notifyNewCallsToggle.checked ? "on" : "off"}, missed ${notifyMissedCallsToggle.checked ? "on" : "off"}, bookings ${notifyBookingsToggle.checked ? "on" : "off"}, texts ${notifyTextsToggle.checked ? "on" : "off"}, QA ${notifyQaIssuesToggle.checked ? "on" : "off"}, summaries ${notifyDailySummaryToggle.checked ? "daily " : ""}${notifyWeeklySummaryToggle.checked ? "weekly " : ""}${notifyMonthlySummaryToggle.checked ? "monthly" : ""}`.trim(),
     `SMS follow-up: ${smsFollowUpToggle.checked ? "on" : "off"}. ${smsFollowUpMessageInput.value || "Text the best DDD link after permission."}`,
     `Google review follow-up: ${reviewFollowUpToggle.checked ? "on" : "off"}. ${reviewFollowUpMessageInput.value || "Ask for a Google review after completed jobs."} ${reviewFollowUpUrlInput.value || ""}`.trim(),
     "",
@@ -1180,24 +1248,48 @@ async function refreshActivity() {
     summariesResponse.json(),
     bookingsResponse.json()
   ]);
-  renderList(callsList, calls, "No forwarded calls yet.", (call) => `${call.createdAt} ${call.callId || ""}`.trim());
-  renderList(leadsList, leads, "No leads yet.", (lead) => `${lead.createdAt} ${lead.name || lead.phone || "Lead"}`);
-  renderList(
-    summariesList,
-    summaries,
-    "No summaries yet.",
-    (summary) => `${summary.endedAt || summary.createdAt} ${summary.callId || "Browser call"}`
-  );
-  renderList(
-    bookingsList,
-    bookings,
-    "No booking requests yet.",
-    (booking) => {
-      const sync = booking.externalSync?.ok ? `synced ${booking.externalSync.jobId || ""}`.trim() : "local";
-      const statusLink = booking.customerStatusUrl ? ` - status: ${booking.customerStatusUrl}` : "";
-      return `${booking.createdAt} ${booking.name || booking.phone || "Booking"} - ${booking.serviceType || booking.reason || "request"} - ${booking.status || "Requested"} - ${sync}${statusLink}`;
-    }
-  );
+  renderActivityFeed(callsList, calls, "No forwarded calls yet.", (call) => ({
+    title: call.callId || "Forwarded call",
+    meta: [formatTime(call.createdAt), call.status || call.type].filter(Boolean).join(" · "),
+    body: call.from ? `From ${formatPhone(call.from)}` : "Call event saved."
+  }));
+  renderActivityFeed(leadsList, leads, "No leads yet.", (lead) => ({
+    title: lead.name || formatPhone(lead.phone) || "Lead",
+    meta: [formatTime(lead.createdAt), lead.urgency, lead.serviceType].filter(Boolean).join(" · "),
+    body: lead.reason || lead.nextStep || "Lead saved."
+  }));
+  renderActivityFeed(summariesList, summaries, "No summaries yet.", (summary) => ({
+    title: summary.callId || "Call summary",
+    meta: [formatTime(summary.endedAt || summary.createdAt), summary.recordingUrl ? "recording" : ""].filter(Boolean).join(" · "),
+    body: summary.transcript?.length ? `${summary.transcript.length} transcript lines saved.` : "Summary saved."
+  }));
+  renderActivityFeed(bookingsList, bookings, "No booking requests yet.", (booking) => ({
+    title: booking.name || formatPhone(booking.phone) || "Booking",
+    meta: [formatTime(booking.createdAt), booking.status || "Requested", booking.externalSync?.ok ? "synced" : "local"].filter(Boolean).join(" · "),
+    body: [booking.serviceType || booking.reason, booking.location, booking.vehicleColor ? `Color: ${booking.vehicleColor}` : ""].filter(Boolean).join(" · ")
+  }));
+}
+
+function renderActivityFeed(element, records, emptyMessage, formatter) {
+  element.innerHTML = "";
+  if (!records.length) {
+    const item = document.createElement("li");
+    item.className = "activity-item empty-state";
+    item.textContent = emptyMessage;
+    element.append(item);
+    return;
+  }
+  for (const record of records.slice(0, 8)) {
+    const view = formatter(record);
+    const item = document.createElement("li");
+    item.className = "activity-item";
+    item.innerHTML = `
+      <strong>${escapeHtml(view.title || "Activity")}</strong>
+      <span>${escapeHtml(view.meta || "")}</span>
+      <p>${escapeHtml(view.body || "")}</p>
+    `;
+    element.append(item);
+  }
 }
 
 async function refreshCallLog() {
@@ -1282,18 +1374,8 @@ function renderSelectedCall() {
         )
         .join("")
     : `<li><span>No status events stored.</span></li>`;
-  const transcriptHtml = call.transcript?.length
-    ? call.transcript
-        .map(
-          (line) => `
-            <div class="transcript-line ${escapeHtml(String(line.speaker || "call").toLowerCase())}">
-              <small>${escapeHtml([line.speaker, formatTime(line.at)].filter(Boolean).join(" · "))}</small>
-              <p>${escapeHtml(line.text)}</p>
-            </div>
-          `
-        )
-        .join("")
-    : `<p class="empty-state">No transcript saved for this call yet.</p>`;
+  const transcriptHtml = renderGroupedTranscript(call.transcript || []);
+  const synopsis = buildCallSynopsis(call);
   callDetail.innerHTML = `
     <div class="call-detail-header">
       <div>
@@ -1328,6 +1410,10 @@ function renderSelectedCall() {
       ${renderRelatedRecords("Leads", call.leads)}
     </div>
     <div class="call-section">
+      <h4>Synopsis</h4>
+      <div class="call-synopsis">${synopsis.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div>
+    </div>
+    <div class="call-section">
       <h4>Transcript</h4>
       <div class="transcript-box">${transcriptHtml}</div>
     </div>
@@ -1336,6 +1422,51 @@ function renderSelectedCall() {
       <ul class="status-timeline">${statusEventsHtml}</ul>
     </div>
   `;
+}
+
+function buildCallSynopsis(call) {
+  const booking = call.bookings?.[0] || {};
+  const lead = call.leads?.[0] || {};
+  const service = booking.serviceType || lead.serviceType || inferServiceFromText(call.transcriptText || "") || "Service not clear yet";
+  const location = booking.location || lead.location || "Location not captured yet";
+  const vehicle = booking.vehicle || lead.vehicle || "Vehicle not captured yet";
+  const nextStep = booking.nextStep || lead.nextStep || call.outcome?.detail || "Review this call and follow up if needed.";
+  return [
+    `Outcome: ${call.outcome?.label || call.status || "Logged"}${call.durationLabel ? ` in ${call.durationLabel}` : ""}.`,
+    `Request: ${service}.`,
+    `Location: ${location}.`,
+    `Vehicle: ${vehicle}.`,
+    `Next step: ${nextStep}`
+  ];
+}
+
+function renderGroupedTranscript(transcript = []) {
+  if (!transcript.length) return `<p class="empty-state">No transcript saved for this call yet.</p>`;
+  const groups = [];
+  for (const line of transcript) {
+    const speaker = line.speaker || "Call";
+    const last = groups.at(-1);
+    if (last && last.speaker === speaker) {
+      last.lines.push(line);
+    } else {
+      groups.push({ speaker, start: line.at, lines: [line] });
+    }
+  }
+  return groups
+    .map((group) => {
+      const speakerClass = String(group.speaker || "call").toLowerCase();
+      const text = group.lines.map((line) => line.text).filter(Boolean).join("\n");
+      return `
+        <details class="transcript-group ${escapeHtml(speakerClass)}" open>
+          <summary>
+            <strong>${escapeHtml(group.speaker)}</strong>
+            <span>${escapeHtml([formatTime(group.start), `${group.lines.length} line${group.lines.length === 1 ? "" : "s"}`].filter(Boolean).join(" · "))}</span>
+          </summary>
+          <p>${escapeHtml(text)}</p>
+        </details>
+      `;
+    })
+    .join("");
 }
 
 function renderMetric(label, value, tone = "neutral") {
@@ -1394,6 +1525,23 @@ function renderRelatedRecords(title, records = []) {
   `;
 }
 
+function inferServiceFromText(text = "") {
+  const value = String(text).toLowerCase();
+  const services = [
+    ["Tire / flat", /flat|tire|spare|plug|wheel lock|inflation/],
+    ["Jump start / battery", /jump|battery|dead battery/],
+    ["Lockout", /lockout|locked out|unlock|door unlock/],
+    ["Fuel delivery", /fuel|gas|out of gas/],
+    ["Oil change", /oil change|oil\/filter/],
+    ["Brakes / rotors", /brake|rotor/],
+    ["Hub bearing", /hub|bearing/],
+    ["Apply to work", /apply|job|work|technician|contractor/],
+    ["Existing appointment", /appointment|booking|reschedule|status/],
+    ["Unsupported service", /tow|towing|transmission|engine rebuild|body work|windshield/]
+  ];
+  return services.find(([, pattern]) => pattern.test(value))?.[0] || "";
+}
+
 refreshActivity().catch(() => {});
 setInterval(() => refreshActivity().catch(() => {}), 15000);
 refreshInbox().catch((error) => setInboxStatus(error.message));
@@ -1423,6 +1571,10 @@ refreshQaButton?.addEventListener("click", () => {
   refreshQaDashboard().catch((error) => {
     qaStatus.textContent = error.message;
   });
+});
+
+refreshActivityButton?.addEventListener("click", () => {
+  refreshActivity().catch(() => {});
 });
 
 refreshInsightsButton?.addEventListener("click", () => {

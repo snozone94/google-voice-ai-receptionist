@@ -262,7 +262,27 @@
             </label>
             <label class="switch-row">
               <input id="thinkingSoundToggle" type="checkbox" />
-              <span>Use short thinking phrases</span>
+              <span>Use short thinking bridge</span>
+            </label>
+            <label>
+              Bridge phrase
+              <input id="thinkingPhraseInput" maxlength="220" placeholder="One moment while I get that into the request." />
+            </label>
+            <label>
+              Background audio preference
+              <select id="backgroundAudioModeSelect">
+                <option value="off">Off</option>
+                <option value="quiet-office">Quiet office only</option>
+                <option value="licensed-music">Licensed music only</option>
+              </select>
+            </label>
+            <label>
+              Music/audio label
+              <input id="backgroundAudioLabelInput" maxlength="80" placeholder="None, quiet office, licensed hold music..." />
+            </label>
+            <label class="wide-field">
+              Music/audio file or stream URL
+              <input id="backgroundAudioUrlInput" type="url" maxlength="500" placeholder="Optional licensed audio URL" />
             </label>
             <label class="switch-row">
               <input id="smsFollowUpToggle" type="checkbox" />
@@ -286,6 +306,43 @@
               Review follow-up message
               <textarea id="reviewFollowUpMessageInput" rows="4" maxlength="500"></textarea>
             </label>
+          </div>
+          <div class="notification-box">
+            <h3>Push notifications</h3>
+            <div class="admin-subgrid two-column compact-options">
+              <label class="switch-row">
+                <input id="notifyNewCallsToggle" type="checkbox" />
+                <span>New calls</span>
+              </label>
+              <label class="switch-row">
+                <input id="notifyMissedCallsToggle" type="checkbox" />
+                <span>Missed calls</span>
+              </label>
+              <label class="switch-row">
+                <input id="notifyBookingsToggle" type="checkbox" />
+                <span>Bookings</span>
+              </label>
+              <label class="switch-row">
+                <input id="notifyTextsToggle" type="checkbox" />
+                <span>Texts</span>
+              </label>
+              <label class="switch-row">
+                <input id="notifyQaIssuesToggle" type="checkbox" />
+                <span>QA issues</span>
+              </label>
+              <label class="switch-row">
+                <input id="notifyDailySummaryToggle" type="checkbox" />
+                <span>Daily summary</span>
+              </label>
+              <label class="switch-row">
+                <input id="notifyWeeklySummaryToggle" type="checkbox" />
+                <span>Weekly summary</span>
+              </label>
+              <label class="switch-row">
+                <input id="notifyMonthlySummaryToggle" type="checkbox" />
+                <span>Monthly summary</span>
+              </label>
+            </div>
           </div>
         </div>
       </section>
@@ -413,22 +470,27 @@
       </section>
 
       <section class="panel tab-panel" data-tab-panel="activity">
-        <p class="eyebrow">Logs</p>
-        <h2>Activity</h2>
-        <div class="activity">
+        <div class="section-title-row">
           <div>
+            <p class="eyebrow">Clean log</p>
+            <h2>Activity</h2>
+          </div>
+          <button id="refreshActivityButton" type="button">Refresh activity</button>
+        </div>
+        <div class="activity">
+          <div class="activity-card">
             <h3>Calls</h3>
             <ul id="callsList"></ul>
           </div>
-          <div>
+          <div class="activity-card">
             <h3>Leads</h3>
             <ul id="leadsList"></ul>
           </div>
-          <div>
+          <div class="activity-card">
             <h3>Summaries</h3>
             <ul id="summariesList"></ul>
           </div>
-          <div>
+          <div class="activity-card">
             <h3>Bookings</h3>
             <ul id="bookingsList"></ul>
           </div>

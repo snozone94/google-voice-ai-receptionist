@@ -109,7 +109,23 @@ const defaultQaChecklist =
   "QA should confirm: AI answered, caller intent identified, name/phone captured when possible, emergency callers were handled quickly, booking or lead was saved, correct DDD link was selected, SMS consent was asked before texting, transcript/recording was attached when available, and call ended with a clear next step.";
 const defaultSoundPreferences = {
   ambientSound: "none",
-  thinkingSound: true
+  thinkingSound: true,
+  thinkingPhrase: "One moment while I get that into the request.",
+  backgroundAudio: {
+    enabled: false,
+    label: "None",
+    url: ""
+  }
+};
+const defaultNotificationPreferences = {
+  newCalls: true,
+  missedCalls: true,
+  bookings: true,
+  texts: true,
+  qaIssues: true,
+  dailySummary: true,
+  weeklySummary: true,
+  monthlySummary: true
 };
 const defaultStaffAccessCodes = [];
 const defaultBookingDestinations = [
@@ -223,6 +239,7 @@ export async function saveReceptionistSettings(settings) {
         outOfScopeHandling: next.outOfScopeHandling,
         followUpStyle: next.followUpStyle,
         soundPreferences: next.soundPreferences,
+        notificationPreferences: next.notificationPreferences,
         staffAccessCodes: next.staffAccessCodes,
         bookingDestinations: next.bookingDestinations
       },
@@ -974,7 +991,8 @@ Pricing guidance:
 
 Sound preferences:
 - Ambient sound preference: ${activeSettings.soundPreferences.ambientSound}. This is saved for admin preference; do not claim the caller can hear background audio unless it is actually present.
-- Thinking sound: ${activeSettings.soundPreferences.thinkingSound ? "Use a short natural bridge like 'one moment while I check that' if processing takes a moment." : "Avoid filler sounds or thinking noises; stay silent briefly if needed."}
+- Thinking bridge: ${activeSettings.soundPreferences.thinkingSound ? activeSettings.soundPreferences.thinkingPhrase : "Avoid filler sounds or thinking noises; stay silent briefly if needed."}
+- Background audio/music: ${activeSettings.soundPreferences.backgroundAudio.enabled ? `${activeSettings.soundPreferences.backgroundAudio.label || "enabled"} (${activeSettings.soundPreferences.backgroundAudio.url || "no URL set"})` : "off"}. Keep emergency calls clear. Do not play or mention music unless the system is actually configured to mix licensed audio.
 
 SMS follow-up:
 - SMS follow-up is ${activeSettings.smsFollowUp.enabled ? "enabled" : "disabled"} in admin.
@@ -1286,6 +1304,7 @@ function normalizeSettings(settings = {}) {
       600
     ),
     soundPreferences: normalizeSoundPreferences(settings.soundPreferences),
+    notificationPreferences: normalizeNotificationPreferences(settings.notificationPreferences),
     staffAccessCodes: normalizeStaffAccessCodes(settings.staffAccessCodes || parseStaffAccessCodes(process.env.STAFF_ACCESS_CODES || "")),
     bookingDestinations: normalizeBookingDestinations(settings.bookingDestinations),
     voiceOptions
@@ -1767,7 +1786,27 @@ function normalizeTextList(value, fallback, maxItems, maxItemLength) {
 function normalizeSoundPreferences(value = {}) {
   return {
     ambientSound: cleanText(value.ambientSound, defaultSoundPreferences.ambientSound, 80),
-    thinkingSound: value.thinkingSound !== false
+    thinkingSound: value.thinkingSound !== false,
+    thinkingPhrase: cleanLongText(value.thinkingPhrase, defaultSoundPreferences.thinkingPhrase, 220),
+    backgroundAudio: {
+      enabled: value.backgroundAudio?.enabled === true,
+      mode: cleanText(value.backgroundAudio?.mode, value.backgroundAudio?.enabled ? "licensed-music" : "off", 80),
+      label: cleanText(value.backgroundAudio?.label, defaultSoundPreferences.backgroundAudio.label, 80),
+      url: cleanText(value.backgroundAudio?.url, "", 500)
+    }
+  };
+}
+
+function normalizeNotificationPreferences(value = {}) {
+  return {
+    newCalls: value.newCalls !== false,
+    missedCalls: value.missedCalls !== false,
+    bookings: value.bookings !== false,
+    texts: value.texts !== false,
+    qaIssues: value.qaIssues !== false,
+    dailySummary: value.dailySummary !== false,
+    weeklySummary: value.weeklySummary !== false,
+    monthlySummary: value.monthlySummary !== false
   };
 }
 

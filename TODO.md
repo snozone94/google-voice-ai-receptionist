@@ -54,5 +54,7 @@
 - [ ] Point iOS app at the same persistent backend after Render storage is active.
 - [ ] Add staff inbox and call log to iOS, not just settings.
 - [ ] Add push notifications for new calls, missed calls, bookings, and texts.
+- [ ] Wire saved push-notification preferences to real web push/APNs delivery for new calls, missed calls, bookings, texts, QA issues, and daily/weekly/monthly summaries.
+- [ ] Add customer confirm/share-location page that writes GPS/address confirmation back to the existing booking/location field used by DDD Mobile and the tech/admin portals.
 - [ ] Add production login before App Store/TestFlight.
 - [ ] Prepare Apple Developer account, bundle ID, icons, screenshots, and TestFlight build.
