@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: google-voice-ai-receptionist
+    name: ddd-ai-dispatch
     env: node
     plan: starter
     buildCommand: npm ci

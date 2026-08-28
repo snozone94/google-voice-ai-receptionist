@@ -1,4 +1,4 @@
-# Google Voice Forwarded AI Receptionist
+# DDD AI Dispatch
 
 This is a starter for DDD to own a Smith.ai-style answering assistant where **513-409-1342 remains the public number** after it ports to Twilio.
 

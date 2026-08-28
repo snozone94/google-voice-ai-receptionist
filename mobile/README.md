@@ -1,6 +1,6 @@
-# DDD AI Receptionist Mobile
+# DDD AI Dispatch Mobile
 
-Expo admin app for controlling the live DDD AI receptionist from iPhone.
+Expo admin app for controlling the live DDD AI Dispatch system from iPhone.
 
 ## What It Controls
 

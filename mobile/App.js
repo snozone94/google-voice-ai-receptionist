@@ -181,8 +181,8 @@ export default function App() {
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.header}>
           <View style={styles.rainbowBar} />
-          <Text style={styles.eyebrow}>DDD phone AI</Text>
-          <Text style={styles.title}>{business?.name || "AI Receptionist"}</Text>
+          <Text style={styles.eyebrow}>DDD AI Dispatch</Text>
+          <Text style={styles.title}>{business?.name || "DDD AI Dispatch"}</Text>
           <Text style={styles.subtitle}>Calls, voice, bookings, texts, and reviews.</Text>
         </View>
 

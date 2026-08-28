@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "DDD AI Receptionist",
-    "slug": "ddd-ai-receptionist",
+    "name": "DDD AI Dispatch",
+    "slug": "ddd-ai-dispatch",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "scheme": "dddaireceptionist",
+    "scheme": "dddaidispatch",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dddcincy.aireceptionist"
