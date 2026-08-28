@@ -6,6 +6,7 @@
 - Set `OPENAI_API_KEY`.
 - Deploy the app behind HTTPS.
 - Confirm `/health` returns `{ "ok": true }`.
+- Confirm Render has a persistent disk mounted at `/var/data` and `DATA_DIR=/var/data/ddd-ai-dispatch`, so saved admin settings/logs show on desktop and phone and survive deploys.
 - Confirm the browser test call works from `/`.
 
 ## Google Voice

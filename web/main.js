@@ -128,6 +128,7 @@ fetch("/api/setup-status")
       webhookSecret: "OpenAI webhook secret",
       googleVoiceNumber: "Google Voice number",
       aiForwardingNumber: "AI forwarding number",
+      persistentStorage: "Persistent storage",
       smsDelivery: "SMS delivery"
     };
 

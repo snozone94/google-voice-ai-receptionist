@@ -3,13 +3,15 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
 const businessPath = path.join(root, "config", "business.json");
-const leadsPath = path.join(root, "data", "leads.jsonl");
-const callsPath = path.join(root, "data", "calls.jsonl");
-const summariesPath = path.join(root, "data", "summaries.jsonl");
-const bookingsPath = path.join(root, "data", "bookings.jsonl");
-const smsPath = path.join(root, "data", "sms.jsonl");
-const settingsPath = path.join(root, "data", "settings.json");
-const dataDir = path.join(root, "data");
+const bundledDataDir = path.join(root, "data");
+const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : bundledDataDir;
+const leadsPath = path.join(dataDir, "leads.jsonl");
+const callsPath = path.join(dataDir, "calls.jsonl");
+const summariesPath = path.join(dataDir, "summaries.jsonl");
+const bookingsPath = path.join(dataDir, "bookings.jsonl");
+const smsPath = path.join(dataDir, "sms.jsonl");
+const settingsPath = path.join(dataDir, "settings.json");
+const bundledSettingsPath = path.join(bundledDataDir, "settings.json");
 const bookingStatuses = ["Requested", "Confirmed", "Technician Assigned", "Technician En Route", "Arrived", "In Progress", "Completed", "Cancelled"];
 
 export const voiceOptions = [
@@ -140,8 +142,25 @@ export async function loadReceptionistSettings() {
     return normalizeSettings({ ...settings, voice: normalizeVoice(settings.voice) || envVoice || "marin" });
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
+    if (settingsPath !== bundledSettingsPath) {
+      try {
+        const raw = await fs.readFile(bundledSettingsPath, "utf8");
+        const settings = JSON.parse(raw);
+        return normalizeSettings({ ...settings, voice: normalizeVoice(settings.voice) || envVoice || "marin" });
+      } catch (fallbackError) {
+        if (fallbackError.code !== "ENOENT") throw fallbackError;
+      }
+    }
     return normalizeSettings({ voice: envVoice || "marin" });
   }
+}
+
+export function getStorageInfo() {
+  return {
+    dataDir,
+    persistent: Boolean(process.env.DATA_DIR),
+    mode: process.env.DATA_DIR ? "persistent" : "bundled"
+  };
 }
 
 export async function saveReceptionistSettings(settings) {

@@ -13,6 +13,7 @@ import {
   listSummaries,
   loadReceptionistSettings,
   loadBusiness,
+  getStorageInfo,
   getBookingStatus,
   buildDryRun,
   normalizeVoice,
@@ -58,6 +59,7 @@ app.get("/api/setup-status", (_req, res) => {
     webhookSecret: Boolean(process.env.OPENAI_WEBHOOK_SECRET),
     googleVoiceNumber: Boolean(process.env.GOOGLE_VOICE_NUMBER),
     aiForwardingNumber: Boolean(process.env.AI_FORWARDING_NUMBER),
+    persistentStorage: getStorageInfo().persistent,
     smsDelivery: Boolean(
       process.env.SMS_FOLLOWUP_WEBHOOK_URL ||
         process.env.TWILIO_SMS_WEBHOOK_SECRET ||
