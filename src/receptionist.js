@@ -1151,7 +1151,11 @@ function buildBookingQuestions(message) {
 function buildEmergencyQuestions(emergencyQuestions, message) {
   const questions = emergencyQuestions.slice(0, 6);
   if (/flat|tire|spare|plug|inflation|wheel/.test(message)) {
-    questions.push("Does the vehicle have a wheel lock or special key, and do you have it available?");
+    questions.splice(
+      Math.max(questions.length - 2, 0),
+      0,
+      "Does the vehicle have a wheel lock or special key, and do you have it available?"
+    );
   }
   return questions;
 }
