@@ -564,7 +564,7 @@ const blankSettings = {
   smsFollowUp: {
     enabled: true,
     message:
-      "Thanks for calling DDD. Here is the best next link for your request: {{link}}. The DDD team will follow up if anything else is needed."
+      "Thanks for calling DDD. Your request was received: {{link}}. iPhone users: open the DDD Mobile app link and log in with the same phone number used for booking. Non-iPhone users: log in at {{webLoginLink}} with the same phone number to see booking updates. Reply here if anything changes."
   },
   reviewFollowUp: {
     enabled: true,

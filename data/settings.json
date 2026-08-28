@@ -58,7 +58,7 @@
   "smsFollowUp": {
     "enabled": true,
     "askPermission": true,
-    "message": "Thanks for calling DDD. Your request was received. Use this link for the best next step or booking status: {{link}}. Reply here if anything changes."
+    "message": "Thanks for calling DDD. Your request was received: {{link}}. iPhone users: open the DDD Mobile app link and log in with the same phone number used for booking. Non-iPhone users: log in at {{webLoginLink}} with the same phone number to see booking updates. Reply here if anything changes."
   },
   "reviewFollowUp": {
     "enabled": true,

@@ -44,7 +44,7 @@ const defaultHumanHandoffRules =
 const defaultApplyInstructions =
   "For work, contractor, technician, or job-interest calls, collect name, phone, email, role or service type, experience, and location, then direct them to the DDD apply to work link.";
 const defaultSmsFollowUpText =
-  "Thanks for calling {{business}}. Here is the best next link for your request: {{link}}. The DDD team will follow up if anything else is needed.";
+  "Thanks for calling {{business}}. Your request was received: {{link}}. iPhone users: open the DDD Mobile app link and log in with the same phone number used for booking. Non-iPhone users: log in at {{webLoginLink}} with the same phone number to see booking updates. Reply here if anything changes.";
 const defaultReviewFollowUpUrl = "https://g.page/r/CfVinSqxHOIDEAE/review";
 const defaultReviewFollowUpText =
   "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}";
@@ -712,6 +712,7 @@ SMS follow-up:
 - If enabled, ask permission before texting the caller the best DDD link.
 - Message template: ${activeSettings.smsFollowUp.message}
 - Use the most relevant DDD destination as {{link}}. Do not use a booking/customer tracking URL for immediate SMS until a technician is assigned, active, or en route.
+- If the caller asks how to check the booking, say iPhone users can use the DDD Mobile app link and non-iPhone users can use the dddcincy.com login link, and that DDD will text those instructions. Do not read the links out loud.
 - When calling save_lead or save_booking_request, set smsConsent to true only if the caller clearly agreed to receive the text.
 - If SMS delivery is not connected yet, still save the caller's phone number and best next link.
 
@@ -1033,6 +1034,13 @@ function appendMissingGuidance(value, fallback, additions) {
   for (const addition of additions) {
     if (!addition.test.test(text)) text = `${text} ${addition.text}`;
   }
+  return text;
+}
+
+function migrateSmsMessage(message) {
+  const text = cleanLongText(message, defaultSmsFollowUpText, 500);
+  if (/iPhone users: open the DDD Mobile app link/i.test(text) && /Non-iPhone users: log in/i.test(text)) return text;
+  if (/Here is the best next link for your request|Use this link for the best next step/i.test(text)) return defaultSmsFollowUpText;
   return text;
 }
 
@@ -1498,7 +1506,7 @@ function normalizeSmsFollowUp(value = {}) {
   return {
     enabled: value.enabled !== false,
     askPermission: value.askPermission !== false,
-    message: cleanLongText(value.message, defaultSmsFollowUpText, 500)
+    message: migrateSmsMessage(value.message)
   };
 }
 
@@ -1581,8 +1589,10 @@ async function sendOptionalSmsFollowUp(record, type) {
 function renderSmsTemplate(template, destination, settings = {}) {
   const fallbackLink = destination?.url || process.env.BOOKING_URL || "";
   const reviewLink = settings.reviewFollowUp?.url || defaultReviewFollowUpUrl;
+  const webLoginLink = process.env.DDD_WEB_LOGIN_URL || "https://dddcincy.com/login";
   return String(template || defaultSmsFollowUpText)
     .replaceAll("{{link}}", fallbackLink)
+    .replaceAll("{{webLoginLink}}", webLoginLink)
     .replaceAll("{{reviewLink}}", reviewLink)
     .replaceAll("{{business}}", "DDD")
     .replace(/\s+/g, " ")
