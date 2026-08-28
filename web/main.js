@@ -528,9 +528,14 @@ async function runFreeTest(callerMessage) {
     const result = await response.json();
     testScriptOutput.value = [
       `Intent: ${result.intent}`,
-      result.destination ? `Link: ${result.destination.label} - ${result.destination.url}` : "Link: none selected",
+      result.bestNextLink ? `Best next link: ${result.bestNextLink}` : result.destination ? `Best next link: ${result.destination.label} - ${result.destination.url}` : "Best next link: none selected",
+      result.smsFollowUp ? `SMS follow-up: ${result.smsFollowUp}` : "",
       "",
-      result.likelyReply,
+      result.firstResponse ? `First response:\n${result.firstResponse}` : "",
+      "",
+      result.questions?.length ? `Next questions, one at a time:\n- ${result.questions.join("\n- ")}` : "",
+      "",
+      result.action ? `Action:\n${result.action}` : "",
       "",
       result.qaChecklist?.length ? `QA checklist:\n- ${result.qaChecklist.join("\n- ")}` : "",
       "",

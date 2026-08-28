@@ -30,7 +30,7 @@ export const voiceOptions = [
 const supportedVoiceIds = new Set(voiceOptions.map((voice) => voice.id));
 const defaultGreeting = "Thank you for calling DDD, this is the receptionist. How can I help today?";
 const defaultCustomInstructions =
-  "Act like a polished front desk receptionist. Be warm, direct, and fast. Reflect the caller's exact request before asking questions. Do not keep emergency callers on the phone longer than needed. Collect the key details, point them to the right DDD link, and save a clear next step.";
+  "Act like a polished front desk receptionist. Be warm, direct, and fast. Reflect the caller's exact request before asking questions. Reassure them once that this will be quick and that you can make the booking for them when booking applies. Do not repeat that reassurance. Do not keep emergency callers on the phone longer than needed. Collect the key details, point them to the right DDD link, and save a clear next step.";
 const defaultBusinessKnowledge =
   "DDD Mobile helps drivers with roadside/mobile auto service requests, booking, DDD app links, vehicle issue guidance, and work/applicant questions. The receptionist should push callers toward the correct dddcincy.com option instead of holding long conversations. If pricing, exact availability, or service-area details are unknown, collect details and say the DDD team will confirm.";
 const defaultServiceArea = "Greater Cincinnati and nearby service areas DDD confirms case by case.";
@@ -51,7 +51,7 @@ const defaultVoiceDirection =
   "Warm, confident, friendly receptionist. Natural phone cadence, clear pronunciation, and not robotic.";
 const defaultCallerFlows = {
   newClients:
-    "Quickly qualify the service needed, collect name, callback number, location, urgency, vehicle details if relevant, and preferred time. End by saving a lead or booking request and sharing the best DDD link.",
+    "Tell them this will be quick and that you can make the booking for them. Then qualify the service needed, collect name, callback number, location, urgency, vehicle details if relevant, and preferred time. End by saving a lead or booking request and sharing the best DDD link.",
   existingClients:
     "Collect name, callback number, existing appointment or job details, and what they need changed or answered. Save a clear message for follow-up.",
   sales:
@@ -517,6 +517,8 @@ Voice and manner:
 - Ask one question at a time.
 - Let the caller finish before responding, and do not over-explain.
 - Use natural acknowledgements like "I can help with that" or "Let me grab a few details."
+- For booking or urgent service calls, reassure the caller once: "This will be quick, and I can make the booking for you." Use this idea naturally, then do not repeat it.
+- Do not repeat the greeting, the same reassurance, or the same question after the caller already answered. If you missed something, ask only for the missing detail.
 - Do not invent business policies, prices, addresses, or availability.
 - If a caller wants to book, collect their name, phone, email if available, service, location, vehicle year/make/model/color when relevant, issue, urgency, and preferred date/time.
 - As soon as you have enough booking details and callback information, call save_booking_request. Do not require the caller to fill out a form first.
@@ -528,6 +530,7 @@ Opening flow:
 - If they ask whether you are human, be honest: say you are DDD's AI receptionist and you can take care of intake or get their message to the team.
 - Identify the caller's intent: booking, pricing, service question, existing appointment, urgent help, apply-to-work, unsupported service, or general message.
 - First reflect the caller's actual words in one short sentence, such as "I hear you need help with a flat tire right now," then ask the next best question.
+- Keep the opening flow fast: reflect need, reassure once if booking applies, ask the highest-priority missing question.
 - If the caller wants Smith.ai-style service, focus on being useful and efficient instead of mentioning Smith.ai.
 
 Intake flow:
@@ -537,6 +540,7 @@ Intake flow:
 - For existing customers, collect their name, callback number, and what appointment or job they are calling about.
 - Before ending, summarize the message in one sentence and confirm the next step.
 - Do not turn intake into a long interview. Get the minimum useful details, then move the caller to the link or saved callback.
+- Avoid looping. If a detail is already known from the caller's words, do not ask for it again; confirm it briefly only if important.
 
 Emergency intake questions, in order:
 ${activeSettings.emergencyQuestions.map((question, index) => `${index + 1}. ${question}`).join("\n")}
@@ -1012,12 +1016,13 @@ export function buildDryRun(settings = {}, callerMessage = "") {
   const message = rawMessage.toLowerCase();
   const destination = chooseDestination(activeSettings.bookingDestinations, message);
   const intent = classifyIntent(message);
+  const knownDetails = detectKnownDetails(message);
   const smsDestination =
     intent === "unsupported" && activeSettings.directoryReferral.enabled && activeSettings.directoryReferral.url
       ? { label: "Referral/directory", url: activeSettings.directoryReferral.url, useWhen: "Unsupported service referral." }
       : destination;
   const reflectedNeed = summarizeCallerNeed(rawMessage, intent);
-  const questions =
+  const baseQuestions =
     intent === "emergency"
       ? activeSettings.emergencyQuestions.slice(0, 6)
       : intent === "apply"
@@ -1025,36 +1030,51 @@ export function buildDryRun(settings = {}, callerMessage = "") {
         : intent === "unsupported"
           ? ["What service were you looking for?", "What is your name and best callback number if you want DDD to follow up?", "Can DDD text you a referral or directory link if available?"]
           : ["What service do you need?", "What is your name and best callback number?", "Where are you located?", "What is the vehicle year, make, model, and color?", "What date or time works best?"];
+  let questions = filterKnownQuestions(baseQuestions, knownDetails).slice(0, 5);
+  const firstResponse =
+    intent === "emergency"
+      ? `${reflectedNeed} I'll keep this quick and can create the request for you. First, are you in a safe place right now?`
+      : intent === "apply"
+        ? `${reflectedNeed} I can get your info to DDD quickly. What kind of work are you applying for?`
+        : intent === "unsupported"
+          ? `${reflectedNeed} DDD may not handle that exact service, but I can save your message${activeSettings.directoryReferral.enabled ? " or text the referral/directory link if you want" : ""}.`
+          : `${reflectedNeed} This will be quick, and I can make the booking for you. What is the best callback number?`;
+  const action =
+    intent === "apply"
+      ? "Save an apply-to-work message and send the DDD apply link."
+      : intent === "unsupported"
+        ? "Do not book an unsupported service as a DDD job. Save a message and offer the referral/directory text if enabled."
+        : "Collect only missing booking details, including vehicle color when relevant, create the booking during the call, and share/text the returned status link.";
+  if (intent === "emergency") {
+    questions = questions.filter((question) => !question.toLowerCase().includes("safe"));
+  }
+  const bestNextLink =
+    intent === "unsupported" && activeSettings.directoryReferral.enabled && activeSettings.directoryReferral.url
+      ? `Referral/directory - ${activeSettings.directoryReferral.url}`
+      : destination
+        ? `${destination.label} - ${destination.url}`
+        : "None yet. Save the message unless a referral/directory URL is configured.";
+  const smsLine =
+    intent === "unsupported" && !smsDestination
+      ? "No referral/directory link is configured yet, so save the message instead of texting an empty link."
+      : activeSettings.smsFollowUp.enabled
+        ? `Ask permission, then text "${renderSmsTemplate(activeSettings.smsFollowUp.message, smsDestination, activeSettings)}"`
+        : "Off";
 
   return {
     intent,
     destination,
     opening: activeSettings.greeting,
+    firstResponse,
+    action,
+    bestNextLink,
+    smsFollowUp: smsLine,
     likelyReply: [
-      activeSettings.greeting,
-      intent === "emergency"
-        ? `${reflectedNeed} First, are you in a safe place right now?`
-        : intent === "apply"
-          ? `${reflectedNeed} What kind of work are you applying for?`
-          : intent === "unsupported"
-            ? `${reflectedNeed} DDD may not handle that exact service, but I can save your message${activeSettings.directoryReferral.enabled ? " or text the referral/directory link if you want" : ""}.`
-            : `${reflectedNeed} Let me grab the details so DDD can handle it correctly.`,
+      `First response: ${firstResponse}`,
       `Next questions, one at a time: ${questions.join(" | ")}`,
-      intent === "apply"
-        ? "Action: save an apply-to-work message and send the DDD apply link."
-        : intent === "unsupported"
-          ? "Action: do not book an unsupported service as a DDD job. Save a message and offer the referral/directory text if enabled."
-          : "Action: once name, callback number, service, location, vehicle year/make/model/color, timing, and SMS permission are collected, create the booking during the call and share the returned status link.",
-      intent === "unsupported" && activeSettings.directoryReferral.enabled && activeSettings.directoryReferral.url
-          ? `Best next link: Referral/directory - ${activeSettings.directoryReferral.url}`
-          : destination
-            ? `Best next link: ${destination.label} - ${destination.url}`
-            : "Best next link: none yet. Save the message unless a referral/directory URL is configured.",
-      intent === "unsupported" && !smsDestination
-        ? "SMS follow-up: no referral/directory link is configured yet, so save the message instead of texting an empty link."
-        : activeSettings.smsFollowUp.enabled
-        ? `SMS follow-up: ask permission, then text "${renderSmsTemplate(activeSettings.smsFollowUp.message, smsDestination, activeSettings)}"`
-        : "SMS follow-up: off",
+      `Action: ${action}`,
+      `Best next link: ${bestNextLink}`,
+      `SMS follow-up: ${smsLine}`,
       `Required outcome: ${activeSettings.callOutcomeRules}`,
       `Fallback if something breaks: ${activeSettings.fallbackRules}`
     ].join("\n\n"),
@@ -1087,8 +1107,32 @@ function classifyIntent(message) {
   return "booking";
 }
 
+function detectKnownDetails(message) {
+  return {
+    service: /flat|tire|jump|battery|dead|fuel|gas|locked|lockout|tow|book|roadside|maintenance|repair|diagnos|apply|job|work/.test(message),
+    location: /\b(at|near|by|on|in)\b.+/.test(message) || /\b\d{3,}\s+\w+/.test(message),
+    vehicle: /\b(toyota|honda|ford|chevy|chevrolet|nissan|hyundai|kia|jeep|dodge|ram|bmw|mercedes|audi|lexus|camry|accord|civic|corolla|malibu|impala|altima|sonata|elantra|soul|wrangler|charger|f-?150)\b/.test(message),
+    color: /\b(red|blue|black|white|gray|grey|silver|green|yellow|orange|purple|brown|tan|gold|maroon)\b/.test(message),
+    phone: /\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/.test(message),
+    safe: /\b(safe|parking lot|shoulder|home|driveway|not safe|danger|highway)\b/.test(message)
+  };
+}
+
+function filterKnownQuestions(questions, knownDetails) {
+  return questions.filter((question) => {
+    const normalized = question.toLowerCase();
+    if (knownDetails.safe && normalized.includes("safe")) return false;
+    if (knownDetails.service && /service|what happened|looking for/.test(normalized)) return false;
+    if (knownDetails.phone && /callback|phone|number/.test(normalized)) return false;
+    if (knownDetails.location && /location|cross street|located/.test(normalized)) return false;
+    if (knownDetails.vehicle && knownDetails.color && /vehicle|year|make|model|color/.test(normalized)) return false;
+    if (knownDetails.vehicle && /year, make, model, and color/.test(normalized)) return true;
+    return true;
+  });
+}
+
 function summarizeCallerNeed(rawMessage, intent) {
-  const cleaned = cleanText(rawMessage, "", 180);
+  const cleaned = cleanText(rawMessage, "", 180).replace(/[.!?]+$/g, "");
   if (cleaned) return `I hear you need help with: ${cleaned}.`;
   if (intent === "emergency") return "I hear this is urgent.";
   if (intent === "apply") return "I hear you want to apply to work with DDD.";
