@@ -302,6 +302,31 @@ export async function listBookings(limit) {
   return listRecords(bookingsPath, limit);
 }
 
+export async function buildBusinessInsights() {
+  const [callLog, leads, bookings, sms] = await Promise.all([listCallLog(1000), listLeads(1000), listBookings(1000), listSms(1000)]);
+  const generatedAt = new Date();
+  const windows = [
+    makeInsightWindow("Today", "day", generatedAt, 1),
+    makeInsightWindow("Yesterday", "day", generatedAt, 1, 1),
+    makeInsightWindow("This week", "week", generatedAt, 7),
+    makeInsightWindow("Last week", "week", generatedAt, 7, 7),
+    makeInsightWindow("This month", "month", generatedAt, 30),
+    makeInsightWindow("Last month", "month", generatedAt, 30, 30)
+  ];
+  const sections = {
+    daily: summarizeInsightPeriod(windows[0], windows[1], { callLog, leads, bookings, sms }),
+    weekly: summarizeInsightPeriod(windows[2], windows[3], { callLog, leads, bookings, sms }),
+    monthly: summarizeInsightPeriod(windows[4], windows[5], { callLog, leads, bookings, sms })
+  };
+  return {
+    ok: true,
+    generatedAt: generatedAt.toISOString(),
+    sections,
+    suggestions: buildInsightSuggestions(sections),
+    highlights: buildInsightHighlights(sections)
+  };
+}
+
 export async function listCallLog(limit = 50) {
   const [calls, summaries, leads, bookings, sms] = await Promise.all([
     listRecords(callsPath, 1000),
@@ -381,6 +406,230 @@ export async function listCallLog(limit = 50) {
     })
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
     .slice(0, limit);
+}
+
+function makeInsightWindow(label, key, now, days, offsetDays = 0) {
+  const end = new Date(now);
+  end.setHours(23, 59, 59, 999);
+  end.setDate(end.getDate() - offsetDays);
+  const start = new Date(end);
+  start.setDate(start.getDate() - days + 1);
+  start.setHours(0, 0, 0, 0);
+  return { label, key, start: start.toISOString(), end: end.toISOString() };
+}
+
+function summarizeInsightPeriod(currentWindow, previousWindow, records) {
+  const current = summarizeInsightWindow(currentWindow, records);
+  const previous = summarizeInsightWindow(previousWindow, records);
+  return {
+    ...current,
+    previous,
+    changes: {
+      calls: compareNumbers(current.calls, previous.calls),
+      bookings: compareNumbers(current.bookings, previous.bookings),
+      leads: compareNumbers(current.leads, previous.leads),
+      missed: compareNumbers(current.missed, previous.missed),
+      smsSent: compareNumbers(current.smsSent, previous.smsSent),
+      averageDurationSeconds: compareNumbers(current.averageDurationSeconds, previous.averageDurationSeconds)
+    },
+    changed: buildChangedList(current, previous)
+  };
+}
+
+function summarizeInsightWindow(window, records) {
+  const calls = records.callLog.filter((call) => isWithinWindow(call.startedAt || call.createdAt, window));
+  const leads = records.leads.filter((lead) => isWithinWindow(lead.createdAt, window));
+  const bookings = records.bookings.filter((booking) => isWithinWindow(booking.createdAt, window));
+  const sms = records.sms.filter((message) => isWithinWindow(message.createdAt, window));
+  const completed = calls.filter((call) => call.completion === "complete").length;
+  const missed = calls.filter((call) => call.completion === "incomplete" || /busy|missed|failed|no-answer|canceled|cancelled/i.test(call.status || "")).length;
+  const needsReview = calls.filter((call) => call.completion === "needs-review").length;
+  const durations = calls.map((call) => Number(call.durationSeconds || 0)).filter((seconds) => seconds > 0);
+  const transcriptText = calls.map((call) => call.transcriptText || "").filter(Boolean).join("\n").slice(0, 20000);
+  const serviceCounts = countTopValues([
+    ...bookings.map((booking) => booking.serviceType || booking.reason),
+    ...leads.map((lead) => lead.serviceType || lead.reason),
+    ...calls.map((call) => inferServiceFromText(`${call.transcriptText || ""}\n${call.outcome?.detail || ""}`))
+  ]);
+  const locationCounts = countTopValues([
+    ...bookings.map((booking) => booking.location),
+    ...leads.map((lead) => lead.location),
+    ...calls.map((call) => inferLocationFromText(call.transcriptText || ""))
+  ]);
+  const callerTypes = countTopValues(calls.map(classifyCallerType));
+  const commonQuestions = countTopValues(extractCommonQuestions(transcriptText));
+  return {
+    label: window.label,
+    key: window.key,
+    start: window.start,
+    end: window.end,
+    calls: calls.length,
+    bookings: bookings.length,
+    leads: leads.length,
+    completed,
+    missed,
+    needsReview,
+    smsSent: sms.filter((message) => String(message.direction || "").toLowerCase() === "outbound").length,
+    smsReceived: sms.filter((message) => String(message.direction || "").toLowerCase() === "inbound").length,
+    recordings: calls.filter((call) => call.recordingUrl).length,
+    transcripts: calls.filter((call) => call.transcriptText).length,
+    averageDurationSeconds: durations.length ? Math.round(durations.reduce((sum, seconds) => sum + seconds, 0) / durations.length) : 0,
+    topServices: serviceCounts,
+    topLocations: locationCounts,
+    callerTypes,
+    commonQuestions,
+    recentCalls: calls.slice(0, 8).map((call) => ({
+      at: call.startedAt || call.createdAt || "",
+      caller: call.caller || "",
+      outcome: call.outcome?.label || call.status || "Logged",
+      service: call.bookings?.[0]?.serviceType || call.leads?.[0]?.serviceType || inferServiceFromText(call.transcriptText || ""),
+      location: call.bookings?.[0]?.location || call.leads?.[0]?.location || inferLocationFromText(call.transcriptText || ""),
+      smsStatus: call.smsStatus || "none",
+      durationLabel: call.durationLabel || ""
+    }))
+  };
+}
+
+function isWithinWindow(value, window) {
+  const time = Date.parse(value || "");
+  if (!Number.isFinite(time)) return false;
+  return time >= Date.parse(window.start) && time <= Date.parse(window.end);
+}
+
+function compareNumbers(current, previous) {
+  const difference = current - previous;
+  const percent = previous > 0 ? Math.round((difference / previous) * 100) : current > 0 ? 100 : 0;
+  return { current, previous, difference, percent };
+}
+
+function buildChangedList(current, previous) {
+  const changes = [];
+  addChange(changes, "Calls", current.calls, previous.calls);
+  addChange(changes, "Bookings", current.bookings, previous.bookings);
+  addChange(changes, "Missed / incomplete calls", current.missed, previous.missed);
+  addChange(changes, "Average call length", current.averageDurationSeconds, previous.averageDurationSeconds, "seconds");
+  const currentTopService = current.topServices[0]?.label || "";
+  const previousTopService = previous.topServices[0]?.label || "";
+  if (currentTopService && currentTopService !== previousTopService) {
+    changes.push(`Top service changed from ${previousTopService || "none"} to ${currentTopService}.`);
+  }
+  const currentTopLocation = current.topLocations[0]?.label || "";
+  const previousTopLocation = previous.topLocations[0]?.label || "";
+  if (currentTopLocation && currentTopLocation !== previousTopLocation) {
+    changes.push(`Top location changed from ${previousTopLocation || "none"} to ${currentTopLocation}.`);
+  }
+  if (!changes.length) changes.push("No major movement compared with the previous period yet.");
+  return changes.slice(0, 6);
+}
+
+function addChange(changes, label, current, previous, suffix = "") {
+  const delta = current - previous;
+  if (!delta) return;
+  const direction = delta > 0 ? "up" : "down";
+  const unit = suffix ? ` ${suffix}` : "";
+  changes.push(`${label} ${direction} ${Math.abs(delta)}${unit} (${previous} to ${current}).`);
+}
+
+function buildInsightSuggestions(sections) {
+  const suggestions = [];
+  const daily = sections.daily;
+  const weekly = sections.weekly;
+  const monthly = sections.monthly;
+  if (daily.missed > 0) suggestions.push(`Review ${daily.missed} missed/incomplete call${daily.missed === 1 ? "" : "s"} from today and text those callers first.`);
+  if (daily.calls > 0 && daily.bookings === 0) suggestions.push("Today has calls but no saved bookings yet, so check transcripts for any intake flow friction.");
+  if (daily.smsSent < daily.bookings + daily.leads) suggestions.push("Some captured callers may not have an outbound SMS attached. Confirm follow-up texts are sending.");
+  if (weekly.topServices[0]) suggestions.push(`This week's hottest request is ${weekly.topServices[0].label}. Keep that service quick in the AI flow and easy to book.`);
+  if (weekly.topLocations[0]) suggestions.push(`Calls are clustering around ${weekly.topLocations[0].label}. Consider mentioning coverage/ETA confidence for that area.`);
+  if (weekly.averageDurationSeconds > 180) suggestions.push("Average calls are over 3 minutes. Shorten the script or move more details into the follow-up text.");
+  if (weekly.changed.some((change) => /Missed/.test(change) && /up/.test(change))) suggestions.push("Missed calls increased this week. Check forwarding, business hours, and fallback SMS.");
+  if (monthly.calls > weekly.calls * 3 && monthly.bookings < weekly.bookings * 2) suggestions.push("Monthly calls are outpacing booking growth. Review sales/unsupported callers and tighten booking prompts.");
+  if (!suggestions.length) suggestions.push("No urgent changes found. Keep watching call reasons, missed calls, SMS delivery, and booking conversion.");
+  return suggestions.slice(0, 8);
+}
+
+function buildInsightHighlights(sections) {
+  return [
+    { label: "Today calls", value: sections.daily.calls, change: sections.daily.changes.calls },
+    { label: "Today bookings", value: sections.daily.bookings, change: sections.daily.changes.bookings },
+    { label: "Week calls", value: sections.weekly.calls, change: sections.weekly.changes.calls },
+    { label: "Month calls", value: sections.monthly.calls, change: sections.monthly.changes.calls }
+  ];
+}
+
+function countTopValues(values, limit = 6) {
+  const counts = new Map();
+  for (const rawValue of values) {
+    const value = cleanInsightLabel(rawValue);
+    if (!value) continue;
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([label, count]) => ({ label, count }));
+}
+
+function cleanInsightLabel(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/^customer$/i, "")
+    .trim()
+    .slice(0, 80);
+}
+
+function classifyCallerType(call) {
+  const text = `${call.transcriptText || ""} ${call.bookings?.[0]?.serviceType || ""} ${call.leads?.[0]?.reason || ""}`.toLowerCase();
+  if (/apply|job|work|technician|contractor/.test(text)) return "Apply to work";
+  if (/appointment|booking|already|existing|change|status/.test(text)) return "Existing customer";
+  if (/price|quote|cost|how much|service|flat|jump|battery|lockout|fuel|gas|brake|rotor|oil|tire/.test(text)) return "Potential customer";
+  if (/sell|marketing|vendor|partnership/.test(text)) return "Sales";
+  return "Other";
+}
+
+function inferServiceFromText(text = "") {
+  const value = String(text).toLowerCase();
+  const services = [
+    ["Tire / flat", /flat|tire|spare|plug|wheel lock|inflation/],
+    ["Jump start / battery", /jump|battery|dead battery/],
+    ["Lockout", /lockout|locked out|unlock|door unlock/],
+    ["Fuel delivery", /fuel|gas|out of gas/],
+    ["Oil change", /oil change|oil\/filter/],
+    ["Brakes / rotors", /brake|rotor/],
+    ["Hub bearing", /hub|bearing/],
+    ["Apply to work", /apply|job|work|technician|contractor/],
+    ["Existing appointment", /appointment|booking|reschedule|status/],
+    ["Unsupported service", /tow|towing|transmission|engine rebuild|body work|windshield/]
+  ];
+  return services.find(([, pattern]) => pattern.test(value))?.[0] || "";
+}
+
+function inferLocationFromText(text = "") {
+  const value = String(text).toLowerCase();
+  const known = [
+    "Liberty Township",
+    "Cincinnati",
+    "Northern Kentucky",
+    "Hamilton",
+    "Middletown",
+    "West Chester",
+    "Fairfield",
+    "Mason",
+    "Blue Ash",
+    "Sharonville",
+    "Covington",
+    "Newport",
+    "Florence"
+  ];
+  return known.find((place) => value.includes(place.toLowerCase())) || "";
+}
+
+function extractCommonQuestions(text = "") {
+  return String(text)
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line.includes("?"))
+    .map((line) => line.replace(/^(caller|ai|call)\s*[:\-]\s*/i, "").slice(0, 100))
+    .slice(0, 40);
 }
 
 export async function listBookingsByPhone(phone, limit = 20) {

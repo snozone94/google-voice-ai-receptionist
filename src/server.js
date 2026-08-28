@@ -16,6 +16,7 @@ import {
   getStorageInfo,
   getBookingStatus,
   buildDryRun,
+  buildBusinessInsights,
   normalizeVoice,
   saveCallEvent,
   saveIncomingSms,
@@ -541,6 +542,18 @@ app.get("/api/qa-dashboard", async (req, res, next) => {
         }))
       ]
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/insights", async (req, res, next) => {
+  try {
+    if (!hasAdminAccess(req)) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+    res.json(await buildBusinessInsights());
   } catch (error) {
     next(error);
   }

@@ -11,6 +11,15 @@ const callLogList = document.querySelector("#callLogList");
 const callDetail = document.querySelector("#callDetail");
 const callLogStatus = document.querySelector("#callLogStatus");
 const refreshCallLogButton = document.querySelector("#refreshCallLogButton");
+const refreshInsightsButton = document.querySelector("#refreshInsightsButton");
+const insightHighlights = document.querySelector("#insightHighlights");
+const insightSuggestionsList = document.querySelector("#insightSuggestionsList");
+const insightsStatus = document.querySelector("#insightsStatus");
+const insightCards = {
+  daily: document.querySelector('[data-insight-card="daily"]'),
+  weekly: document.querySelector('[data-insight-card="weekly"]'),
+  monthly: document.querySelector('[data-insight-card="monthly"]')
+};
 const setupList = document.querySelector("#setupList");
 const webhookUrl = document.querySelector("#webhookUrl");
 const adminPinInput = document.querySelector("#adminPinInput");
@@ -643,6 +652,131 @@ async function refreshQaDashboard() {
   qaStatus.textContent = payload.ok ? "QA looks clean." : "Some QA items need review.";
 }
 
+async function refreshInsights() {
+  if (!insightHighlights || !insightSuggestionsList || !insightsStatus) return;
+  insightsStatus.textContent = "Loading insights...";
+  const response = await fetch("/api/insights", { headers: adminHeaders() });
+  if (response.status === 403) {
+    insightHighlights.innerHTML = "";
+    insightSuggestionsList.innerHTML = `<p class="empty-state">Enter the admin PIN to load daily, weekly, and monthly insights.</p>`;
+    for (const card of Object.values(insightCards)) {
+      if (card) card.innerHTML = "";
+    }
+    insightsStatus.textContent = "Enter the admin PIN to load insights.";
+    return;
+  }
+  if (!response.ok) throw new Error("Could not load insights.");
+  const payload = await response.json();
+  insightHighlights.innerHTML = (payload.highlights || [])
+    .map(
+      (item) => `
+        <div class="insight-highlight">
+          <span>${escapeHtml(item.label)}</span>
+          <strong>${escapeHtml(item.value)}</strong>
+          <small>${escapeHtml(formatInsightChange(item.change))}</small>
+        </div>
+      `
+    )
+    .join("");
+  insightSuggestionsList.innerHTML = (payload.suggestions || [])
+    .map((suggestion) => `<div class="suggestion-pill">${escapeHtml(suggestion)}</div>`)
+    .join("");
+  renderInsightCard("daily", payload.sections?.daily);
+  renderInsightCard("weekly", payload.sections?.weekly);
+  renderInsightCard("monthly", payload.sections?.monthly);
+  insightsStatus.textContent = `Insights updated ${formatTime(payload.generatedAt)}.`;
+}
+
+function renderInsightCard(key, report) {
+  const card = insightCards[key];
+  if (!card || !report) return;
+  card.innerHTML = `
+    <div class="insight-card-header">
+      <div>
+        <p class="eyebrow">${escapeHtml(report.label)}</p>
+        <h3>${escapeHtml(formatDateRange(report.start, report.end))}</h3>
+      </div>
+      <span>${escapeHtml(report.calls)} call${report.calls === 1 ? "" : "s"}</span>
+    </div>
+    <div class="insight-mini-grid">
+      ${renderInsightMetric("Bookings", report.bookings, report.changes?.bookings)}
+      ${renderInsightMetric("Leads", report.leads, report.changes?.leads)}
+      ${renderInsightMetric("Missed", report.missed, report.changes?.missed)}
+      ${renderInsightMetric("Avg time", formatDuration(report.averageDurationSeconds), report.changes?.averageDurationSeconds)}
+      ${renderInsightMetric("SMS sent", report.smsSent, report.changes?.smsSent)}
+      ${renderInsightMetric("Transcripts", report.transcripts)}
+    </div>
+    <div class="insight-columns">
+      ${renderTopList("Top services", report.topServices)}
+      ${renderTopList("Top locations", report.topLocations)}
+      ${renderTopList("Caller types", report.callerTypes)}
+      ${renderTopList("Common questions", report.commonQuestions)}
+    </div>
+    <div class="insight-change-box">
+      <strong>What changed</strong>
+      ${(report.changed || []).map((change) => `<p>${escapeHtml(change)}</p>`).join("")}
+    </div>
+    <div class="recent-call-strip">
+      <strong>Recent calls</strong>
+      ${renderRecentInsightCalls(report.recentCalls)}
+    </div>
+  `;
+}
+
+function renderInsightMetric(label, value, change) {
+  return `
+    <div class="insight-metric">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      ${change ? `<small>${escapeHtml(formatInsightChange(change))}</small>` : ""}
+    </div>
+  `;
+}
+
+function renderTopList(title, items = []) {
+  return `
+    <div class="insight-top-list">
+      <strong>${escapeHtml(title)}</strong>
+      ${
+        items.length
+          ? items.map((item) => `<p><span>${escapeHtml(item.label)}</span><b>${escapeHtml(item.count)}</b></p>`).join("")
+          : `<p class="empty-state">Not enough data yet.</p>`
+      }
+    </div>
+  `;
+}
+
+function renderRecentInsightCalls(calls = []) {
+  if (!calls.length) return `<p class="empty-state">No calls in this period yet.</p>`;
+  return calls
+    .map(
+      (call) => `
+        <div class="insight-call">
+          <strong>${escapeHtml(formatPhone(call.caller) || "Unknown caller")}</strong>
+          <span>${escapeHtml([call.outcome, call.service, call.location, call.durationLabel, call.smsStatus ? `SMS ${call.smsStatus}` : ""].filter(Boolean).join(" · "))}</span>
+          <small>${escapeHtml(formatTime(call.at))}</small>
+        </div>
+      `
+    )
+    .join("");
+}
+
+function formatInsightChange(change = {}) {
+  const difference = Number(change.difference || 0);
+  if (!difference) return "No change";
+  const sign = difference > 0 ? "+" : "-";
+  const percent = Math.abs(Number(change.percent || 0));
+  return `${sign}${Math.abs(difference)}${percent ? ` (${sign}${percent}%)` : ""}`;
+}
+
+function formatDateRange(start, end) {
+  if (!start || !end) return "Current period";
+  const options = { month: "short", day: "numeric" };
+  const startLabel = new Intl.DateTimeFormat(undefined, options).format(new Date(start));
+  const endLabel = new Intl.DateTimeFormat(undefined, options).format(new Date(end));
+  return startLabel === endLabel ? startLabel : `${startLabel} - ${endLabel}`;
+}
+
 function formatBookingDestinations(destinations) {
   return destinations
     .map((destination) => `${destination.label || ""} | ${destination.url || ""} | ${destination.useWhen || ""}`)
@@ -945,6 +1079,9 @@ async function sendPresence() {
 refreshInboxButton.addEventListener("click", () => {
   setActiveTab("inbox");
   refreshInbox().catch((error) => setInboxStatus(error.message));
+  refreshInsights().catch((error) => {
+    if (insightsStatus) insightsStatus.textContent = error.message;
+  });
 });
 
 adminPinInput.addEventListener("change", () => {
@@ -1264,6 +1401,10 @@ refreshQaDashboard().catch((error) => {
   if (qaStatus) qaStatus.textContent = error.message;
 });
 setInterval(() => refreshQaDashboard().catch(() => {}), 30000);
+refreshInsights().catch((error) => {
+  if (insightsStatus) insightsStatus.textContent = error.message;
+});
+setInterval(() => refreshInsights().catch(() => {}), 30000);
 setInterval(() => sendPresence().catch(() => {}), 20000);
 setInterval(() => refreshPresence().catch(() => {}), 10000);
 
@@ -1276,6 +1417,12 @@ refreshCallLogButton.addEventListener("click", () => {
 refreshQaButton?.addEventListener("click", () => {
   refreshQaDashboard().catch((error) => {
     qaStatus.textContent = error.message;
+  });
+});
+
+refreshInsightsButton?.addEventListener("click", () => {
+  refreshInsights().catch((error) => {
+    insightsStatus.textContent = error.message;
   });
 });
 

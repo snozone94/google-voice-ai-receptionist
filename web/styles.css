@@ -18,6 +18,8 @@
 body {
   margin: 0;
   min-height: 100vh;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   background:
     linear-gradient(90deg, rgba(255, 62, 165, 0.12), rgba(255, 200, 61, 0.1), rgba(35, 199, 121, 0.1), rgba(22, 184, 255, 0.12), rgba(118, 87, 255, 0.1)),
     linear-gradient(120deg, rgba(255, 62, 165, 0.18), transparent 22%),
@@ -795,6 +797,164 @@ h2 {
   gap: 14px;
 }
 
+.insight-highlights {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.insight-highlight,
+.insight-card,
+.insight-suggestions {
+  border: 1px solid rgba(124, 118, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.insight-highlight {
+  display: grid;
+  gap: 4px;
+  min-height: 88px;
+  padding: 12px;
+  background:
+    linear-gradient(#fff, #fff) padding-box,
+    linear-gradient(135deg, var(--pink), var(--gold), var(--green), var(--blue), var(--violet)) border-box;
+}
+
+.insight-highlight span,
+.insight-metric span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.insight-highlight strong {
+  font-size: 1.55rem;
+}
+
+.insight-highlight small,
+.insight-metric small {
+  color: #7d4dff;
+  font-weight: 800;
+}
+
+.insight-suggestions {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 14px;
+  background: linear-gradient(135deg, rgba(255, 62, 165, 0.09), rgba(255, 200, 61, 0.1), rgba(22, 184, 255, 0.09));
+}
+
+.insight-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.suggestion-pill {
+  border: 1px solid rgba(255, 62, 165, 0.18);
+  border-radius: 8px;
+  padding: 9px 11px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #34364d;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.insight-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.insight-card {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.insight-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.insight-card-header span {
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: linear-gradient(90deg, var(--green), var(--blue));
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.insight-mini-grid,
+.insight-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.insight-columns {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.insight-metric,
+.insight-top-list,
+.insight-change-box,
+.insight-call {
+  border: 1px solid rgba(217, 211, 238, 0.9);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff;
+}
+
+.insight-metric strong {
+  display: block;
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+  font-size: 1.16rem;
+}
+
+.insight-top-list,
+.insight-change-box,
+.recent-call-strip {
+  display: grid;
+  gap: 7px;
+}
+
+.insight-top-list p,
+.insight-change-box p {
+  margin: 0;
+  color: #55576d;
+  line-height: 1.35;
+}
+
+.insight-top-list p {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.insight-top-list span {
+  overflow-wrap: anywhere;
+}
+
+.insight-call {
+  display: grid;
+  gap: 3px;
+}
+
+.insight-call span,
+.insight-call small {
+  color: #74758b;
+  font-size: 0.82rem;
+}
+
 .qa-card {
   display: grid;
   align-content: start;
@@ -1046,6 +1206,9 @@ li.missing {
   .activity,
   .flow-grid,
   .qa-grid,
+  .insight-highlights,
+  .insight-mini-grid,
+  .insight-columns,
   .scenario-row,
   .overview-grid,
   .two-column,
@@ -1062,38 +1225,39 @@ li.missing {
   }
 
   main {
-    gap: 10px;
-    padding: 10px 9px 28px;
+    gap: 9px;
+    padding: 8px 8px 24px;
   }
 
   .panel {
-    padding: 13px;
+    padding: 12px;
     box-shadow: 0 10px 34px rgba(37, 38, 69, 0.11);
   }
 
   .panel::before {
     height: 4px;
-    margin: -13px -13px 13px;
+    margin: -12px -12px 12px;
   }
 
   .tabbar {
     position: sticky;
-    top: 6px;
-    margin-inline: -3px;
-    padding: 7px;
-    gap: 7px;
-    display: flex;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
+    top: 4px;
+    margin-inline: 0;
+    padding: 6px;
+    gap: 6px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: visible;
+    scroll-snap-type: none;
   }
 
   .tab-button {
-    flex: 0 0 auto;
-    min-width: max-content;
-    min-height: 42px;
-    padding: 0 13px;
-    font-size: 0.86rem;
-    scroll-snap-align: start;
+    width: 100%;
+    min-width: 0;
+    min-height: 36px;
+    padding: 0 6px;
+    font-size: 0.76rem;
+    scroll-snap-align: none;
     white-space: nowrap;
   }
 
@@ -1119,19 +1283,27 @@ li.missing {
   }
 
   .brand-logo {
-    width: 58px;
-    height: 58px;
-    border-radius: 16px;
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
   }
 
   h1 {
-    font-size: 1.86rem;
+    font-size: 1.48rem;
     margin-bottom: 6px;
+  }
+
+  h2 {
+    font-size: 1.18rem;
+  }
+
+  h3 {
+    font-size: 0.98rem;
   }
 
   .summary {
     margin-bottom: 6px;
-    font-size: 0.94rem;
+    font-size: 0.86rem;
     line-height: 1.42;
   }
 
@@ -1156,12 +1328,41 @@ li.missing {
   select,
   textarea,
   button {
-    font-size: 16px;
+    font-size: 15px;
   }
 
   button {
+    min-height: 38px;
+    padding: 0 10px;
     width: 100%;
     margin-right: 0;
+  }
+
+  label,
+  li,
+  .suggestion-pill {
+    font-size: 0.9rem;
+  }
+
+  input,
+  select,
+  textarea {
+    padding: 9px 10px;
+  }
+
+  .top-actions button {
+    min-height: 42px;
+    font-size: 0.96rem;
+  }
+
+  .switch-row {
+    width: 100%;
+    min-height: 40px;
+  }
+
+  .switch-row input {
+    width: 18px;
+    height: 18px;
   }
 
   .section-title-row {
@@ -1248,25 +1449,39 @@ li.missing {
     min-width: 0;
     flex: 1 1 130px;
   }
+
+  .insight-highlight {
+    min-height: 66px;
+    padding: 10px;
+  }
+
+  .insight-highlight strong {
+    font-size: 1.22rem;
+  }
+
+  .insight-card,
+  .insight-suggestions {
+    padding: 12px;
+  }
 }
 
 @media (max-width: 420px) {
   .brand-header {
     display: grid;
-    grid-template-columns: 52px minmax(0, 1fr);
+    grid-template-columns: 44px minmax(0, 1fr);
   }
 
   .brand-logo {
-    width: 52px;
-    height: 52px;
+    width: 44px;
+    height: 44px;
   }
 
   h1 {
-    font-size: 1.58rem;
+    font-size: 1.34rem;
   }
 
   h2 {
-    font-size: 1.22rem;
+    font-size: 1.12rem;
   }
 
   .call-detail-header {
@@ -1285,9 +1500,9 @@ li.missing {
   }
 
   .tab-button {
-    font-size: 0.84rem;
-    min-height: 40px;
-    padding: 0 12px;
+    font-size: 0.72rem;
+    min-height: 34px;
+    padding: 0 4px;
   }
 
   .inbox-shell,
