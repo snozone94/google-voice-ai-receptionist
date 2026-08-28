@@ -51,7 +51,7 @@ const defaultVoiceDirection =
   "Warm, confident, friendly receptionist. Natural phone cadence, clear pronunciation, and not robotic.";
 const defaultCallerFlows = {
   newClients:
-    "If they already named the service, do not re-qualify it. Tell them this will be quick and that you can make the booking for them. Then collect name, callback number, location, vehicle details if relevant, parts/materials status for oil/brakes/rotors/hub/battery jobs, wheel-lock/special-key status for tire jobs, and preferred time. End by saving a lead or booking request and sharing the best DDD link.",
+    "If they already named the service, do not re-qualify it. Tell them this will be quick and that you can make the booking for them. Then collect name, callback number, location, vehicle details if relevant, parts/materials status for oil/brakes/rotors/hub/battery jobs, wheel-lock/special-key status for tire jobs, and preferred time. End by saving a lead or booking request and texting or queueing the best DDD link.",
   existingClients:
     "Collect name, callback number, existing appointment or job details, and what they need changed or answered. Save a clear message for follow-up.",
   sales:
@@ -101,7 +101,7 @@ const defaultDirectoryReferral = {
 const defaultAfterHoursInstructions =
   "If DDD is closed or availability is unclear, still collect the message and push the right link. Say the team will follow up as soon as possible.";
 const defaultCallOutcomeRules =
-  "For every call, end with one clear outcome: booking created, lead/message saved, best DDD link shared, apply-to-work info captured, existing job message captured, sales message captured, spam/irrelevant declined, or human follow-up needed. Do not leave the caller unsure what happens next.";
+  "For every call, end with one clear outcome: booking created, lead/message saved, best DDD link texted or queued, apply-to-work info captured, existing job message captured, sales message captured, spam/irrelevant declined, or human follow-up needed. Do not leave the caller unsure what happens next. Do not read long URLs out loud.";
 const defaultFallbackRules =
   "If the AI cannot hear the caller, the caller is upset, the caller requests a human twice, the call is urgent and details are incomplete, booking sync fails, or the call drops before intake is complete, save a missed/fallback lead with caller ID if available and mark the next step as urgent human follow-up.";
 const defaultQaChecklist =
@@ -533,8 +533,9 @@ Voice and manner:
 - For oil changes, brake pads, rotors, bolt-in hub bearings, and battery installs, ask whether the customer already has the parts/materials or needs DDD to confirm parts.
 - For tire-related jobs, ask whether the vehicle has a wheel lock/special key and whether the caller has that key available.
 - As soon as you have enough booking details and callback information, call save_booking_request. Do not require the caller to fill out a form first.
-- If save_booking_request returns a customerStatusUrl or trackingUrl, use that as the caller's booking/status link and offer to text it.
-${bookingUrl ? `- The booking link is ${bookingUrl}. Offer it verbally and include it in saved lead next steps.` : "- A booking link is not configured yet because the public deployment URL is not set. Tell callers DDD will text or call them with the booking link after their details are saved."}
+- Do not read long URLs out loud. If a text is allowed, say "I'll text that link to you now" instead of speaking the full link.
+- Do not send or promise live tracking until a technician is assigned, active, or en route. If save_booking_request returns a customerStatusUrl or trackingUrl, keep it in the saved record for staff/tech use later.
+${bookingUrl ? `- The immediate text link is ${bookingUrl}. Offer to text it, but do not read it out loud character by character.` : "- A booking link is not configured yet because the public deployment URL is not set. Tell callers DDD will text or call them after their details are saved."}
 
 Opening flow:
 - Start with exactly this greeting unless the caller speaks first: "${activeSettings.greeting}"
@@ -597,7 +598,7 @@ SMS follow-up:
 - SMS follow-up is ${activeSettings.smsFollowUp.enabled ? "enabled" : "disabled"} in admin.
 - If enabled, ask permission before texting the caller the best DDD link.
 - Message template: ${activeSettings.smsFollowUp.message}
-- Use the most relevant DDD destination as {{link}}.
+- Use the most relevant DDD destination as {{link}}. Do not use a booking/customer tracking URL for immediate SMS until a technician is assigned, active, or en route.
 - When calling save_lead or save_booking_request, set smsConsent to true only if the caller clearly agreed to receive the text.
 - If SMS delivery is not connected yet, still save the caller's phone number and best next link.
 
@@ -1062,7 +1063,7 @@ export function buildDryRun(settings = {}, callerMessage = "") {
       ? "Save an apply-to-work message and send the DDD apply link."
       : intent === "unsupported"
         ? "Do not book an unsupported service as a DDD job. Save a message and offer the referral/directory text if enabled."
-        : "Collect only missing booking details, including vehicle color when relevant, create the booking during the call, and share/text the returned status link.";
+        : "Collect only missing booking details, including vehicle color when relevant, create the booking during the call, and text the best next-step link instead of reading URLs out loud. Do not send a tracking link until a tech is assigned or en route.";
   if (intent === "emergency") {
     questions = questions.filter((question) => !question.toLowerCase().includes("safe"));
   }
@@ -1343,10 +1344,7 @@ async function sendOptionalSmsFollowUp(record, type) {
     settings.bookingDestinations,
     `${record.reason || ""} ${record.serviceType || ""} ${record.nextStep || ""}`
   );
-  const followUpDestination =
-    type === "booking_request" && record.customerStatusUrl
-      ? { label: "DDD booking status", url: record.customerStatusUrl, useWhen: "Customer booking created by the AI receptionist." }
-      : destination;
+  const followUpDestination = destination;
   const message = renderSmsTemplate(settings.smsFollowUp.message, followUpDestination, settings);
   const delivery = await sendConfiguredSms(record.phone, message);
   await postOptionalWebhook(process.env.SMS_FOLLOWUP_WEBHOOK_URL, {

@@ -99,7 +99,7 @@ class CallMonitor {
           response: {
             instructions:
               event.name === "save_booking_request"
-                ? "Tell the caller the booking request has been saved. If the tool returned a customerStatusUrl or external tracking URL, share it as the booking/status link and give one concise next step."
+                ? "Tell the caller the booking request has been saved and that DDD will text the next-step link. Do not read any tracking URL or long link out loud. Do not promise live tracking until a technician is assigned or en route."
                 : "Tell the caller their message has been saved and give a concise next step."
           }
         })

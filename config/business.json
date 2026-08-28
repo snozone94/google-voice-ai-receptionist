@@ -52,7 +52,7 @@
     },
     {
       "question": "How do appointments work?",
-      "answer": "Collect the caller's preferred date and time, save/create the request during the call when possible, and send or share the best DDD booking/status link."
+      "answer": "Collect the caller's preferred date and time, save/create the request during the call when possible, and tell them DDD will text the next-step link. Do not read long URLs out loud or promise live tracking until a tech is assigned or en route."
     },
     {
       "question": "Can I apply to work with DDD?",
@@ -64,7 +64,7 @@
     },
     {
       "question": "Can customers track the service?",
-      "answer": "Send callers to DDD Mobile app or Track My Tech/status links when available. Customers should use the same phone number or email so their booking can match their account."
+      "answer": "Send callers to the DDD Mobile app or status links when appropriate. Customers should use the same phone number or email so their booking can match their account. Do not send live tracking until a tech is assigned or en route."
     }
   ],
   "escalationRules": [
