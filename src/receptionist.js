@@ -937,11 +937,50 @@ function normalizeSettings(settings = {}) {
     voice: normalizeVoice(settings.voice) || "marin",
     voiceSpeed: normalizeSpeed(settings.voiceSpeed),
     voiceDirection: cleanLongText(settings.voiceDirection, defaultVoiceDirection, 700),
-    greeting: cleanText(settings.greeting, defaultGreeting, 240),
-    customInstructions: cleanLongText(settings.customInstructions, defaultCustomInstructions, 2400),
-    businessKnowledge: cleanLongText(settings.businessKnowledge, defaultBusinessKnowledge, 3000),
+    greeting: migrateGreeting(cleanText(settings.greeting, defaultGreeting, 240)),
+    customInstructions: cleanLongText(
+      appendMissingGuidance(settings.customInstructions, defaultCustomInstructions, [
+        {
+          test: /Triple D Roadside only in the opening greeting/i,
+          text: "Use Triple D Roadside only in the opening greeting so the business is pronounced correctly; after that, DDD is okay."
+        },
+        {
+          test: /one wheel, front axle, rear axle, both axles\/all four/i,
+          text: "For brake, rotor, tire replacement, tire plug, or spare tire calls, ask quantity/position only if they have not already said it: one wheel, front axle, rear axle, both axles/all four, or spare/tire-specific need."
+        },
+        {
+          test: /cash, card, tap pay, and installments/i,
+          text: "If callers ask how they can pay, say DDD accepts cash, card, tap pay, and installments, but does not accept checks."
+        }
+      ]),
+      defaultCustomInstructions,
+      2400
+    ),
+    businessKnowledge: cleanLongText(
+      appendMissingGuidance(settings.businessKnowledge, defaultBusinessKnowledge, [
+        {
+          test: /Accepted payment methods are cash, card, tap pay, and installments/i,
+          text: "Accepted payment methods are cash, card, tap pay, and installments. No checks."
+        }
+      ]),
+      defaultBusinessKnowledge,
+      3000
+    ),
     serviceArea: cleanLongText(settings.serviceArea, defaultServiceArea, 900),
-    pricingNotes: cleanLongText(settings.pricingNotes, defaultPricingNotes, 1200),
+    pricingNotes: cleanLongText(
+      appendMissingGuidance(settings.pricingNotes, defaultPricingNotes, [
+        {
+          test: /confirm quantity or position/i,
+          text: "For brakes, rotors, and tire work, confirm quantity or position first."
+        },
+        {
+          test: /Accepted payment methods: cash, card, tap pay, and installments/i,
+          text: "Accepted payment methods: cash, card, tap pay, and installments. No checks."
+        }
+      ]),
+      defaultPricingNotes,
+      1200
+    ),
     emergencyInstructions: cleanLongText(settings.emergencyInstructions, defaultEmergencyInstructions, 1200),
     emergencyQuestions: normalizeTextList(settings.emergencyQuestions, defaultEmergencyQuestions, 10, 140),
     offeredServices: cleanLongText(settings.offeredServices, defaultOfferedServices, 1400),
@@ -949,7 +988,16 @@ function normalizeSettings(settings = {}) {
     directoryReferral: normalizeDirectoryReferral(settings.directoryReferral),
     afterHoursInstructions: cleanLongText(settings.afterHoursInstructions, defaultAfterHoursInstructions, 900),
     humanHandoffRules: cleanLongText(settings.humanHandoffRules, defaultHumanHandoffRules, 1200),
-    callOutcomeRules: cleanLongText(settings.callOutcomeRules, defaultCallOutcomeRules, 1400),
+    callOutcomeRules: cleanLongText(
+      appendMissingGuidance(settings.callOutcomeRules, defaultCallOutcomeRules, [
+        {
+          test: /Do not read long URLs out loud/i,
+          text: "Do not read long URLs out loud."
+        }
+      ]),
+      defaultCallOutcomeRules,
+      1400
+    ),
     fallbackRules: cleanLongText(settings.fallbackRules, defaultFallbackRules, 1400),
     qaChecklist: cleanLongText(settings.qaChecklist, defaultQaChecklist, 1400),
     applyInstructions: cleanLongText(settings.applyInstructions, defaultApplyInstructions, 1200),
@@ -972,6 +1020,20 @@ function normalizeSettings(settings = {}) {
     bookingDestinations: normalizeBookingDestinations(settings.bookingDestinations),
     voiceOptions
   };
+}
+
+function migrateGreeting(greeting) {
+  if (/thank you for calling ddd mobile/i.test(greeting)) return defaultGreeting;
+  if (/thank you for calling ddd[,. ]/i.test(greeting)) return defaultGreeting;
+  return greeting;
+}
+
+function appendMissingGuidance(value, fallback, additions) {
+  let text = typeof value === "string" && value.trim() ? value.trim() : fallback;
+  for (const addition of additions) {
+    if (!addition.test.test(text)) text = `${text} ${addition.text}`;
+  }
+  return text;
 }
 
 export function normalizeStaffAccessCodes(value) {
