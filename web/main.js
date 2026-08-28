@@ -54,6 +54,7 @@ const settingsStatus = document.querySelector("#settingsStatus");
 const refreshInboxButton = document.querySelector("#refreshInboxButton");
 const staffPinInput = document.querySelector("#staffPinInput");
 const staffNameInput = document.querySelector("#staffNameInput");
+const staffAccessCodesInput = document.querySelector("#staffAccessCodesInput");
 const conversationList = document.querySelector("#conversationList");
 const selectedConversationTitle = document.querySelector("#selectedConversationTitle");
 const selectedConversationMeta = document.querySelector("#selectedConversationMeta");
@@ -134,7 +135,7 @@ function setStatus(message) {
 
 async function loadSettings() {
   isLoadingSettings = true;
-  const response = await fetch("/api/settings");
+  const response = await fetch("/api/settings", { headers: adminHeaders() });
   const settings = await response.json();
   voiceSelect.innerHTML = "";
   for (const voice of settings.voiceOptions || []) {
@@ -178,6 +179,7 @@ async function loadSettings() {
   reviewFollowUpMessageInput.value =
     settings.reviewFollowUp?.message ||
     "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}";
+  staffAccessCodesInput.value = formatStaffAccessCodes(settings.staffAccessCodes || []);
   customInstructionsInput.value = settings.customInstructions || "";
   isLoadingSettings = false;
   setEditMode(editMode);
@@ -243,6 +245,7 @@ async function saveSettings(reason = "auto") {
           url: reviewFollowUpUrlInput.value,
           message: reviewFollowUpMessageInput.value
         },
+        staffAccessCodes: parseStaffAccessCodesInput(staffAccessCodesInput.value),
         customInstructions: customInstructionsInput.value
       })
     });
@@ -323,6 +326,7 @@ for (const input of [
   reviewFollowUpToggle,
   reviewFollowUpUrlInput,
   reviewFollowUpMessageInput,
+  staffAccessCodesInput,
   customInstructionsInput
 ]) {
   input.addEventListener("input", handleSettingsChange);
@@ -377,6 +381,7 @@ function setEditMode(nextEditMode) {
     reviewFollowUpToggle,
     reviewFollowUpUrlInput,
     reviewFollowUpMessageInput,
+    staffAccessCodesInput,
     customInstructionsInput
   ]) {
     input.disabled = !editMode;
@@ -481,6 +486,28 @@ function parseBookingDestinations(value) {
       };
     })
     .filter((destination) => destination.label && destination.url && destination.useWhen);
+}
+
+function formatStaffAccessCodes(codes) {
+  return (codes || [])
+    .map((entry) => `${entry.name || ""} | ${entry.code || ""}`.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function parseStaffAccessCodesInput(value) {
+  return String(value || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [name = "", ...codeParts] = (line.includes("|") ? line.split("|") : line.split(":")).map((part) => part.trim());
+      return {
+        name,
+        code: codeParts.join("|").replace(/\s+/g, "")
+      };
+    })
+    .filter((entry) => entry.name && entry.code);
 }
 
 function renderList(element, records, emptyMessage, formatter) {
@@ -633,6 +660,9 @@ refreshInboxButton.addEventListener("click", () => {
 adminPinInput.addEventListener("change", () => {
   const pin = adminPinInput.value.trim();
   localStorage.setItem("dddAdminPin", pin);
+  loadSettings().catch(() => {
+    settingsStatus.textContent = "Could not reload admin-only settings.";
+  });
   refreshInbox().catch((error) => setInboxStatus(error.message));
 });
 

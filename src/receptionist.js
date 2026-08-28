@@ -88,6 +88,7 @@ const defaultSoundPreferences = {
   ambientSound: "none",
   thinkingSound: true
 };
+const defaultStaffAccessCodes = [];
 const defaultBookingDestinations = [
   {
     label: "Book roadside service",
@@ -178,6 +179,7 @@ export async function saveReceptionistSettings(settings) {
         outOfScopeHandling: next.outOfScopeHandling,
         followUpStyle: next.followUpStyle,
         soundPreferences: next.soundPreferences,
+        staffAccessCodes: next.staffAccessCodes,
         bookingDestinations: next.bookingDestinations
       },
       null,
@@ -683,9 +685,48 @@ function normalizeSettings(settings = {}) {
       600
     ),
     soundPreferences: normalizeSoundPreferences(settings.soundPreferences),
+    staffAccessCodes: normalizeStaffAccessCodes(settings.staffAccessCodes || parseStaffAccessCodes(process.env.STAFF_ACCESS_CODES || "")),
     bookingDestinations: normalizeBookingDestinations(settings.bookingDestinations),
     voiceOptions
   };
+}
+
+export function normalizeStaffAccessCodes(value) {
+  const source = Array.isArray(value) ? value : parseStaffAccessCodes(value);
+  const seen = new Set();
+  return source
+    .map((entry) => ({
+      name: cleanText(entry.name, "", 80),
+      code: String(entry.code || "").replace(/\s+/g, "").slice(0, 32)
+    }))
+    .filter((entry) => entry.name && entry.code)
+    .filter((entry) => {
+      const key = entry.code.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 20);
+}
+
+export function parseStaffAccessCodes(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return defaultStaffAccessCodes;
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {
+    // Fall through to Name:Code,Name:Code format.
+  }
+  return raw
+    .split(",")
+    .map((pair) => {
+      const [name, ...codeParts] = pair.split(":");
+      return {
+        name: String(name || "").trim(),
+        code: codeParts.join(":").trim()
+      };
+    });
 }
 
 function normalizeBookingRecord(booking = {}) {

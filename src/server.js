@@ -20,7 +20,9 @@ import {
   saveOutgoingSms,
   saveBookingRequest,
   saveLead,
-  saveReceptionistSettings
+  saveReceptionistSettings,
+  normalizeStaffAccessCodes,
+  parseStaffAccessCodes
 } from "./receptionist.js";
 import { monitorRealtimeCall } from "./realtime-tools.js";
 
@@ -90,7 +92,13 @@ app.get("/api/business", async (_req, res, next) => {
 
 app.get("/api/settings", async (_req, res, next) => {
   try {
-    res.json(await loadReceptionistSettings());
+    const settings = await loadReceptionistSettings();
+    if (hasAdminAccess(_req)) {
+      res.json(settings);
+      return;
+    }
+    const { staffAccessCodes: _staffAccessCodes, ...publicSettings } = settings;
+    res.json(publicSettings);
   } catch (error) {
     next(error);
   }
@@ -139,7 +147,7 @@ app.get("/api/sms", async (req, res, next) => {
 
 app.get("/api/conversations", async (req, res, next) => {
   try {
-    const staff = getStaffAccess(req);
+    const staff = await getStaffAccess(req);
     if (!staff.ok) {
       res.status(403).json({ ok: false, error: "Forbidden" });
       return;
@@ -154,7 +162,7 @@ app.get("/api/conversations", async (req, res, next) => {
 
 app.post("/api/sms/reply", express.json(), async (req, res, next) => {
   try {
-    const staff = getStaffAccess(req);
+    const staff = await getStaffAccess(req);
     if (!staff.ok) {
       res.status(403).json({ ok: false, error: "Forbidden" });
       return;
@@ -534,7 +542,7 @@ function hasAdminAccess(req) {
   return req.get("x-admin-pin") === pin || req.query.adminPin === pin;
 }
 
-function getStaffAccess(req) {
+async function getStaffAccess(req) {
   const submittedCode = String(req.get("x-staff-code") || req.get("x-admin-pin") || req.query.staffCode || req.query.adminPin || "")
     .trim();
   const adminPin = String(process.env.ADMIN_PIN || "").trim();
@@ -545,40 +553,13 @@ function getStaffAccess(req) {
     return { ok: true, name: process.env.ADMIN_STAFF_NAME || "Brianna", role: "admin" };
   }
 
-  const staffCodes = parseStaffAccessCodes(process.env.STAFF_ACCESS_CODES || "");
+  const settings = await loadReceptionistSettings();
+  const staffCodes = normalizeStaffAccessCodes(settings.staffAccessCodes?.length ? settings.staffAccessCodes : parseStaffAccessCodes(process.env.STAFF_ACCESS_CODES || ""));
   const staff = staffCodes.find((entry) => entry.code === submittedCode);
   if (!staff) {
     return { ok: false };
   }
   return { ok: true, name: staff.name, role: "staff" };
-}
-
-function parseStaffAccessCodes(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      return parsed
-        .map((entry) => ({
-          name: String(entry.name || "").trim(),
-          code: String(entry.code || "").trim()
-        }))
-        .filter((entry) => entry.name && entry.code);
-    }
-  } catch {
-    // Fall back to compact Name:Code,Name:Code format.
-  }
-  return raw
-    .split(",")
-    .map((pair) => {
-      const [name, ...codeParts] = pair.split(":");
-      return {
-        name: String(name || "").trim(),
-        code: codeParts.join(":").trim()
-      };
-    })
-    .filter((entry) => entry.name && entry.code);
 }
 
 function hasCustomerLookupAccess(req) {
