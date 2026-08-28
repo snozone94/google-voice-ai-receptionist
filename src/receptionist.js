@@ -840,7 +840,7 @@ function normalizeSettings(settings = {}) {
     smsFollowUp: normalizeSmsFollowUp(settings.smsFollowUp),
     reviewFollowUp: normalizeReviewFollowUp(settings.reviewFollowUp),
     callerFlows: normalizeCallerFlows(settings.callerFlows),
-    qualifyingServices: normalizeTextList(settings.qualifyingServices, defaultQualifyingServices, 12, 80),
+    qualifyingServices: normalizeTextList(settings.qualifyingServices, defaultQualifyingServices, 20, 80),
     outOfScopeHandling: cleanLongText(
       settings.outOfScopeHandling,
       "Take a message for services DDD may not offer, unless the request is unsafe or clearly unrelated.",
