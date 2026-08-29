@@ -1714,31 +1714,27 @@ function buildCallSynopsis(call) {
 
 function renderGroupedTranscript(transcript = []) {
   if (!transcript.length) return `<p class="empty-state">No transcript saved for this call yet.</p>`;
-  const groups = [];
-  for (const line of transcript) {
-    const speaker = line.speaker || "Call";
-    const last = groups.at(-1);
-    if (last && last.speaker === speaker) {
-      last.lines.push(line);
-    } else {
-      groups.push({ speaker, start: line.at, lines: [line] });
-    }
-  }
-  return groups
-    .map((group) => {
-      const speakerClass = String(group.speaker || "call").toLowerCase();
-      const text = group.lines.map((line) => line.text).filter(Boolean).join("\n");
-      return `
-        <details class="transcript-group ${escapeHtml(speakerClass)}" open>
-          <summary>
-            <strong>${escapeHtml(group.speaker)}</strong>
-            <span>${escapeHtml([formatTime(group.start), `${group.lines.length} line${group.lines.length === 1 ? "" : "s"}`].filter(Boolean).join(" · "))}</span>
-          </summary>
-          <p>${escapeHtml(text)}</p>
-        </details>
-      `;
-    })
-    .join("");
+  return `
+    <div class="transcript-conversation">
+      ${transcript
+        .map((line) => {
+          const speaker = line.speaker || "Call";
+          const speakerClass = String(speaker || "call").toLowerCase();
+          const text = line.text || "";
+          if (!text.trim()) return "";
+          return `
+            <div class="transcript-row ${escapeHtml(speakerClass)}">
+              <div class="transcript-meta">
+                <strong>${escapeHtml(speaker)}</strong>
+                <span>${escapeHtml(formatTime(line.at) || "")}</span>
+              </div>
+              <p>${escapeHtml(text)}</p>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
 }
 
 function renderMetric(label, value, tone = "neutral") {

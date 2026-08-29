@@ -923,6 +923,7 @@ button:hover:not(:disabled) {
 .related-records,
 .transcript-line,
 .transcript-group,
+.transcript-conversation,
 .call-synopsis {
   border: 1px solid rgba(217, 211, 238, 0.9);
   border-radius: 12px;
@@ -957,11 +958,13 @@ button:hover:not(:disabled) {
 }
 
 .transcript-box {
-  display: grid;
-  gap: 8px;
+  display: block;
   max-height: 420px;
   overflow: auto;
-  padding-right: 4px;
+  border-radius: 16px;
+  padding: 0;
+  background:
+    linear-gradient(135deg, rgba(255, 62, 165, 0.06), rgba(35, 199, 121, 0.05), rgba(22, 184, 255, 0.06));
 }
 
 .transcript-line small {
@@ -1025,6 +1028,67 @@ button:hover:not(:disabled) {
 .transcript-group.ai {
   border-color: rgba(230, 64, 165, 0.24);
   background: rgba(230, 64, 165, 0.06);
+}
+
+.transcript-conversation {
+  display: grid;
+  gap: 0;
+  max-height: 420px;
+  overflow: auto;
+  border-color: transparent;
+  border-radius: 16px;
+  padding: 0;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.78)) padding-box,
+    var(--rainbow) border-box;
+}
+
+.transcript-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.24fr) minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid rgba(217, 211, 238, 0.7);
+}
+
+.transcript-row:last-child {
+  border-bottom: 0;
+}
+
+.transcript-row.caller {
+  background: linear-gradient(90deg, rgba(22, 184, 255, 0.09), transparent 70%);
+}
+
+.transcript-row.ai,
+.transcript-row.assistant {
+  background: linear-gradient(90deg, rgba(255, 62, 165, 0.08), transparent 70%);
+}
+
+.transcript-meta {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  min-width: 0;
+}
+
+.transcript-meta strong {
+  color: #1f2030;
+  overflow-wrap: anywhere;
+}
+
+.transcript-meta span {
+  color: #74758b;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.transcript-row p {
+  margin: 0;
+  min-width: 0;
+  color: #34364d;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  line-height: 1.42;
 }
 
 .status-timeline {
@@ -1612,6 +1676,66 @@ textarea#testScriptOutput {
   transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
+.account-links-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  border: 1px solid transparent;
+  border-radius: 18px;
+  padding: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.76)) padding-box,
+    var(--rainbow) border-box;
+  box-shadow: 0 16px 34px rgba(37, 38, 69, 0.09), 0 0 28px rgba(22, 184, 255, 0.08);
+}
+
+.account-links-card h3,
+.account-links-card p {
+  margin: 0;
+}
+
+.account-links-card p {
+  color: var(--muted);
+  line-height: 1.36;
+}
+
+.account-link-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.account-link-grid a {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(124, 118, 255, 0.16);
+  border-radius: 14px;
+  padding: 10px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.8));
+  color: #1f2030;
+  text-decoration: none;
+  box-shadow: 0 10px 22px rgba(37, 38, 69, 0.06);
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.account-link-grid a:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 62, 165, 0.28);
+  box-shadow: 0 16px 30px rgba(37, 38, 69, 0.1), 0 0 22px rgba(255, 62, 165, 0.08);
+}
+
+.account-link-grid span {
+  color: #a81586;
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.account-link-grid strong {
+  overflow-wrap: anywhere;
+}
+
 #status,
 #leadStatus,
 #settingsStatus,
@@ -2073,6 +2197,16 @@ li.missing {
 
   .message-bubble {
     max-width: 94%;
+  }
+
+  .account-link-grid,
+  .transcript-row {
+    grid-template-columns: 1fr;
+  }
+
+  .transcript-row {
+    gap: 5px;
+    padding: 10px;
   }
 
   .presence-pill {
