@@ -5,6 +5,8 @@ Expo admin app for controlling the live DDD AI Dispatch system from iPhone.
 ## What It Controls
 
 - AI answering on/off
+- Admin PIN and live backend URL
+- Run-cost links for Twilio, OpenAI, and Render
 - Voice selection
 - Speaking speed
 - Voice preview
@@ -13,7 +15,17 @@ Expo admin app for controlling the live DDD AI Dispatch system from iPhone.
 - Custom instructions
 - DDD booking/app/apply destination links
 - Qualifying services and follow-up rules
+- Shared inbox preview
 - Recent calls, leads, and booking requests
+- Daily/weekly/monthly insights preview
+
+## Product Structure
+
+Use this app as the DDD internal app first. Keep one shared backend, then add per-business accounts later for the sellable version. That lets the same codebase support:
+
+- DDD-branded internal app now
+- White-label customer accounts later
+- Per-business phone numbers, scripts, links, voices, teams, inboxes, and billing when it becomes sellable
 
 ## Default Backend
 
