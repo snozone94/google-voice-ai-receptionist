@@ -461,7 +461,7 @@ app.get("/api/voice-preview.mp3", requireOpenAIKey, async (req, res, next) => {
 
 app.post("/api/test-script", express.json(), async (req, res, next) => {
   try {
-    const settings = await loadReceptionistSettings();
+    const settings = await loadSettingsWithInsights();
     res.json(buildDryRun(settings, req.body?.callerMessage || ""));
   } catch (error) {
     next(error);
@@ -730,7 +730,7 @@ app.post("/api/webrtc-offer", requireOpenAIKey, express.text({ type: "*/*", limi
     }
 
     const business = await loadBusiness();
-    const settings = await loadReceptionistSettings();
+    const settings = await loadSettingsWithInsights();
     if (!settings.enabled) {
       res.status(409).send("The AI receptionist is turned off.");
       return;
@@ -771,6 +771,17 @@ app.post("/api/webrtc-offer", requireOpenAIKey, express.text({ type: "*/*", limi
   }
 });
 
+async function loadSettingsWithInsights() {
+  const settings = await loadReceptionistSettings();
+  if (settings.insightLearning?.enabled === false) return settings;
+  try {
+    return { ...settings, insightSnapshot: await buildBusinessInsights() };
+  } catch (error) {
+    console.warn(`Could not build insight learning snapshot: ${error.message}`);
+    return settings;
+  }
+}
+
 async function handleSipWebhook(req, res, next) {
   try {
     console.log(`OpenAI webhook HTTP hit: ${req.method} ${req.originalUrl || req.url}`);
@@ -794,7 +805,7 @@ async function handleSipWebhook(req, res, next) {
       const callId = event.data?.call_id;
       console.log(`Incoming realtime SIP webhook received: ${callId || "missing call_id"}`);
       const business = await loadBusiness();
-      const settings = await loadReceptionistSettings();
+      const settings = await loadSettingsWithInsights();
       const callSettings = isGoogleVoiceVerificationCall(event)
         ? { ...settings, verificationMode: true }
         : settings;

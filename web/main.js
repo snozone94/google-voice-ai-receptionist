@@ -17,6 +17,12 @@ const insightHighlights = document.querySelector("#insightHighlights");
 const insightFocusStrip = document.querySelector("#insightFocusStrip");
 const insightSuggestionsList = document.querySelector("#insightSuggestionsList");
 const insightsStatus = document.querySelector("#insightsStatus");
+const insightLearningToggle = document.querySelector("#insightLearningToggle");
+const learnTopServicesToggle = document.querySelector("#learnTopServicesToggle");
+const learnTopLocationsToggle = document.querySelector("#learnTopLocationsToggle");
+const learnQaIssuesToggle = document.querySelector("#learnQaIssuesToggle");
+const learnSpeedToggle = document.querySelector("#learnSpeedToggle");
+const learningPreview = document.querySelector("#learningPreview");
 const insightCards = {
   daily: document.querySelector('[data-insight-card="daily"]'),
   weekly: document.querySelector('[data-insight-card="weekly"]'),
@@ -279,6 +285,11 @@ function applySettings(settings) {
   notifyDailySummaryToggle.checked = settings.notificationPreferences?.dailySummary !== false;
   notifyWeeklySummaryToggle.checked = settings.notificationPreferences?.weeklySummary !== false;
   notifyMonthlySummaryToggle.checked = settings.notificationPreferences?.monthlySummary !== false;
+  insightLearningToggle.checked = settings.insightLearning?.enabled !== false;
+  learnTopServicesToggle.checked = settings.insightLearning?.useTopServices !== false;
+  learnTopLocationsToggle.checked = settings.insightLearning?.useTopLocations !== false;
+  learnQaIssuesToggle.checked = settings.insightLearning?.useQaIssues !== false;
+  learnSpeedToggle.checked = settings.insightLearning?.useSpeedSuggestions !== false;
   customInstructionsInput.value = settings.customInstructions || "";
 }
 
@@ -375,6 +386,13 @@ async function saveSettings(reason = "auto") {
           dailySummary: notifyDailySummaryToggle.checked,
           weeklySummary: notifyWeeklySummaryToggle.checked,
           monthlySummary: notifyMonthlySummaryToggle.checked
+        },
+        insightLearning: {
+          enabled: insightLearningToggle.checked,
+          useTopServices: learnTopServicesToggle.checked,
+          useTopLocations: learnTopLocationsToggle.checked,
+          useQaIssues: learnQaIssuesToggle.checked,
+          useSpeedSuggestions: learnSpeedToggle.checked
         },
         qaChecklist: qaChecklistInput.value,
         customInstructions: customInstructionsInput.value
@@ -483,6 +501,11 @@ for (const input of [
   notifyDailySummaryToggle,
   notifyWeeklySummaryToggle,
   notifyMonthlySummaryToggle,
+  insightLearningToggle,
+  learnTopServicesToggle,
+  learnTopLocationsToggle,
+  learnQaIssuesToggle,
+  learnSpeedToggle,
   staffAccessCodesInput,
   qaChecklistInput,
   customInstructionsInput
@@ -557,6 +580,11 @@ function setEditMode(nextEditMode) {
     notifyDailySummaryToggle,
     notifyWeeklySummaryToggle,
     notifyMonthlySummaryToggle,
+    insightLearningToggle,
+    learnTopServicesToggle,
+    learnTopLocationsToggle,
+    learnQaIssuesToggle,
+    learnSpeedToggle,
     staffAccessCodesInput,
     qaChecklistInput,
     customInstructionsInput
@@ -626,6 +654,8 @@ async function runFreeTest(callerMessage) {
       "",
       result.action ? `Action:\n${result.action}` : "",
       "",
+      result.insightLearning ? `Insight learning:\n${result.insightLearning}` : "",
+      "",
       result.qaChecklist?.length ? `QA checklist:\n- ${result.qaChecklist.join("\n- ")}` : "",
       "",
       result.note
@@ -679,6 +709,7 @@ function updateScriptPreview() {
     `Follow-up: ${followUpStyleInput.value || "Share booking link or save a callback message."}`,
     `Sound: ${ambientSoundSelect.value || "none"}; thinking bridge ${thinkingSoundToggle.checked ? thinkingPhraseInput.value || "on" : "off"}; background audio ${backgroundAudioModeSelect.value}.`,
     `Notifications: calls ${notifyNewCallsToggle.checked ? "on" : "off"}, missed ${notifyMissedCallsToggle.checked ? "on" : "off"}, bookings ${notifyBookingsToggle.checked ? "on" : "off"}, texts ${notifyTextsToggle.checked ? "on" : "off"}, QA ${notifyQaIssuesToggle.checked ? "on" : "off"}, summaries ${notifyDailySummaryToggle.checked ? "daily " : ""}${notifyWeeklySummaryToggle.checked ? "weekly " : ""}${notifyMonthlySummaryToggle.checked ? "monthly" : ""}`.trim(),
+    `Insight learning: ${insightLearningToggle.checked ? "on" : "off"}; services ${learnTopServicesToggle.checked ? "on" : "off"}, locations ${learnTopLocationsToggle.checked ? "on" : "off"}, QA ${learnQaIssuesToggle.checked ? "on" : "off"}, speed ${learnSpeedToggle.checked ? "on" : "off"}.`,
     `SMS follow-up: ${smsFollowUpToggle.checked ? "on" : "off"}. ${smsFollowUpMessageInput.value || "Text the best DDD link after permission."}`,
     `Google review follow-up: ${reviewFollowUpToggle.checked ? "on" : "off"}. ${reviewFollowUpMessageInput.value || "Ask for a Google review after completed jobs."} ${reviewFollowUpUrlInput.value || ""}`.trim(),
     "",
@@ -737,6 +768,7 @@ async function refreshInsights() {
   if (response.status === 403) {
     insightHighlights.innerHTML = "";
     if (insightFocusStrip) insightFocusStrip.innerHTML = "";
+    if (learningPreview) learningPreview.innerHTML = "";
     insightSuggestionsList.innerHTML = `<p class="empty-state">Enter the admin PIN to load daily, weekly, and monthly insights.</p>`;
     for (const card of Object.values(insightCards)) {
       if (card) card.innerHTML = "";
@@ -754,11 +786,32 @@ async function refreshInsights() {
   if (insightFocusStrip) {
     insightFocusStrip.innerHTML = renderInsightFocusStrip(daily, weekly, monthly);
   }
+  renderLearningPreview(payload);
   insightSuggestionsList.innerHTML = renderInsightSuggestions(payload.suggestions || []);
   renderInsightCard("daily", payload.sections?.daily);
   renderInsightCard("weekly", payload.sections?.weekly);
   renderInsightCard("monthly", payload.sections?.monthly);
   insightsStatus.textContent = `Insights updated ${formatTime(payload.generatedAt)}.`;
+}
+
+function renderLearningPreview(payload = {}) {
+  if (!learningPreview) return;
+  const weekly = payload.sections?.weekly || {};
+  const daily = payload.sections?.daily || {};
+  const notes = [];
+  if (!insightLearningToggle.checked) {
+    learningPreview.innerHTML = `<p>Insight learning is off. The receptionist will only follow the saved admin script.</p>`;
+    return;
+  }
+  const topService = weekly.topServices?.[0]?.label;
+  const topLocation = weekly.topLocations?.[0]?.label;
+  const followUps = Number(daily.missed || 0) + Number(daily.needsReview || 0);
+  if (learnTopServicesToggle.checked && topService) notes.push(`Prioritize faster intake for ${topService}.`);
+  if (learnTopLocationsToggle.checked && topLocation) notes.push(`Expect more callers around ${topLocation}, while still collecting exact location.`);
+  if (learnQaIssuesToggle.checked && followUps) notes.push(`Be stricter about callback, service, location, and next step because ${followUps} call${followUps === 1 ? "" : "s"} need follow-up today.`);
+  if (learnSpeedToggle.checked && Number(weekly.averageDurationSeconds || 0) > 150) notes.push("Shorten responses because average calls are running long.");
+  if (!notes.length) notes.push("No strong learning pattern yet. The receptionist will keep following the main admin script.");
+  learningPreview.innerHTML = notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("");
 }
 
 function renderInsightCard(key, report) {

@@ -1124,6 +1124,38 @@ button:hover:not(:disabled) {
   background: var(--soft-rainbow);
 }
 
+.insight-learning-box {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 14px;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.74)) padding-box,
+    var(--rainbow) border-box;
+  box-shadow: 0 12px 30px rgba(37, 38, 69, 0.08);
+}
+
+.learning-preview {
+  display: grid;
+  gap: 7px;
+  border: 1px solid rgba(124, 118, 255, 0.16);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.learning-preview:empty {
+  display: none;
+}
+
+.learning-preview p {
+  margin: 0;
+  color: #55576d;
+  line-height: 1.35;
+}
+
 .insight-list {
   display: grid;
   gap: 8px;
@@ -1947,6 +1979,7 @@ li.missing {
 
   .insight-card,
   .insight-suggestions,
+  .insight-learning-box,
   .notification-box {
     padding: 12px;
   }

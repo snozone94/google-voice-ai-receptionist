@@ -127,6 +127,13 @@ const defaultNotificationPreferences = {
   weeklySummary: true,
   monthlySummary: true
 };
+const defaultInsightLearning = {
+  enabled: true,
+  useTopServices: true,
+  useTopLocations: true,
+  useQaIssues: true,
+  useSpeedSuggestions: true
+};
 const defaultStaffAccessCodes = [];
 const defaultBookingDestinations = [
   {
@@ -240,6 +247,7 @@ export async function saveReceptionistSettings(settings) {
         followUpStyle: next.followUpStyle,
         soundPreferences: next.soundPreferences,
         notificationPreferences: next.notificationPreferences,
+        insightLearning: next.insightLearning,
         staffAccessCodes: next.staffAccessCodes,
         bookingDestinations: next.bookingDestinations
       },
@@ -979,6 +987,7 @@ Do not ask questions. Do not say the DDD greeting. Only speak if needed after sa
   const fallbackBookingUrl =
     publicBaseUrl && !publicBaseUrl.includes("your-domain") ? `${publicBaseUrl.replace(/\/$/, "")}/api/book` : "";
   const bookingUrl = process.env.BOOKING_URL || fallbackBookingUrl;
+  const insightLearningNotes = buildInsightLearningNotes(activeSettings);
   return `
 You are the AI receptionist for ${business.name}.
 Your job is to answer Google Voice forwarded calls like a polished Smith.ai-style front-desk teammate for DDD.
@@ -1092,6 +1101,9 @@ DDD routing rules:
 - For general website or unclear DDD page questions, direct them to DDDCincy.com.
 - For contractor/job interest, direct them to DDD apply to work.
 - Do not mention DDD Tech, customer portal, Fish On, Rap League, TrustCall, or unrelated DDD products unless the admin adds them to the booking destinations.
+
+Insight learning:
+${insightLearningNotes}
 
 Business hours:
 ${Object.entries(business.hours).map(([day, hours]) => `- ${day}: ${hours}`).join("\n")}
@@ -1283,6 +1295,44 @@ export function callAcceptPayload(business, settings = {}) {
   };
 }
 
+function buildInsightLearningNotes(settings = {}) {
+  const learning = normalizeInsightLearning(settings.insightLearning);
+  const snapshot = settings.insightSnapshot || {};
+  if (!learning.enabled || !snapshot.sections) {
+    return "- Insight learning is off or there is not enough recent data yet. Follow the admin script exactly.";
+  }
+
+  const weekly = snapshot.sections.weekly || {};
+  const monthly = snapshot.sections.monthly || {};
+  const daily = snapshot.sections.daily || {};
+  const notes = [
+    "- Treat these notes as lightweight guidance from aggregate call history, not as a replacement for admin rules.",
+    "- Never invent policies from insights. If insight guidance conflicts with admin settings, admin settings win."
+  ];
+  if (learning.useTopServices) {
+    const service = weekly.topServices?.[0]?.label || monthly.topServices?.[0]?.label;
+    if (service) notes.push(`- Recent callers most often ask about ${service}. If a caller mentions this, skip generic category questions and go straight to the needed booking details.`);
+  }
+  if (learning.useTopLocations) {
+    const location = weekly.topLocations?.[0]?.label || monthly.topLocations?.[0]?.label;
+    if (location) notes.push(`- Recent calls cluster around ${location}. Still collect the exact address/cross street, but expect callers may reference that area casually.`);
+  }
+  if (learning.useQaIssues) {
+    const followUps = Number(daily.missed || 0) + Number(daily.needsReview || 0);
+    if (followUps > 0) notes.push(`- Today has ${followUps} call${followUps === 1 ? "" : "s"} needing follow-up. Be extra careful to capture callback number, exact location, service, and a clear next step.`);
+    if (Number(weekly.smsCoverageRate || 0) > 0 && Number(weekly.smsCoverageRate || 0) < 80) {
+      notes.push("- SMS coverage has been low. Ask permission to text and make sure smsConsent is true only when the caller agrees.");
+    }
+  }
+  if (learning.useSpeedSuggestions && Number(weekly.averageDurationSeconds || 0) > 150) {
+    notes.push("- Calls have been running long this week. Keep responses shorter, ask one high-value question at a time, and avoid repeating details already captured.");
+  }
+  if (snapshot.suggestions?.length) {
+    notes.push(`- Current admin insight suggestion: ${cleanLongText(snapshot.suggestions[0], "", 220)}`);
+  }
+  return notes.join("\n");
+}
+
 export function normalizeVoice(voice) {
   if (!voice || typeof voice !== "string") return "";
   const normalized = voice.trim().toLowerCase();
@@ -1375,6 +1425,8 @@ function normalizeSettings(settings = {}) {
     ),
     soundPreferences: normalizeSoundPreferences(settings.soundPreferences),
     notificationPreferences: normalizeNotificationPreferences(settings.notificationPreferences),
+    insightLearning: normalizeInsightLearning(settings.insightLearning),
+    insightSnapshot: settings.insightSnapshot || null,
     staffAccessCodes: normalizeStaffAccessCodes(settings.staffAccessCodes || parseStaffAccessCodes(process.env.STAFF_ACCESS_CODES || "")),
     bookingDestinations: normalizeBookingDestinations(settings.bookingDestinations),
     voiceOptions
@@ -1646,6 +1698,7 @@ export function buildDryRun(settings = {}, callerMessage = "") {
     action,
     bestNextLink,
     smsFollowUp: smsLine,
+    insightLearning: buildInsightLearningNotes(activeSettings),
     likelyReply: [
       `First response: ${firstResponse}`,
       `Next questions, one at a time: ${questions.join(" | ")}`,
@@ -1653,6 +1706,7 @@ export function buildDryRun(settings = {}, callerMessage = "") {
       startingEstimate ? `Starting price math: ${startingEstimate}` : "",
       `Best next link: ${bestNextLink}`,
       `SMS follow-up: ${smsLine}`,
+      `Insight learning: ${buildInsightLearningNotes(activeSettings).split("\n").slice(0, 3).join(" | ")}`,
       `Required outcome: ${activeSettings.callOutcomeRules}`,
       `Fallback if something breaks: ${activeSettings.fallbackRules}`
     ]
@@ -1886,6 +1940,16 @@ function normalizeNotificationPreferences(value = {}) {
     dailySummary: value.dailySummary !== false,
     weeklySummary: value.weeklySummary !== false,
     monthlySummary: value.monthlySummary !== false
+  };
+}
+
+function normalizeInsightLearning(value = {}) {
+  return {
+    enabled: value.enabled !== false,
+    useTopServices: value.useTopServices !== false,
+    useTopLocations: value.useTopLocations !== false,
+    useQaIssues: value.useQaIssues !== false,
+    useSpeedSuggestions: value.useSpeedSuggestions !== false
   };
 }
 
