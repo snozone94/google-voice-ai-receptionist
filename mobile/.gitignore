@@ -1,6 +1,7 @@
 node_modules/
 .expo/
 dist/
+store-assets/tmp/
 ios/
 android/
 npm-debug.log*

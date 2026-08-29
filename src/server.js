@@ -37,6 +37,17 @@ const app = express();
 const port = Number(process.env.PORT || 8787);
 const presence = new Map();
 
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Admin-Pin,x-admin-pin");
+  if (req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
+  next();
+});
+
 function openAIClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }

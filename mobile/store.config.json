@@ -13,7 +13,7 @@
     "info": {
       "en-US": {
         "title": "DDD AI Dispatch",
-        "subtitle": "AI call and text dispatch",
+        "subtitle": "Roadside AI dispatch",
         "description": "DDD AI Dispatch helps DDD Roadside Assistance manage AI-assisted phone intake, customer text follow-up, call logs, bookings, staff alerts, and daily business insights from one mobile admin app.\n\nAuthorized DDD staff can review inbound caller information, see call outcomes, read transcripts and summaries, reply to customer text threads, start outbound callback flows, adjust receptionist scripts, preview voice settings, pause or resume AI answering, and monitor service-request activity.\n\nThe app is built for DDD's roadside workflow: short emergency intake, vehicle and location details, supported-service routing, SMS follow-up, technician-ready booking information, and review or complaint escalation after service.",
         "keywords": [
           "dispatch",
