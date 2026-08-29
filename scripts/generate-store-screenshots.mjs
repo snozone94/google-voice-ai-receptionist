@@ -8,7 +8,10 @@ const outDir = new URL("../mobile/store-assets/appstore/", import.meta.url);
 const tmpDir = new URL("../mobile/store-assets/tmp/", import.meta.url);
 
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const size = { width: 1290, height: 2796 };
+const variants = [
+  { display: "iphone", width: 1290, height: 2796, phoneWidth: 910, phoneHeight: 1860, titleSize: 74, sidePad: 70 },
+  { display: "ipad", width: 2048, height: 2732, phoneWidth: 1260, phoneHeight: 1740, titleSize: 80, sidePad: 120 }
+];
 
 const screens = [
   {
@@ -124,29 +127,32 @@ const screens = [
 await mkdir(outDir, { recursive: true });
 await mkdir(tmpDir, { recursive: true });
 
-for (const screen of screens) {
-  const htmlPath = join(tmpDir.pathname, screen.file.replace(".png", ".html"));
-  const pngPath = join(outDir.pathname, screen.file);
-  await writeFile(htmlPath, renderScreen(screen), "utf8");
-  await run(chromePath, [
-    "--headless=new",
-    "--disable-gpu",
-    "--hide-scrollbars",
-    `--window-size=${size.width},${size.height}`,
-    `--screenshot=${pngPath}`,
-    pathToFileURL(htmlPath).href
-  ]);
-  console.log(`Generated ${pngPath}`);
+for (const variant of variants) {
+  for (const screen of screens) {
+    const outputFile = variant.display === "iphone" ? screen.file : screen.file.replace(/^\d+-/, "ipad-");
+    const htmlPath = join(tmpDir.pathname, outputFile.replace(".png", ".html"));
+    const pngPath = join(outDir.pathname, outputFile);
+    await writeFile(htmlPath, renderScreen(screen, variant), "utf8");
+    await run(chromePath, [
+      "--headless=new",
+      "--disable-gpu",
+      "--hide-scrollbars",
+      `--window-size=${variant.width},${variant.height}`,
+      `--screenshot=${pngPath}`,
+      pathToFileURL(htmlPath).href
+    ]);
+    console.log(`Generated ${pngPath}`);
+  }
 }
 
-function renderScreen(screen) {
+function renderScreen(screen, variant) {
   return `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
     <style>
       * { box-sizing: border-box; }
-      html, body { width: ${size.width}px; height: ${size.height}px; margin: 0; overflow: hidden; }
+      html, body { width: ${variant.width}px; height: ${variant.height}px; margin: 0; overflow: hidden; }
       body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         background:
@@ -156,14 +162,14 @@ function renderScreen(screen) {
           linear-gradient(135deg, #fff7fb 0%, #f8fff9 47%, #f6f2ff 100%);
         color: #151629;
       }
-      .frame { height: 100%; padding: 76px 70px 66px; position: relative; }
+      .frame { height: 100%; padding: 76px ${variant.sidePad}px 66px; position: relative; }
       .rainbow { position: absolute; inset: 0 0 auto; height: 18px; background: linear-gradient(90deg, #7657ff, #ff3ea5, #ff7a3d, #ffc83d, #23c779, #16b8ff); }
       .kicker { color: #a81586; font-size: 30px; font-weight: 900; text-transform: uppercase; letter-spacing: 0; margin-top: 14px; }
-      h1 { font-size: 74px; line-height: .98; margin: 18px 0 34px; max-width: 1050px; letter-spacing: 0; }
+      h1 { font-size: ${variant.titleSize}px; line-height: .98; margin: 18px 0 34px; max-width: ${variant.width - (variant.sidePad * 2)}px; letter-spacing: 0; }
       .phone {
         position: relative;
-        width: 910px;
-        height: 1860px;
+        width: ${variant.phoneWidth}px;
+        height: ${variant.phoneHeight}px;
         margin: 0 auto;
         border: 20px solid #151629;
         border-radius: 96px;

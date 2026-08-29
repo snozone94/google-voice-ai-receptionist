@@ -37,6 +37,13 @@
             "store-assets/appstore/03-call-log.png",
             "store-assets/appstore/04-insights.png",
             "store-assets/appstore/05-voice-settings.png"
+          ],
+          "APP_IPAD_PRO_129": [
+            "store-assets/appstore/ipad-home-admin-login.png",
+            "store-assets/appstore/ipad-shared-inbox.png",
+            "store-assets/appstore/ipad-call-log.png",
+            "store-assets/appstore/ipad-insights.png",
+            "store-assets/appstore/ipad-voice-settings.png"
           ]
         }
       }
