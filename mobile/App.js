@@ -20,6 +20,7 @@ import {
 const defaultApiBaseUrl = "https://google-voice-ai-receptionist.onrender.com";
 const apiStorageKey = "ddd-ai-dispatch-api-base-url";
 const adminPinStorageKey = "ddd-ai-dispatch-admin-pin";
+const staffPhoneStorageKey = "ddd-ai-dispatch-staff-phone";
 const tabs = [
   { name: "Home", color: "#7657ff" },
   { name: "Voice", color: "#ff3ea5" },
@@ -84,6 +85,7 @@ export default function App() {
   const [apiBaseUrl, setApiBaseUrl] = useState(defaultApiBaseUrl);
   const [savedApiBaseUrl, setSavedApiBaseUrl] = useState(defaultApiBaseUrl);
   const [adminPin, setAdminPin] = useState("");
+  const [staffPhone, setStaffPhone] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -140,13 +142,14 @@ export default function App() {
 
   useEffect(() => {
     let mounted = true;
-    Promise.all([AsyncStorage.getItem(apiStorageKey), AsyncStorage.getItem(adminPinStorageKey)])
-      .then(([value, savedPin]) => {
+    Promise.all([AsyncStorage.getItem(apiStorageKey), AsyncStorage.getItem(adminPinStorageKey), AsyncStorage.getItem(staffPhoneStorageKey)])
+      .then(([value, savedPin, savedStaffPhone]) => {
         if (!mounted) return;
         const nextUrl = normalizeBaseUrl(value || defaultApiBaseUrl);
         setApiBaseUrl(nextUrl);
         setSavedApiBaseUrl(nextUrl);
         setAdminPin(savedPin || "");
+        setStaffPhone(savedStaffPhone || "");
         loadAll(nextUrl, savedPin || "");
       })
       .catch(() => loadAll(defaultApiBaseUrl));
@@ -263,7 +266,9 @@ export default function App() {
               setAdminPin={setAdminPin}
               setApiBaseUrl={setApiBaseUrl}
               setEditMode={setEditMode}
+              setStaffPhone={setStaffPhone}
               setSettings={setSettings}
+              staffPhone={staffPhone}
               onRefresh={() => loadAll(cleanBaseUrl, adminPin)}
               onSaveBaseUrl={saveBaseUrl}
               onSaveSettings={() => saveSettings("manual")}
@@ -288,7 +293,17 @@ export default function App() {
           ) : null}
 
           {activeTab === "Flows" ? <FlowsTab editMode={editMode} settings={settings} setSettings={setSettings} /> : null}
-          {activeTab === "Inbox" ? <InboxTab conversations={activity.conversations} hasPin={Boolean(adminPin)} /> : null}
+          {activeTab === "Inbox" ? (
+            <InboxTab
+              adminPin={adminPin}
+              apiBaseUrl={cleanBaseUrl}
+              conversations={activity.conversations}
+              hasPin={Boolean(adminPin)}
+              onRefresh={() => loadAll(cleanBaseUrl, adminPin)}
+              setStatus={setStatus}
+              staffPhone={staffPhone}
+            />
+          ) : null}
           {activeTab === "Calls" ? <CallsTab calls={activity.calls} /> : null}
           {activeTab === "Insights" ? <InsightsTab insights={activity.insights} /> : null}
 
@@ -363,7 +378,9 @@ function HomeTab({
   setAdminPin,
   setApiBaseUrl,
   setEditMode,
+  setStaffPhone,
   setSettings,
+  staffPhone,
   onRefresh,
   onSaveBaseUrl,
   onSaveSettings
@@ -396,6 +413,16 @@ function HomeTab({
           value={adminPin}
         />
         <Text style={styles.muted}>The PIN is saved only on this phone for easier testing.</Text>
+        <Field
+          keyboardType="phone-pad"
+          label="Your call-back phone"
+          onChangeText={(value) => {
+            setStaffPhone(value);
+            AsyncStorage.setItem(staffPhoneStorageKey, value).catch(() => {});
+          }}
+          value={staffPhone}
+        />
+        <Text style={styles.muted}>Outbound calls ring this phone first, then connect the customer with DDD as caller ID.</Text>
       </Card>
 
       <Card title="Run costs">
@@ -510,12 +537,61 @@ function FlowsTab({ editMode, settings, setSettings }) {
   );
 }
 
-function InboxTab({ conversations, hasPin }) {
+function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setStatus, staffPhone }) {
+  const [drafts, setDrafts] = useState({});
+  const [workingThread, setWorkingThread] = useState("");
   const activeConversations = (conversations || []).slice(0, 10);
+
+  async function sendReply(customerPhone) {
+    const to = normalizeE164(customerPhone);
+    const message = String(drafts[to] || "").trim();
+    if (!to) {
+      setStatus("Could not find a valid customer phone number.");
+      return;
+    }
+    if (!message) {
+      setStatus("Type a reply first.");
+      return;
+    }
+    setWorkingThread(`sms:${to}`);
+    try {
+      await apiPost(apiBaseUrl, "/api/sms/reply", { to, message }, adminPin);
+      setDrafts((current) => ({ ...current, [to]: "" }));
+      setStatus("Text sent from DDD.");
+      onRefresh();
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setWorkingThread("");
+    }
+  }
+
+  async function callCustomer(customerPhone) {
+    const to = normalizeE164(customerPhone);
+    if (!to) {
+      setStatus("Could not find a valid customer phone number.");
+      return;
+    }
+    if (!normalizeE164(staffPhone)) {
+      setStatus("Add your call-back phone on Home first.");
+      return;
+    }
+    setWorkingThread(`call:${to}`);
+    try {
+      await apiPost(apiBaseUrl, "/api/calls/outbound", { to, staffPhone }, adminPin);
+      setStatus("Calling your phone now. Answer it to connect the customer with DDD caller ID.");
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setWorkingThread("");
+    }
+  }
+
   return (
     <>
       <Card title="Shared inbox">
         {!hasPin ? <Text style={styles.warningText}>Enter your admin PIN on Home, then tap Refresh to load protected inbox messages.</Text> : null}
+        {!normalizeE164(staffPhone) ? <Text style={styles.warningText}>Add your call-back phone on Home before using Call Customer.</Text> : null}
         <View style={styles.summaryGrid}>
           <SummaryTile label="Threads" value={activeConversations.length} />
           <SummaryTile label="Open texts" value={activeConversations.filter((item) => item.messages?.length).length} />
@@ -523,18 +599,59 @@ function InboxTab({ conversations, hasPin }) {
       </Card>
       <Card title="Customer texts">
         {activeConversations.map((conversation, index) => (
-        <LinearGradient key={conversation.threadId || conversation.customer || index} colors={["#fffaff", "#f7fffb"]} style={styles.listCard}>
-          <View style={styles.listHeader}>
-            <Text style={styles.listTitle} numberOfLines={1}>{formatPhone(getConversationCustomer(conversation)) || "Unknown customer"}</Text>
-            <Text style={styles.pill}>{conversation.messages?.length || 0} msgs</Text>
-          </View>
-          <Text style={styles.record} numberOfLines={3}>{getConversationPreview(conversation)}</Text>
-          <Text style={styles.muted} numberOfLines={1}>{getConversationTime(conversation)}</Text>
-        </LinearGradient>
+          <ConversationCard
+            conversation={conversation}
+            draft={drafts[normalizeE164(getConversationCustomer(conversation))] || ""}
+            key={conversation.threadId || conversation.customer || index}
+            onCall={callCustomer}
+            onDraftChange={(customerPhone, message) => {
+              const to = normalizeE164(customerPhone);
+              setDrafts((current) => ({ ...current, [to]: message }));
+            }}
+            onSend={sendReply}
+            workingThread={workingThread}
+          />
         ))}
         {activeConversations.length ? null : <Text style={styles.muted}>Texts will appear after SMS is fully live on Twilio.</Text>}
       </Card>
     </>
+  );
+}
+
+function ConversationCard({ conversation, draft, onCall, onDraftChange, onSend, workingThread }) {
+  const customerPhone = getConversationCustomer(conversation);
+  const normalizedPhone = normalizeE164(customerPhone);
+  const recentMessages = (conversation.messages || []).slice(-4);
+  const smsBusy = workingThread === `sms:${normalizedPhone}`;
+  const callBusy = workingThread === `call:${normalizedPhone}`;
+  return (
+    <LinearGradient colors={["#fffaff", "#f7fffb"]} style={styles.listCard}>
+      <View style={styles.listHeader}>
+        <Text style={styles.listTitle} numberOfLines={1}>{formatPhone(customerPhone) || "Unknown customer"}</Text>
+        <Text style={styles.pill}>{conversation.messages?.length || 0} msgs</Text>
+      </View>
+      <Text style={styles.muted} numberOfLines={1}>{getConversationTime(conversation)}</Text>
+      <View style={styles.messagePreviewStack}>
+        {recentMessages.length ? recentMessages.map((message, index) => (
+          <View key={`${message.createdAt || index}-${message.direction}`} style={[styles.textBubble, message.direction === "outbound" && styles.textBubbleOutbound]}>
+            <Text style={[styles.textBubbleLabel, message.direction === "outbound" && styles.textBubbleLabelOutbound]}>
+              {message.direction === "outbound" ? message.agentName || "DDD" : "Customer"}
+            </Text>
+            <Text style={[styles.textBubbleBody, message.direction === "outbound" && styles.textBubbleBodyOutbound]}>{message.body || message.text || ""}</Text>
+          </View>
+        )) : <Text style={styles.record} numberOfLines={3}>{getConversationPreview(conversation)}</Text>}
+      </View>
+      <Field
+        label="Reply from DDD"
+        multiline
+        onChangeText={(message) => onDraftChange(customerPhone, message)}
+        value={draft}
+      />
+      <View style={styles.buttonRow}>
+        <ActionButton disabled={smsBusy} label={smsBusy ? "Sending..." : "Send text"} onPress={() => onSend(customerPhone)} />
+        <ActionButton disabled={callBusy} label={callBusy ? "Calling..." : "Call customer"} onPress={() => onCall(customerPhone)} variant="light" />
+      </View>
+    </LinearGradient>
   );
 }
 
@@ -868,6 +985,13 @@ function formatPhone(value) {
   return `(${normalized.slice(0, 3)}) ${normalized.slice(3, 6)}-${normalized.slice(6)}`;
 }
 
+function normalizeE164(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return "";
+}
+
 function getConversationCustomer(conversation = {}) {
   return conversation.customer || conversation.phone || conversation.from || conversation.messages?.at?.(-1)?.from || "";
 }
@@ -1142,6 +1266,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4
   },
+  messagePreviewStack: { gap: 7 },
+  textBubble: {
+    alignSelf: "flex-start",
+    maxWidth: "92%",
+    borderColor: "rgba(22, 184, 255, 0.18)",
+    borderRadius: 16,
+    borderBottomLeftRadius: 6,
+    borderWidth: 1,
+    backgroundColor: "#f0fbff",
+    padding: 10
+  },
+  textBubbleOutbound: {
+    alignSelf: "flex-end",
+    borderColor: "rgba(255, 62, 165, 0.18)",
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 6,
+    backgroundColor: "#fff0fa"
+  },
+  textBubbleLabel: {
+    color: "#086e9e",
+    fontSize: 11,
+    fontWeight: "900",
+    marginBottom: 3,
+    textTransform: "uppercase"
+  },
+  textBubbleLabelOutbound: { color: "#a81586" },
+  textBubbleBody: { color: "#203040", fontSize: 13, lineHeight: 18 },
+  textBubbleBodyOutbound: { color: "#3f2140" },
   insightRow: { alignItems: "center", borderTopColor: "#f0edf8", borderTopWidth: 1, flexDirection: "row", justifyContent: "space-between", gap: 12, paddingTop: 10 },
   miniList: {
     gap: 7,

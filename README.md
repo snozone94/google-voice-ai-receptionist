@@ -203,6 +203,10 @@ BUSINESS_NAME
 BUSINESS_PHONE
 GOOGLE_VOICE_NUMBER
 AI_FORWARDING_NUMBER
+TWILIO_ACCOUNT_SID
+TWILIO_AUTH_TOKEN
+TWILIO_SMS_FROM
+TWILIO_VOICE_FROM
 ADMIN_PIN
 ADMIN_STAFF_NAME
 STAFF_ACCESS_CODES
@@ -218,6 +222,8 @@ DDD_TECH_TEAM_SECRET
 ```
 
 `ADMIN_PIN` controls settings edits. `STAFF_ACCESS_CODES` controls Inbox access and replies with a comma-separated list like `Owner:1111,Tech 1:2222,Tech 2:3333,Dispatch:4444`.
+
+Outbound calls from the mobile app use Twilio to call the staff member first, then bridge to the customer with `TWILIO_VOICE_FROM` as caller ID. Use the same Twilio number as `TWILIO_SMS_FROM` if you want texts and outbound calls to show the same DDD number.
 
 Twilio voice webhook:
 

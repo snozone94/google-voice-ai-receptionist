@@ -251,6 +251,44 @@ app.post("/api/sms/reply", express.json(), async (req, res, next) => {
   }
 });
 
+app.post("/api/calls/outbound", express.json(), async (req, res, next) => {
+  try {
+    const staff = await getStaffAccess(req);
+    if (!staff.ok) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+
+    const customerPhone = normalizeE164(req.body?.to || req.body?.customerPhone);
+    const staffPhone = normalizeE164(req.body?.staffPhone || req.body?.from);
+    if (!customerPhone) {
+      res.status(400).json({ ok: false, error: "Enter a valid customer phone number." });
+      return;
+    }
+    if (!staffPhone) {
+      res.status(400).json({ ok: false, error: "Enter your phone number so DDD can connect the outbound call." });
+      return;
+    }
+
+    const delivery = await startTwilioBridgeCall(staffPhone, customerPhone);
+    await saveCallEvent({
+      type: "twilio.outbound.call",
+      call_id: delivery.sid || "",
+      caller: staffPhone,
+      status: delivery.ok ? "initiated" : "failed",
+      details: {
+        staff: staff.name,
+        staffRole: staff.role,
+        customerPhone,
+        from: delivery.from || process.env.TWILIO_VOICE_FROM || process.env.TWILIO_SMS_FROM || process.env.AI_FORWARDING_NUMBER || ""
+      }
+    });
+    res.status(delivery.ok ? 201 : 502).json({ ok: delivery.ok, delivery, staff });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/twilio/voice-verify", express.urlencoded({ extended: false }), async (req, res) => {
   if (!hasTwilioSmsAccess(req)) {
     res.status(403).send("Forbidden");
@@ -273,6 +311,26 @@ app.get("/api/twilio/voice", async (req, res, next) => {
 
 app.post("/api/twilio/voice", express.urlencoded({ extended: false }), async (req, res, next) => {
   handleTwilioVoice(req, res, next);
+});
+
+app.post("/api/twilio/outbound-bridge", express.urlencoded({ extended: false }), async (req, res) => {
+  if (!hasTwilioSmsAccess(req)) {
+    res.status(403).send("Forbidden");
+    return;
+  }
+
+  const to = normalizeE164(req.query.to || req.body?.to);
+  const from = normalizeE164(process.env.TWILIO_VOICE_FROM || process.env.TWILIO_SMS_FROM || process.env.AI_FORWARDING_NUMBER || process.env.GOOGLE_VOICE_NUMBER);
+  if (!to || !from) {
+    res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>DDD could not connect this outbound call.</Say></Response>`);
+    return;
+  }
+
+  res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Connecting your DDD call now.</Say>
+  <Dial callerId="${escapeXml(from)}">${escapeXml(to)}</Dial>
+</Response>`);
 });
 
 async function handleTwilioVoice(req, res, next) {
@@ -1085,11 +1143,69 @@ async function sendTwilioSms(to, message) {
   };
 }
 
+async function startTwilioBridgeCall(staffPhone, customerPhone) {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const from = normalizeE164(process.env.TWILIO_VOICE_FROM || process.env.TWILIO_SMS_FROM || process.env.AI_FORWARDING_NUMBER || process.env.GOOGLE_VOICE_NUMBER);
+  const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+  const secret = process.env.TWILIO_SMS_WEBHOOK_SECRET || "";
+  if (!accountSid || !authToken || !from || !publicBaseUrl || !secret) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: "Twilio outbound calling is not fully configured yet."
+    };
+  }
+
+  const bridgeUrl = `${publicBaseUrl}/api/twilio/outbound-bridge?secret=${encodeURIComponent(secret)}&to=${encodeURIComponent(customerPhone)}`;
+  const body = new URLSearchParams({
+    From: from,
+    To: staffPhone,
+    Url: bridgeUrl,
+    Method: "POST"
+  });
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`,
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body
+  });
+  const payload = await response.json().catch(async () => ({
+    message: await response.text().catch(() => "Twilio returned an unreadable response.")
+  }));
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: payload.status || response.status,
+      error: payload.message || "Twilio outbound call failed.",
+      code: payload.code
+    };
+  }
+  return {
+    ok: true,
+    sid: payload.sid,
+    status: payload.status,
+    to: payload.to,
+    from: payload.from,
+    customerPhone
+  };
+}
+
 function normalizeE164(value) {
   const digits = String(value || "").replace(/\D/g, "");
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
   return "";
+}
+
+function escapeXml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 app.use(express.static(new URL("../web", import.meta.url).pathname));
