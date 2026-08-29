@@ -353,7 +353,7 @@ export async function buildBusinessInsights() {
     weekly: summarizeInsightPeriod(windows[2], windows[3], { callLog, leads, bookings, sms }),
     monthly: summarizeInsightPeriod(windows[4], windows[5], { callLog, leads, bookings, sms })
   };
-  sections.latestActiveDay = sections.daily.calls || sections.daily.bookings || sections.daily.leads || sections.daily.smsSent || sections.daily.smsReceived
+  sections.latestActiveDay = sections.daily.calls || sections.daily.bookings || sections.daily.leads
     ? sections.daily
     : summarizeLatestActiveDay(generatedAt, { callLog, leads, bookings, sms });
   return {
@@ -370,7 +370,7 @@ function summarizeLatestActiveDay(now, records) {
     const currentWindow = makeInsightWindow(`Latest active day (${offset === 1 ? "yesterday" : `${offset} days ago`})`, "day", now, 1, offset);
     const previousWindow = makeInsightWindow("Previous active comparison", "day", now, 1, offset + 1);
     const summary = summarizeInsightPeriod(currentWindow, previousWindow, records);
-    if (summary.calls || summary.bookings || summary.leads || summary.smsSent || summary.smsReceived) {
+    if (summary.calls || summary.bookings || summary.leads) {
       return summary;
     }
   }
