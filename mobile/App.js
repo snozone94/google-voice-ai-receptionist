@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio } from "expo-av";
+import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -20,6 +21,8 @@ const defaultApiBaseUrl = "https://google-voice-ai-receptionist.onrender.com";
 const apiStorageKey = "ddd-ai-dispatch-api-base-url";
 const adminPinStorageKey = "ddd-ai-dispatch-admin-pin";
 const tabs = ["Home", "Voice", "Script", "Flows", "Inbox", "Calls", "Insights"];
+const rainbowColors = ["#7657ff", "#ff3ea5", "#ff7a3d", "#ffc83d", "#23c779", "#16b8ff", "#7657ff"];
+const softRainbowColors = ["rgba(255, 62, 165, 0.16)", "rgba(255, 200, 61, 0.12)", "rgba(35, 199, 121, 0.12)", "rgba(22, 184, 255, 0.16)", "rgba(118, 87, 255, 0.14)"];
 
 const billingLinks = [
   ["Twilio billing", "Top up phone and SMS", "https://console.twilio.com/us1/billing"],
@@ -235,7 +238,7 @@ export default function App() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
-      <View style={styles.shell}>
+      <LinearGradient colors={["#fff7fb", "#f8fff9", "#f7f5ff"]} style={styles.shell}>
         <Header business={business} settings={settings} activity={activity} editMode={editMode} />
         <View style={styles.tabWrap}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabContent}>
@@ -245,7 +248,13 @@ export default function App() {
                 onPress={() => setActiveTab(tab)}
                 style={[styles.tabButton, activeTab === tab && styles.tabButtonActive]}
               >
-                <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
+                {activeTab === tab ? (
+                  <LinearGradient colors={rainbowColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.tabGradient}>
+                    <Text style={[styles.tabText, styles.tabTextActive]}>{tab}</Text>
+                  </LinearGradient>
+                ) : (
+                  <Text style={styles.tabText}>{tab}</Text>
+                )}
               </Pressable>
             ))}
           </ScrollView>
@@ -297,17 +306,19 @@ export default function App() {
           {loading ? <ActivityIndicator color="#7d4dff" /> : null}
           <Text style={styles.status}>{status}</Text>
         </ScrollView>
-      </View>
+      </LinearGradient>
     </SafeAreaView>
   );
 }
 
 function Header({ activity, business, editMode, settings }) {
   return (
-    <View style={styles.header}>
-      <View style={styles.heroGlow} />
+    <LinearGradient colors={["rgba(255, 255, 255, 0.96)", "rgba(255, 255, 255, 0.78)"]} style={styles.header}>
+      <LinearGradient colors={rainbowColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.heroGlow} />
       <View style={styles.brandRow}>
-        <Image source={require("./assets/icon.png")} style={styles.logo} />
+        <LinearGradient colors={["#ffffff", "#fff0fa"]} style={styles.logoFrame}>
+          <Image source={require("./assets/icon.png")} style={styles.logo} />
+        </LinearGradient>
         <View style={styles.brandCopy}>
           <Text style={styles.eyebrow}>DDD AI Dispatch</Text>
           <Text style={styles.title}>{business?.name || "DDD AI Dispatch"}</Text>
@@ -320,7 +331,7 @@ function Header({ activity, business, editMode, settings }) {
         <Metric label="Texts" value={activity.conversations.length} />
         <Metric label="Mode" value={editMode ? "Editing" : "Locked"} />
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -376,8 +387,10 @@ function HomeTab({
         <View style={styles.linkGrid}>
           {billingLinks.map(([label, detail, url]) => (
             <Pressable key={url} onPress={() => Linking.openURL(url)} style={styles.linkCard}>
-              <Text style={styles.linkLabel}>{label}</Text>
-              <Text style={styles.linkDetail}>{detail}</Text>
+              <LinearGradient colors={["#fffaff", "#f7fffb"]} style={styles.linkCardInner}>
+                <Text style={styles.linkLabel}>{label}</Text>
+                <Text style={styles.linkDetail}>{detail}</Text>
+              </LinearGradient>
             </Pressable>
           ))}
         </View>
@@ -485,13 +498,13 @@ function InboxTab({ conversations }) {
   return (
     <Card title="Shared inbox">
       {(conversations || []).slice(0, 12).map((conversation, index) => (
-        <View key={conversation.threadId || conversation.customer || index} style={styles.listCard}>
+        <LinearGradient key={conversation.threadId || conversation.customer || index} colors={["#fffaff", "#f7fffb"]} style={styles.listCard}>
           <View style={styles.listHeader}>
             <Text style={styles.listTitle}>{formatPhone(conversation.customer || conversation.from || "Unknown")}</Text>
             <Text style={styles.pill}>{conversation.messages?.length || 0} msgs</Text>
           </View>
           <Text style={styles.muted}>{conversation.lastMessage || conversation.preview || "No message preview available."}</Text>
-        </View>
+        </LinearGradient>
       ))}
       {conversations?.length ? null : <Text style={styles.muted}>Texts will appear after SMS is fully live on Twilio.</Text>}
     </Card>
@@ -502,14 +515,14 @@ function CallsTab({ calls }) {
   return (
     <Card title="Call log">
       {(calls || []).slice(0, 12).map((call, index) => (
-        <View key={call.id || call.callId || index} style={styles.listCard}>
+        <LinearGradient key={call.id || call.callId || index} colors={["#fffaff", "#f7fffb"]} style={styles.listCard}>
           <View style={styles.listHeader}>
             <Text style={styles.listTitle}>{formatPhone(call.caller || call.from || "Unknown caller")}</Text>
             <Text style={styles.pill}>{call.durationLabel || "No time"}</Text>
           </View>
           <Text style={styles.muted}>{call.outcome?.label || call.status || "Logged"}</Text>
           <Text style={styles.record}>{call.outcome?.detail || call.transcriptText || "Transcript will appear after the call is processed."}</Text>
-        </View>
+        </LinearGradient>
       ))}
       {calls?.length ? null : <Text style={styles.muted}>Forwarded calls will appear here.</Text>}
     </Card>
@@ -524,10 +537,10 @@ function InsightsTab({ insights }) {
     <>
       <Card title="Business brain">
         {(insights?.suggestions || []).slice(0, 5).map((suggestion, index) => (
-          <View key={`${suggestion}-${index}`} style={styles.listCard}>
+          <LinearGradient key={`${suggestion}-${index}`} colors={["#fffaff", "#f7fffb"]} style={styles.listCard}>
             <Text style={styles.linkLabel}>Suggestion {index + 1}</Text>
             <Text style={styles.record}>{suggestion}</Text>
-          </View>
+          </LinearGradient>
         ))}
         {insights?.suggestions?.length ? null : <Text style={styles.muted}>Suggestions will appear after more calls and transcripts.</Text>}
       </Card>
@@ -544,11 +557,11 @@ function InsightsTab({ insights }) {
 
 function Card({ children, title }) {
   return (
-    <View style={styles.card}>
-      <View style={styles.cardBar} />
+    <LinearGradient colors={["rgba(255, 255, 255, 0.96)", "rgba(255, 255, 255, 0.78)"]} style={styles.card}>
+      <LinearGradient colors={rainbowColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.cardBar} />
       <Text style={styles.cardTitle}>{title}</Text>
       {children}
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -583,17 +596,23 @@ function ActionButton({ disabled = false, label, onPress, variant = "primary" })
         pressed && !disabled && styles.pressedButton
       ]}
     >
-      <Text style={[styles.buttonText, variant === "light" && styles.lightButtonText]}>{label}</Text>
+      {variant === "light" ? (
+        <Text style={[styles.buttonText, styles.lightButtonText]}>{label}</Text>
+      ) : (
+        <LinearGradient colors={rainbowColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.buttonGradient}>
+          <Text style={styles.buttonText}>{label}</Text>
+        </LinearGradient>
+      )}
     </Pressable>
   );
 }
 
 function Metric({ label, value }) {
   return (
-    <View style={styles.metric}>
+    <LinearGradient colors={["#fffaff", "#f5fffb"]} style={styles.metric}>
       <Text style={styles.metricLabel}>{label}</Text>
       <Text style={styles.metricValue}>{String(value)}</Text>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -809,17 +828,38 @@ const styles = StyleSheet.create({
     shadowColor: "#3b2267",
     shadowOffset: { width: 0, height: 16 },
     shadowOpacity: 0.14,
-    shadowRadius: 28
+    shadowRadius: 28,
+    elevation: 8
   },
   heroGlow: { height: 8, borderRadius: 999, backgroundColor: "#ff3ea5", marginBottom: 14 },
   brandRow: { alignItems: "center", flexDirection: "row", gap: 12 },
+  logoFrame: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: 66,
+    height: 66,
+    borderRadius: 22,
+    shadowColor: "#e640a5",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 5
+  },
   logo: { width: 58, height: 58, borderRadius: 18 },
   brandCopy: { flex: 1, minWidth: 0 },
   eyebrow: { color: "#b7218f", fontSize: 12, fontWeight: "900", textTransform: "uppercase" },
   title: { color: "#161827", fontSize: 27, fontWeight: "900" },
   subtitle: { color: "#5d6178", fontSize: 14, fontWeight: "700", lineHeight: 19 },
   metricStrip: { flexDirection: "row", gap: 8, marginTop: 14 },
-  metric: { flex: 1, minHeight: 58, borderRadius: 18, backgroundColor: "#fbf7ff", padding: 9 },
+  metric: {
+    flex: 1,
+    minHeight: 58,
+    borderColor: "rgba(118, 87, 255, 0.12)",
+    borderRadius: 18,
+    borderWidth: 1,
+    backgroundColor: "#fbf7ff",
+    padding: 9
+  },
   metricLabel: { color: "#a81586", fontSize: 10, fontWeight: "900", textTransform: "uppercase" },
   metricValue: { color: "#161827", fontSize: 16, fontWeight: "900", marginTop: 3 },
   tabWrap: { marginTop: 12 },
@@ -831,9 +871,11 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     backgroundColor: "#ffffff",
+    overflow: "hidden",
     paddingHorizontal: 16
   },
-  tabButtonActive: { borderColor: "#ff3ea5", backgroundColor: "#7d4dff" },
+  tabButtonActive: { borderColor: "#ff3ea5", backgroundColor: "#7d4dff", paddingHorizontal: 0 },
+  tabGradient: { minHeight: 42, justifyContent: "center", paddingHorizontal: 16 },
   tabText: { color: "#34364d", fontWeight: "900" },
   tabTextActive: { color: "#ffffff" },
   content: { gap: 12, padding: 14, paddingBottom: 44 },
@@ -848,7 +890,8 @@ const styles = StyleSheet.create({
     shadowColor: "#3b2267",
     shadowOffset: { width: 0, height: 14 },
     shadowOpacity: 0.12,
-    shadowRadius: 24
+    shadowRadius: 24,
+    elevation: 6
   },
   cardBar: { height: 5, borderRadius: 999, backgroundColor: "#16b8ff" },
   cardTitle: { color: "#161827", fontSize: 20, fontWeight: "900" },
@@ -875,14 +918,21 @@ const styles = StyleSheet.create({
     minHeight: 46,
     borderRadius: 999,
     backgroundColor: "#7657ff",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    overflow: "hidden",
     shadowColor: "#e640a5",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
-    shadowRadius: 16
+    shadowRadius: 16,
+    elevation: 4
   },
-  lightButton: { backgroundColor: "#fff0fa" },
+  buttonGradient: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 46,
+    paddingHorizontal: 16,
+    paddingVertical: 10
+  },
+  lightButton: { backgroundColor: "#fff0fa", paddingHorizontal: 16, paddingVertical: 10 },
   disabledButton: { opacity: 0.55 },
   pressedButton: { opacity: 0.82 },
   buttonText: { color: "#ffffff", fontWeight: "900" },
@@ -895,6 +945,10 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     backgroundColor: "#fffaff",
+    overflow: "hidden"
+  },
+  linkCardInner: {
+    flex: 1,
     justifyContent: "center",
     padding: 10
   },
@@ -923,7 +977,12 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     backgroundColor: "#fffaff",
-    padding: 12
+    padding: 12,
+    shadowColor: "#3b2267",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 3
   },
   listHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", gap: 10 },
   listTitle: { flex: 1, color: "#161827", fontSize: 16, fontWeight: "900" },
