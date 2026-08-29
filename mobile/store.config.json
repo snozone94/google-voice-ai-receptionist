@@ -1,0 +1,84 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "version": "1.0",
+    "copyright": "2026 DDD Roadside Assistance LLC",
+    "categories": [
+      "BUSINESS",
+      "PRODUCTIVITY"
+    ],
+    "release": {
+      "automaticRelease": false
+    },
+    "info": {
+      "en-US": {
+        "title": "DDD AI Dispatch",
+        "subtitle": "AI call and text dispatch",
+        "description": "DDD AI Dispatch helps DDD Roadside Assistance manage AI-assisted phone intake, customer text follow-up, call logs, bookings, staff alerts, and daily business insights from one mobile admin app.\n\nAuthorized DDD staff can review inbound caller information, see call outcomes, read transcripts and summaries, reply to customer text threads, start outbound callback flows, adjust receptionist scripts, preview voice settings, pause or resume AI answering, and monitor service-request activity.\n\nThe app is built for DDD's roadside workflow: short emergency intake, vehicle and location details, supported-service routing, SMS follow-up, technician-ready booking information, and review or complaint escalation after service.",
+        "keywords": [
+          "dispatch",
+          "roadside",
+          "receptionist",
+          "calls",
+          "sms",
+          "booking",
+          "DDD",
+          "service"
+        ],
+        "releaseNotes": "Initial DDD AI Dispatch release with mobile admin login, AI answering controls, shared inbox, call log, insights, voice settings, and push notification setup.",
+        "promoText": "Mobile admin tools for DDD's AI receptionist, customer texts, calls, bookings, and service insights.",
+        "marketingUrl": "https://google-voice-ai-receptionist.onrender.com",
+        "supportUrl": "https://google-voice-ai-receptionist.onrender.com/support",
+        "privacyPolicyUrl": "https://google-voice-ai-receptionist.onrender.com/privacy",
+        "screenshots": {
+          "APP_IPHONE_67": [
+            "store-assets/appstore/01-home-admin-login.png",
+            "store-assets/appstore/02-shared-inbox.png",
+            "store-assets/appstore/03-call-log.png",
+            "store-assets/appstore/04-insights.png",
+            "store-assets/appstore/05-voice-settings.png"
+          ]
+        }
+      }
+    },
+    "advisory": {
+      "ageRatingOverride": "NONE",
+      "alcoholTobaccoOrDrugUseOrReferences": "NONE",
+      "contests": "NONE",
+      "gambling": false,
+      "gamblingSimulated": "NONE",
+      "horrorOrFearThemes": "NONE",
+      "kidsAgeBand": null,
+      "koreaAgeRatingOverride": "NONE",
+      "lootBox": false,
+      "matureOrSuggestiveThemes": "NONE",
+      "medicalOrTreatmentInformation": "NONE",
+      "profanityOrCrudeHumor": "NONE",
+      "sexualContentGraphicAndNudity": "NONE",
+      "sexualContentOrNudity": "NONE",
+      "unrestrictedWebAccess": false,
+      "violenceCartoonOrFantasy": "NONE",
+      "violenceRealistic": "NONE",
+      "violenceRealisticProlongedGraphicOrSadistic": "NONE",
+      "advertising": false,
+      "ageAssurance": false,
+      "ageRatingOverrideV2": "NONE",
+      "developerAgeRatingInfoUrl": null,
+      "gunsOrOtherWeapons": "NONE",
+      "healthOrWellnessTopics": false,
+      "messagingAndChat": true,
+      "parentalControls": false,
+      "userGeneratedContent": false
+    },
+    "review": {
+      "firstName": "Brianna",
+      "lastName": "Duhart",
+      "email": "support@dddcincy.com",
+      "phone": "+15134091342",
+      "demoUsername": "Admin PIN",
+      "demoPassword": "9706",
+      "demoRequired": true,
+      "notes": "This is the DDD AI Dispatch admin app for DDD Roadside Assistance staff. To review protected features, open the app, enter admin PIN 9706, and tap Unlock admin. The app connects to the live DDD AI Dispatch backend at https://google-voice-ai-receptionist.onrender.com. Reviewers can view settings, voice controls, script controls, shared inbox, call log, and insights. Push notification setup can be tested from the Home tab; phone/SMS/calling features depend on the connected DDD Twilio account and live service data."
+    }
+  }
+}

@@ -57,6 +57,85 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/privacy", (_req, res) => {
+  res.type("html").send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DDD AI Dispatch Privacy Policy</title>
+    <style>
+      body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #171827; background: linear-gradient(135deg, #fff7fb, #f6fff8, #f7f4ff); }
+      main { max-width: 840px; margin: 0 auto; padding: 40px 20px 56px; }
+      section { background: rgba(255, 255, 255, 0.92); border: 1px solid rgba(118, 87, 255, 0.18); border-radius: 22px; box-shadow: 0 18px 48px rgba(59, 34, 103, 0.12); padding: 28px; }
+      h1 { font-size: clamp(2rem, 7vw, 3.8rem); line-height: 1; margin: 0 0 12px; }
+      h2 { margin-top: 28px; }
+      p, li { color: #41445d; font-size: 1rem; line-height: 1.65; }
+      a { color: #a81586; font-weight: 800; }
+      .bar { height: 7px; border-radius: 999px; background: linear-gradient(90deg, #7657ff, #ff3ea5, #ff7a3d, #ffc83d, #23c779, #16b8ff); margin-bottom: 22px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <div class="bar"></div>
+        <h1>DDD AI Dispatch Privacy Policy</h1>
+        <p><strong>Last updated:</strong> August 29, 2026</p>
+        <p>DDD AI Dispatch is an operations tool for DDD Roadside Assistance LLC. It helps authorized staff review AI-assisted phone intake, call outcomes, customer text conversations, booking details, and service insights.</p>
+
+        <h2>Information the app uses</h2>
+        <p>The app may display or process customer names, phone numbers, service requests, vehicle details, location or address information provided during booking, call transcripts, call recordings, SMS messages, booking status, technician notes, and app notification tokens for staff alerts.</p>
+
+        <h2>How information is used</h2>
+        <p>Information is used to answer and triage calls, create or update service requests, text booking and support links, notify authorized DDD staff, review call quality, improve scripts, and manage roadside service follow-up.</p>
+
+        <h2>Sharing</h2>
+        <p>DDD AI Dispatch uses service providers needed to operate the system, including hosting, telephony/SMS, AI transcription or voice services, push notifications, and DDD-owned booking portals. DDD does not sell customer personal information.</p>
+
+        <h2>Messages and opt out</h2>
+        <p>Customers may receive service-related SMS updates. Message frequency varies. Message and data rates may apply. Customers can reply STOP to opt out or HELP for help.</p>
+
+        <h2>Data retention and deletion</h2>
+        <p>Operational records may be retained as needed for dispatch, customer support, quality review, legal, tax, or safety purposes. To request access, correction, or deletion, contact <a href="mailto:support@dddcincy.com">support@dddcincy.com</a>.</p>
+
+        <h2>Contact</h2>
+        <p>DDD Roadside Assistance LLC<br />Cincinnati, Ohio<br /><a href="https://dddcincy.com">dddcincy.com</a><br /><a href="mailto:support@dddcincy.com">support@dddcincy.com</a></p>
+      </section>
+    </main>
+  </body>
+</html>`);
+});
+
+app.get("/support", (_req, res) => {
+  res.type("html").send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DDD AI Dispatch Support</title>
+    <style>
+      body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #171827; background: linear-gradient(135deg, #fff7fb, #f6fff8, #f7f4ff); }
+      main { max-width: 760px; margin: 0 auto; padding: 40px 20px 56px; }
+      section { background: rgba(255, 255, 255, 0.92); border: 1px solid rgba(118, 87, 255, 0.18); border-radius: 22px; box-shadow: 0 18px 48px rgba(59, 34, 103, 0.12); padding: 28px; }
+      h1 { font-size: clamp(2rem, 7vw, 3.5rem); line-height: 1; margin: 0 0 12px; }
+      p, li { color: #41445d; font-size: 1rem; line-height: 1.65; }
+      a { color: #a81586; font-weight: 800; }
+      .bar { height: 7px; border-radius: 999px; background: linear-gradient(90deg, #7657ff, #ff3ea5, #ff7a3d, #ffc83d, #23c779, #16b8ff); margin-bottom: 22px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <div class="bar"></div>
+        <h1>DDD AI Dispatch Support</h1>
+        <p>For DDD AI Dispatch app support, account access help, privacy requests, customer complaint routing, or deletion requests, email <a href="mailto:support@dddcincy.com">support@dddcincy.com</a>.</p>
+        <p>For roadside service, booking, and customer portal help, visit <a href="https://dddcincy.com">dddcincy.com</a>.</p>
+      </section>
+    </main>
+  </body>
+</html>`);
+});
+
 app.get("/api/setup-status", (_req, res) => {
   const required = {
     openAIKey: Boolean(process.env.OPENAI_API_KEY),
