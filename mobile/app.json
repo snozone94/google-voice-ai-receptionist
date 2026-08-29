@@ -9,7 +9,10 @@
     "scheme": "dddaidispatch",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.dddcincy.aireceptionist"
+      "bundleIdentifier": "com.dddcincy.aireceptionist",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.dddcincy.aireceptionist",
@@ -22,7 +25,11 @@
       "bundler": "metro"
     },
     "extra": {
-      "defaultApiBaseUrl": "https://google-voice-ai-receptionist.onrender.com"
-    }
+      "defaultApiBaseUrl": "https://google-voice-ai-receptionist.onrender.com",
+      "eas": {
+        "projectId": "1cb2854e-bd1b-48ab-9b00-85f1d7259ccc"
+      }
+    },
+    "owner": "dddcincy"
   }
 }
