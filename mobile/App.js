@@ -94,7 +94,7 @@ export default function App() {
 
   const cleanBaseUrl = useMemo(() => normalizeBaseUrl(apiBaseUrl), [apiBaseUrl]);
 
-  const loadAll = useCallback(async (baseUrl = cleanBaseUrl) => {
+  const loadAll = useCallback(async (baseUrl = cleanBaseUrl, accessPin = adminPin) => {
     const targetBaseUrl = normalizeBaseUrl(baseUrl);
     setLoading(true);
     try {
@@ -106,8 +106,8 @@ export default function App() {
           apiGet(targetBaseUrl, "/api/calls"),
           apiGet(targetBaseUrl, "/api/leads"),
           apiGet(targetBaseUrl, "/api/bookings"),
-          apiGet(targetBaseUrl, "/api/conversations", adminPin).catch(() => ({ conversations: [], locked: true })),
-          apiGet(targetBaseUrl, "/api/insights", adminPin).catch(() => null)
+          apiGet(targetBaseUrl, "/api/conversations", accessPin).catch(() => ({ conversations: [], locked: true })),
+          apiGet(targetBaseUrl, "/api/insights", accessPin).catch(() => null)
         ]);
 
       const nextSettings = toFormSettings(settingsResponse);
@@ -128,7 +128,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [cleanBaseUrl]);
+  }, [adminPin, cleanBaseUrl]);
 
   useEffect(() => {
     let mounted = true;
@@ -139,7 +139,7 @@ export default function App() {
         setApiBaseUrl(nextUrl);
         setSavedApiBaseUrl(nextUrl);
         setAdminPin(savedPin || "");
-        loadAll(nextUrl);
+        loadAll(nextUrl, savedPin || "");
       })
       .catch(() => loadAll(defaultApiBaseUrl));
     return () => {
@@ -166,7 +166,7 @@ export default function App() {
     setApiBaseUrl(next);
     setSavedApiBaseUrl(next);
     setStatus("Backend URL saved.");
-    loadAll(next);
+    loadAll(next, adminPin);
   }
 
   async function saveSettings(reason = "manual") {
@@ -241,7 +241,7 @@ export default function App() {
       <LinearGradient colors={["#fff7fb", "#f8fff9", "#f7f5ff"]} style={styles.shell}>
         <Header business={business} settings={settings} activity={activity} editMode={editMode} />
         <LinearGradient colors={["rgba(255, 255, 255, 0.92)", "rgba(255, 255, 255, 0.72)"]} style={styles.tabWrap}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabContent}>
+          <View style={styles.tabContent}>
             {tabs.map((tab) => (
               <Pressable
                 key={tab}
@@ -257,7 +257,7 @@ export default function App() {
                 )}
               </Pressable>
             ))}
-          </ScrollView>
+          </View>
         </LinearGradient>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -275,7 +275,7 @@ export default function App() {
               setApiBaseUrl={setApiBaseUrl}
               setEditMode={setEditMode}
               setSettings={setSettings}
-              onRefresh={() => loadAll()}
+              onRefresh={() => loadAll(cleanBaseUrl, adminPin)}
               onSaveBaseUrl={saveBaseUrl}
               onSaveSettings={() => saveSettings("manual")}
             />
@@ -495,38 +495,65 @@ function FlowsTab({ editMode, settings, setSettings }) {
 }
 
 function InboxTab({ conversations, hasPin }) {
+  const activeConversations = (conversations || []).slice(0, 10);
   return (
-    <Card title="Shared inbox">
-      {!hasPin ? <Text style={styles.warningText}>Enter your admin PIN on Home, then tap Refresh to load protected inbox messages.</Text> : null}
-      {(conversations || []).slice(0, 12).map((conversation, index) => (
+    <>
+      <Card title="Shared inbox">
+        {!hasPin ? <Text style={styles.warningText}>Enter your admin PIN on Home, then tap Refresh to load protected inbox messages.</Text> : null}
+        <View style={styles.summaryGrid}>
+          <SummaryTile label="Threads" value={activeConversations.length} />
+          <SummaryTile label="Open texts" value={activeConversations.filter((item) => item.messages?.length).length} />
+        </View>
+      </Card>
+      <Card title="Customer texts">
+        {activeConversations.map((conversation, index) => (
         <LinearGradient key={conversation.threadId || conversation.customer || index} colors={["#fffaff", "#f7fffb"]} style={styles.listCard}>
           <View style={styles.listHeader}>
-            <Text style={styles.listTitle}>{formatPhone(conversation.customer || conversation.from || "Unknown")}</Text>
+            <Text style={styles.listTitle} numberOfLines={1}>{formatPhone(getConversationCustomer(conversation)) || "Unknown customer"}</Text>
             <Text style={styles.pill}>{conversation.messages?.length || 0} msgs</Text>
           </View>
-          <Text style={styles.muted}>{conversation.lastMessage || conversation.preview || "No message preview available."}</Text>
+          <Text style={styles.record} numberOfLines={3}>{getConversationPreview(conversation)}</Text>
+          <Text style={styles.muted} numberOfLines={1}>{getConversationTime(conversation)}</Text>
         </LinearGradient>
-      ))}
-      {conversations?.length ? null : <Text style={styles.muted}>Texts will appear after SMS is fully live on Twilio.</Text>}
-    </Card>
+        ))}
+        {activeConversations.length ? null : <Text style={styles.muted}>Texts will appear after SMS is fully live on Twilio.</Text>}
+      </Card>
+    </>
   );
 }
 
 function CallsTab({ calls }) {
+  const recentCalls = (calls || []).slice(0, 10);
+  const completed = recentCalls.filter((call) => call.completion === "complete" || call.bookings?.length).length;
+  const needsReview = recentCalls.filter((call) => call.completion === "needs-review" || call.smsStatus === "failed").length;
   return (
-    <Card title="Call log">
-      {(calls || []).slice(0, 12).map((call, index) => (
+    <>
+      <Card title="Call summary">
+        <View style={styles.summaryGrid}>
+          <SummaryTile label="Recent" value={recentCalls.length} />
+          <SummaryTile label="Booked" value={completed} />
+          <SummaryTile label="Review" value={needsReview} tone="warn" />
+          <SummaryTile label="SMS sent" value={recentCalls.filter((call) => call.smsStatus === "sent").length} />
+        </View>
+      </Card>
+      <Card title="Recent calls">
+        {recentCalls.map((call, index) => (
         <LinearGradient key={call.id || call.callId || index} colors={["#fffaff", "#f7fffb"]} style={styles.listCard}>
           <View style={styles.listHeader}>
-            <Text style={styles.listTitle}>{formatPhone(call.caller || call.from || "Unknown caller")}</Text>
+            <Text style={styles.listTitle} numberOfLines={1}>{formatPhone(call.caller || call.from || "Unknown caller")}</Text>
             <Text style={styles.pill}>{call.durationLabel || "No time"}</Text>
           </View>
-          <Text style={styles.muted}>{call.outcome?.label || call.status || "Logged"}</Text>
-          <Text style={styles.record}>{call.outcome?.detail || call.transcriptText || "Transcript will appear after the call is processed."}</Text>
+          <View style={styles.callChipRow}>
+            <Text style={styles.smallChip}>{call.outcome?.label || call.status || "Logged"}</Text>
+            <Text style={styles.smallChip}>{call.smsStatus ? `SMS ${call.smsStatus}` : "SMS none"}</Text>
+            <Text style={styles.smallChip}>{call.recordingStatus === "available" ? "Recording" : "No recording"}</Text>
+          </View>
+          <Text style={styles.record} numberOfLines={3}>{call.outcome?.detail || call.transcriptText || "Transcript will appear after the call is processed."}</Text>
         </LinearGradient>
-      ))}
-      {calls?.length ? null : <Text style={styles.muted}>Forwarded calls will appear here.</Text>}
-    </Card>
+        ))}
+        {recentCalls.length ? null : <Text style={styles.muted}>Forwarded calls will appear here.</Text>}
+      </Card>
+    </>
   );
 }
 
@@ -537,20 +564,30 @@ function InsightsTab({ insights }) {
   return (
     <>
       <Card title="Business brain">
+        <View style={styles.summaryGrid}>
+          <SummaryTile label="Today" value={daily.calls || 0} />
+          <SummaryTile label="Week" value={weekly.calls || 0} />
+          <SummaryTile label="Month" value={monthly.calls || 0} />
+          <SummaryTile label="SMS" value={formatPercent(weekly.smsCoverageRate || daily.smsCoverageRate)} />
+        </View>
         {(insights?.suggestions || []).slice(0, 5).map((suggestion, index) => (
           <LinearGradient key={`${suggestion}-${index}`} colors={["#fffaff", "#f7fffb"]} style={styles.listCard}>
             <Text style={styles.linkLabel}>Suggestion {index + 1}</Text>
-            <Text style={styles.record}>{suggestion}</Text>
+            <Text style={styles.record} numberOfLines={4}>{suggestion}</Text>
           </LinearGradient>
         ))}
         {insights?.suggestions?.length ? null : <Text style={styles.muted}>Suggestions will appear after more calls and transcripts.</Text>}
       </Card>
-      <Card title="Daily / Weekly / Monthly">
-        <InsightRow label="Today calls" value={daily.calls} />
-        <InsightRow label="Weekly calls" value={weekly.calls} />
-        <InsightRow label="Monthly calls" value={monthly.calls} />
-        <InsightRow label="Top service" value={weekly.topServices?.[0]?.label || daily.topServices?.[0]?.label || "Not enough data"} />
-        <InsightRow label="Top location" value={weekly.topLocations?.[0]?.label || daily.topLocations?.[0]?.label || "Not enough data"} />
+      <Card title="What changed">
+        <InsightRow label="Bookings" value={`${weekly.bookings || 0} weekly / ${monthly.bookings || 0} monthly`} />
+        <InsightRow label="Needs review" value={weekly.needsReview || daily.needsReview || 0} />
+        <InsightRow label="Missed/fallback" value={weekly.missed || daily.missed || 0} />
+        <InsightRow label="Avg time" value={formatDuration(weekly.averageDurationSeconds || daily.averageDurationSeconds || 0)} />
+      </Card>
+      <Card title="Hot spots">
+        <MiniList title="Top services" items={weekly.topServices || daily.topServices || []} />
+        <MiniList title="Top locations" items={weekly.topLocations || daily.topLocations || []} />
+        <MiniList title="Caller types" items={weekly.callerTypes || daily.callerTypes || []} />
       </Card>
     </>
   );
@@ -676,6 +713,31 @@ function InsightRow({ label, value }) {
   );
 }
 
+function SummaryTile({ label, tone = "ok", value }) {
+  return (
+    <LinearGradient colors={tone === "warn" ? ["#fff7ed", "#fff0fa"] : ["#f7fffb", "#fffaff"]} style={styles.summaryTile}>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <Text style={styles.summaryValue}>{String(value ?? 0)}</Text>
+    </LinearGradient>
+  );
+}
+
+function MiniList({ items = [], title }) {
+  const list = items.slice(0, 4);
+  return (
+    <View style={styles.miniList}>
+      <Text style={styles.linkLabel}>{title}</Text>
+      {list.map((item, index) => (
+        <View key={`${title}-${item.label || index}`} style={styles.miniListRow}>
+          <Text style={styles.record} numberOfLines={1}>{item.label || "Unknown"}</Text>
+          <Text style={styles.pill}>{item.count || item.value || 0}</Text>
+        </View>
+      ))}
+      {list.length ? null : <Text style={styles.muted}>Not enough data yet.</Text>}
+    </View>
+  );
+}
+
 function setCallerFlow(setSettings, key, value) {
   setSettings((current) => ({
     ...current,
@@ -790,6 +852,34 @@ function formatPhone(value) {
   return `(${normalized.slice(0, 3)}) ${normalized.slice(3, 6)}-${normalized.slice(6)}`;
 }
 
+function getConversationCustomer(conversation = {}) {
+  return conversation.customer || conversation.phone || conversation.from || conversation.messages?.at?.(-1)?.from || "";
+}
+
+function getConversationPreview(conversation = {}) {
+  if (conversation.lastMessage || conversation.preview) return conversation.lastMessage || conversation.preview;
+  const last = conversation.messages?.at?.(-1);
+  return last?.body || last?.message || last?.text || "No message preview available.";
+}
+
+function getConversationTime(conversation = {}) {
+  const last = conversation.messages?.at?.(-1);
+  return conversation.updatedAt || conversation.lastAt || last?.createdAt || last?.at || "";
+}
+
+function formatPercent(value) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number)) return "0%";
+  return `${Math.round(number * 100)}%`;
+}
+
+function formatDuration(seconds) {
+  const total = Math.max(0, Number(seconds || 0) || 0);
+  const minutes = Math.floor(total / 60);
+  const remainder = total % 60;
+  return minutes ? `${minutes}m ${String(remainder).padStart(2, "0")}s` : `${remainder}s`;
+}
+
 function buildScriptPreview(settings) {
   return [
     settings.enabled ? "AI answers new calls." : "AI is paused.",
@@ -853,9 +943,9 @@ const styles = StyleSheet.create({
   eyebrow: { color: "#b7218f", fontSize: 12, fontWeight: "900", textTransform: "uppercase" },
   title: { color: "#161827", fontSize: 24, fontWeight: "900" },
   subtitle: { color: "#5d6178", fontSize: 13, fontWeight: "700", lineHeight: 18 },
-  metricStrip: { flexDirection: "row", gap: 7, marginTop: 12 },
+  metricStrip: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 12 },
   metric: {
-    flex: 1,
+    width: "48.5%",
     minHeight: 52,
     borderColor: "rgba(118, 87, 255, 0.14)",
     borderRadius: 16,
@@ -879,8 +969,15 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     elevation: 3
   },
-  tabContent: { gap: 6, paddingHorizontal: 8 },
+  tabContent: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    justifyContent: "center",
+    paddingHorizontal: 8
+  },
   tabButton: {
+    width: "31.5%",
     minHeight: 36,
     justifyContent: "center",
     borderColor: "rgba(118, 87, 255, 0.12)",
@@ -888,7 +985,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     backgroundColor: "rgba(255, 255, 255, 0.74)",
     overflow: "hidden",
-    paddingHorizontal: 13
+    paddingHorizontal: 6
   },
   tabButtonActive: {
     borderColor: "transparent",
@@ -900,8 +997,8 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2
   },
-  tabGradient: { minHeight: 36, justifyContent: "center", paddingHorizontal: 13 },
-  tabText: { color: "#34364d", fontSize: 13, fontWeight: "900" },
+  tabGradient: { alignItems: "center", minHeight: 36, justifyContent: "center", paddingHorizontal: 6 },
+  tabText: { color: "#34364d", fontSize: 12, fontWeight: "900", textAlign: "center" },
   tabTextActive: { color: "#ffffff" },
   content: { gap: 12, padding: 14, paddingBottom: 44 },
   card: {
@@ -1012,7 +1109,38 @@ const styles = StyleSheet.create({
   listHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", gap: 10 },
   listTitle: { flex: 1, color: "#161827", fontSize: 16, fontWeight: "900" },
   pill: { overflow: "hidden", borderRadius: 999, backgroundColor: "#e9fff3", color: "#12824d", fontSize: 12, fontWeight: "900", paddingHorizontal: 9, paddingVertical: 5 },
+  summaryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  summaryTile: {
+    width: "48.5%",
+    minHeight: 72,
+    borderColor: "rgba(118, 87, 255, 0.16)",
+    borderRadius: 18,
+    borderWidth: 1,
+    justifyContent: "center",
+    padding: 11
+  },
+  summaryValue: { color: "#161827", fontSize: 22, fontWeight: "900", marginTop: 3 },
+  callChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  smallChip: {
+    overflow: "hidden",
+    borderRadius: 999,
+    backgroundColor: "#f3f0ff",
+    color: "#5b45cf",
+    fontSize: 11,
+    fontWeight: "900",
+    paddingHorizontal: 8,
+    paddingVertical: 4
+  },
   insightRow: { alignItems: "center", borderTopColor: "#f0edf8", borderTopWidth: 1, flexDirection: "row", justifyContent: "space-between", gap: 12, paddingTop: 10 },
+  miniList: {
+    gap: 7,
+    borderColor: "rgba(217, 211, 238, 0.9)",
+    borderRadius: 18,
+    borderWidth: 1,
+    backgroundColor: "#fffaff",
+    padding: 12
+  },
+  miniListRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", gap: 10 },
   muted: { color: "#686a80", fontSize: 13, lineHeight: 18 },
   record: { color: "#55576d", fontSize: 13, lineHeight: 19 },
   warningText: {
