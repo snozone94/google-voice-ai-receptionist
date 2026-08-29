@@ -1221,7 +1221,7 @@ async function getVisibleTeamInfo(req) {
   const adminPin = String(process.env.ADMIN_PIN || "").trim();
   const directory = await getStaffDirectory();
   const team = [
-    ...(adminPin ? [{ name: process.env.ADMIN_STAFF_NAME || "Brianna", code: adminPin, role: "admin" }] : []),
+    ...(admin && adminPin ? [{ name: process.env.ADMIN_STAFF_NAME || "Brianna", code: adminPin, role: "admin" }] : []),
     ...directory.team
   ];
   return {
