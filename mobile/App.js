@@ -20,7 +20,15 @@ import {
 const defaultApiBaseUrl = "https://google-voice-ai-receptionist.onrender.com";
 const apiStorageKey = "ddd-ai-dispatch-api-base-url";
 const adminPinStorageKey = "ddd-ai-dispatch-admin-pin";
-const tabs = ["Home", "Voice", "Script", "Flows", "Inbox", "Calls", "Insights"];
+const tabs = [
+  { name: "Home", color: "#7657ff" },
+  { name: "Voice", color: "#ff3ea5" },
+  { name: "Script", color: "#ff7a3d" },
+  { name: "Flows", color: "#ffc83d" },
+  { name: "Inbox", color: "#23c779" },
+  { name: "Calls", color: "#16b8ff" },
+  { name: "Insights", color: "#7657ff" }
+];
 const rainbowColors = ["#7657ff", "#ff3ea5", "#ff7a3d", "#ffc83d", "#23c779", "#16b8ff", "#7657ff"];
 const softRainbowColors = ["rgba(255, 62, 165, 0.16)", "rgba(255, 200, 61, 0.12)", "rgba(35, 199, 121, 0.12)", "rgba(22, 184, 255, 0.16)", "rgba(118, 87, 255, 0.14)"];
 
@@ -240,25 +248,6 @@ export default function App() {
       <StatusBar style="dark" />
       <LinearGradient colors={["#fff7fb", "#f8fff9", "#f7f5ff"]} style={styles.shell}>
         <Header business={business} settings={settings} activity={activity} editMode={editMode} />
-        <LinearGradient colors={["rgba(255, 255, 255, 0.92)", "rgba(255, 255, 255, 0.72)"]} style={styles.tabWrap}>
-          <View style={styles.tabContent}>
-            {tabs.map((tab) => (
-              <Pressable
-                key={tab}
-                onPress={() => setActiveTab(tab)}
-                style={[styles.tabButton, activeTab === tab && styles.tabButtonActive]}
-              >
-                {activeTab === tab ? (
-                  <LinearGradient colors={rainbowColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.tabGradient}>
-                    <Text style={[styles.tabText, styles.tabTextActive]}>{tab}</Text>
-                  </LinearGradient>
-                ) : (
-                  <Text style={styles.tabText}>{tab}</Text>
-                )}
-              </Pressable>
-            ))}
-          </View>
-        </LinearGradient>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {activeTab === "Home" ? (
@@ -306,8 +295,35 @@ export default function App() {
           {loading ? <ActivityIndicator color="#7d4dff" /> : null}
           <Text style={styles.status}>{status}</Text>
         </ScrollView>
+        <BottomTabs activeTab={activeTab} onSelect={setActiveTab} />
       </LinearGradient>
     </SafeAreaView>
+  );
+}
+
+function BottomTabs({ activeTab, onSelect }) {
+  return (
+    <LinearGradient colors={["rgba(255, 255, 255, 0.96)", "rgba(255, 255, 255, 0.78)"]} style={styles.tabWrap}>
+      <View style={styles.tabContent}>
+        {tabs.map((tab) => {
+          const active = activeTab === tab.name;
+          return (
+            <Pressable
+              key={tab.name}
+              onPress={() => onSelect(tab.name)}
+              style={[
+                styles.tabButton,
+                { borderColor: active ? tab.color : "rgba(118, 87, 255, 0.14)" },
+                active && { backgroundColor: tab.color }
+              ]}
+            >
+              <View style={[styles.tabDot, { backgroundColor: tab.color }]} />
+              <Text style={[styles.tabText, active && styles.tabTextActive]}>{tab.name}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </LinearGradient>
   );
 }
 
@@ -956,51 +972,46 @@ const styles = StyleSheet.create({
   metricLabel: { color: "#a81586", fontSize: 10, fontWeight: "900", textTransform: "uppercase" },
   metricValue: { color: "#161827", fontSize: 15, fontWeight: "900", marginTop: 3 },
   tabWrap: {
-    marginHorizontal: 12,
-    marginTop: 10,
+    position: "absolute",
+    left: 10,
+    right: 10,
+    bottom: 10,
     borderColor: "rgba(118, 87, 255, 0.16)",
-    borderRadius: 20,
+    borderRadius: 24,
     borderWidth: 1,
     overflow: "hidden",
-    paddingVertical: 6,
+    paddingVertical: 7,
     shadowColor: "#3b2267",
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.13,
     shadowRadius: 18,
     elevation: 3
   },
   tabContent: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 6,
+    gap: 5,
     justifyContent: "center",
-    paddingHorizontal: 8
+    paddingHorizontal: 7
   },
   tabButton: {
-    width: "31.5%",
-    minHeight: 36,
+    alignItems: "center",
+    width: "23.7%",
+    minHeight: 31,
+    flexDirection: "row",
+    gap: 4,
     justifyContent: "center",
     borderColor: "rgba(118, 87, 255, 0.12)",
     borderRadius: 999,
     borderWidth: 1,
     backgroundColor: "rgba(255, 255, 255, 0.74)",
     overflow: "hidden",
-    paddingHorizontal: 6
+    paddingHorizontal: 5
   },
-  tabButtonActive: {
-    borderColor: "transparent",
-    backgroundColor: "#7d4dff",
-    paddingHorizontal: 0,
-    shadowColor: "#e640a5",
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    elevation: 2
-  },
-  tabGradient: { alignItems: "center", minHeight: 36, justifyContent: "center", paddingHorizontal: 6 },
-  tabText: { color: "#34364d", fontSize: 12, fontWeight: "900", textAlign: "center" },
+  tabDot: { width: 7, height: 7, borderRadius: 999 },
+  tabText: { color: "#34364d", fontSize: 10.5, fontWeight: "900", textAlign: "center" },
   tabTextActive: { color: "#ffffff" },
-  content: { gap: 12, padding: 14, paddingBottom: 44 },
+  content: { gap: 12, padding: 14, paddingBottom: 104 },
   card: {
     gap: 12,
     overflow: "hidden",
