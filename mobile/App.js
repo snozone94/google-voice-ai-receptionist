@@ -659,8 +659,14 @@ function FlowsTab({ editMode, settings, setSettings }) {
 
 function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setStatus, staffPhone }) {
   const [drafts, setDrafts] = useState({});
+  const [selectedPhone, setSelectedPhone] = useState("");
   const [workingThread, setWorkingThread] = useState("");
-  const activeConversations = (conversations || []).slice(0, 10);
+  const activeConversations = (conversations || []).slice(0, 20);
+  const selectedConversation =
+    activeConversations.find((conversation) => normalizeE164(getConversationCustomer(conversation)) === selectedPhone) ||
+    activeConversations[0] ||
+    null;
+  const selectedCustomerPhone = selectedConversation ? getConversationCustomer(selectedConversation) : "";
 
   async function sendReply(customerPhone) {
     const to = normalizeE164(customerPhone);
@@ -716,13 +722,36 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
           <SummaryTile label="Threads" value={activeConversations.length} />
           <SummaryTile label="Open texts" value={activeConversations.filter((item) => item.messages?.length).length} />
         </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.conversationPicker}>
+          {activeConversations.map((conversation, index) => {
+            const customerPhone = getConversationCustomer(conversation);
+            const normalized = normalizeE164(customerPhone);
+            const active = normalized === normalizeE164(selectedCustomerPhone);
+            return (
+              <Pressable
+                key={conversation.threadId || conversation.customer || index}
+                onPress={() => setSelectedPhone(normalized)}
+                style={[styles.conversationChoice, active && styles.conversationChoiceActive]}
+              >
+                <Text style={[styles.conversationName, active && styles.conversationNameActive]} numberOfLines={1}>
+                  {getConversationName(conversation)}
+                </Text>
+                <Text style={[styles.conversationNumber, active && styles.conversationNumberActive]} numberOfLines={1}>
+                  {formatPhone(customerPhone) || "Unknown"}
+                </Text>
+                <Text style={[styles.conversationPreview, active && styles.conversationNumberActive]} numberOfLines={1}>
+                  {getConversationPreview(conversation)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       </Card>
-      <Card title="Customer texts">
-        {activeConversations.map((conversation, index) => (
+      {selectedConversation ? (
+        <Card title="Conversation">
           <ConversationCard
-            conversation={conversation}
-            draft={drafts[normalizeE164(getConversationCustomer(conversation))] || ""}
-            key={conversation.threadId || conversation.customer || index}
+            conversation={selectedConversation}
+            draft={drafts[normalizeE164(getConversationCustomer(selectedConversation))] || ""}
             onCall={callCustomer}
             onDraftChange={(customerPhone, message) => {
               const to = normalizeE164(customerPhone);
@@ -731,9 +760,12 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
             onSend={sendReply}
             workingThread={workingThread}
           />
-        ))}
-        {activeConversations.length ? null : <Text style={styles.muted}>Texts will appear after SMS is fully live on Twilio.</Text>}
-      </Card>
+        </Card>
+      ) : (
+        <Card title="Conversation">
+          <Text style={styles.muted}>Texts will appear after SMS is fully live on Twilio.</Text>
+        </Card>
+      )}
     </>
   );
 }
@@ -741,17 +773,19 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
 function ConversationCard({ conversation, draft, onCall, onDraftChange, onSend, workingThread }) {
   const customerPhone = getConversationCustomer(conversation);
   const normalizedPhone = normalizeE164(customerPhone);
-  const recentMessages = (conversation.messages || []).slice(-4);
+  const recentMessages = conversation.messages || [];
   const smsBusy = workingThread === `sms:${normalizedPhone}`;
   const callBusy = workingThread === `call:${normalizedPhone}`;
   return (
-    <LinearGradient colors={["#fffaff", "#f7fffb"]} style={styles.listCard}>
+    <LinearGradient colors={["#fffaff", "#f7fffb"]} style={styles.conversationBox}>
       <View style={styles.listHeader}>
-        <Text style={styles.listTitle} numberOfLines={1}>{formatPhone(customerPhone) || "Unknown customer"}</Text>
+        <View style={styles.flexText}>
+          <Text style={styles.listTitle} numberOfLines={1}>{getConversationName(conversation)}</Text>
+          <Text style={styles.muted} numberOfLines={1}>{formatPhone(customerPhone) || "Unknown customer"} - {getConversationTime(conversation)}</Text>
+        </View>
         <Text style={styles.pill}>{conversation.messages?.length || 0} msgs</Text>
       </View>
-      <Text style={styles.muted} numberOfLines={1}>{getConversationTime(conversation)}</Text>
-      <View style={styles.messagePreviewStack}>
+      <ScrollView style={styles.messageThread} contentContainerStyle={styles.messageThreadContent} nestedScrollEnabled>
         {recentMessages.length ? recentMessages.map((message, index) => (
           <View key={`${message.createdAt || index}-${message.direction}`} style={[styles.textBubble, message.direction === "outbound" && styles.textBubbleOutbound]}>
             <Text style={[styles.textBubbleLabel, message.direction === "outbound" && styles.textBubbleLabelOutbound]}>
@@ -760,7 +794,7 @@ function ConversationCard({ conversation, draft, onCall, onDraftChange, onSend, 
             <Text style={[styles.textBubbleBody, message.direction === "outbound" && styles.textBubbleBodyOutbound]}>{message.body || message.text || ""}</Text>
           </View>
         )) : <Text style={styles.record} numberOfLines={3}>{getConversationPreview(conversation)}</Text>}
-      </View>
+      </ScrollView>
       <Field
         label="Reply from DDD"
         multiline
@@ -1161,6 +1195,11 @@ function getConversationCustomer(conversation = {}) {
   return conversation.customer || conversation.phone || conversation.from || conversation.messages?.at?.(-1)?.from || "";
 }
 
+function getConversationName(conversation = {}) {
+  const booking = conversation.bookings?.[0] || {};
+  return booking.name || conversation.customerName || conversation.name || "Customer";
+}
+
 function getConversationPreview(conversation = {}) {
   if (conversation.lastMessage || conversation.preview) return conversation.lastMessage || conversation.preview;
   const last = conversation.messages?.at?.(-1);
@@ -1443,6 +1482,41 @@ const styles = StyleSheet.create({
   },
   smallChipOk: { backgroundColor: "#e9fff3", color: "#12824d" },
   smallChipWarn: { backgroundColor: "#fff7ed", color: "#9a3412" },
+  conversationPicker: { gap: 8, paddingVertical: 2 },
+  conversationChoice: {
+    width: 168,
+    minHeight: 86,
+    borderColor: "rgba(118, 87, 255, 0.18)",
+    borderRadius: 18,
+    borderWidth: 1,
+    backgroundColor: "#fffaff",
+    padding: 10
+  },
+  conversationChoiceActive: {
+    borderColor: "#ff3ea5",
+    backgroundColor: "#ff3ea5"
+  },
+  conversationName: { color: "#161827", fontSize: 14, fontWeight: "900" },
+  conversationNameActive: { color: "#ffffff" },
+  conversationNumber: { color: "#a81586", fontSize: 12, fontWeight: "900", marginTop: 3 },
+  conversationNumberActive: { color: "#ffffff" },
+  conversationPreview: { color: "#686a80", fontSize: 11, fontWeight: "700", marginTop: 7 },
+  conversationBox: {
+    gap: 10,
+    borderColor: "rgba(217, 211, 238, 0.9)",
+    borderRadius: 18,
+    borderWidth: 1,
+    backgroundColor: "#fffaff",
+    padding: 12
+  },
+  messageThread: {
+    maxHeight: 340,
+    borderColor: "rgba(118, 87, 255, 0.12)",
+    borderRadius: 18,
+    borderWidth: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.7)"
+  },
+  messageThreadContent: { gap: 8, padding: 10 },
   tinyStatusDot: {
     width: 14,
     height: 14,
