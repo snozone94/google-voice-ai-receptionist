@@ -1465,7 +1465,7 @@ replyForm.addEventListener("submit", async (event) => {
 async function refreshActivity() {
   if (activityTimeline) activityTimeline.innerHTML = `<li class="activity-item empty-state">Loading activity...</li>`;
   const [callsResponse, leadsResponse, summariesResponse, bookingsResponse] = await Promise.all([
-    fetch("/api/calls"),
+    fetch("/api/call-log?limit=75", { headers: adminHeaders() }),
     fetch("/api/leads"),
     fetch("/api/summaries"),
     fetch("/api/bookings")
@@ -1486,9 +1486,9 @@ function buildActivityItems({ calls = [], leads = [], summaries = [], bookings =
     ...calls.map((call) => ({
       type: "call",
       at: call.createdAt,
-      title: call.from ? `Call from ${formatPhone(call.from)}` : "Forwarded call",
-      eyebrow: call.status || call.type || "Call",
-      detail: call.callId || "Call event saved",
+      title: call.caller ? `Call from ${formatPhone(call.caller)}` : "Customer call",
+      eyebrow: call.displayStatus || call.outcome?.label || "Call",
+      detail: cleanCallText(call.outcome?.detail || call.transcriptText || "Call logged for review."),
       accent: "blue"
     })),
     ...bookings.map((booking) => ({
@@ -1600,7 +1600,7 @@ function renderCallLog() {
     button.className = call.id === selectedCallId ? "call-log-item selected" : "call-log-item";
     const label = call.caller || call.callId || "Unknown caller";
     const meta = [
-      call.outcome?.label || call.status,
+      call.displayStatus || call.outcome?.label,
       call.durationLabel,
       call.smsStatus && call.smsStatus !== "none" ? `SMS ${call.smsStatus}` : "",
       call.recordingStatus === "available" ? "recording" : ""
@@ -1634,18 +1634,6 @@ function renderSelectedCall() {
   const recording = call.recordingUrl
     ? `<a href="${escapeHtml(call.recordingUrl)}" target="_blank" rel="noreferrer">Open recording</a>`
     : "No recording link stored yet";
-  const statusEventsHtml = call.statusEvents?.length
-    ? call.statusEvents
-        .map(
-          (event) => `
-            <li>
-              <strong>${escapeHtml(event.status || event.type || "event")}</strong>
-              <span>${escapeHtml([formatTime(event.at), event.durationSeconds ? formatDuration(event.durationSeconds) : ""].filter(Boolean).join(" · "))}</span>
-            </li>
-          `
-        )
-        .join("")
-    : `<li><span>No status events stored.</span></li>`;
   const transcriptHtml = renderGroupedTranscript(call.transcript || []);
   const synopsis = buildCallSynopsis(call);
   callDetail.innerHTML = `
@@ -1654,10 +1642,10 @@ function renderSelectedCall() {
         <p class="eyebrow">Call detail</p>
         <h3>${escapeHtml(formatPhone(call.caller) || "Unknown caller")}</h3>
       </div>
-      <span class="status-pill ${escapeHtml(call.completion || "needs-review")}">${escapeHtml(call.outcome?.label || call.status || "logged")}</span>
+      <span class="status-pill ${escapeHtml(call.completion || "needs-review")}">${escapeHtml(call.displayStatus || call.outcome?.label || "Logged")}</span>
     </div>
     <div class="call-outcome-summary">
-      <strong>${escapeHtml(call.outcome?.detail || "Call reached the system.")}</strong>
+      <strong>${escapeHtml(cleanCallText(call.outcome?.detail || "Call logged for review."))}</strong>
       <span>${escapeHtml(call.outcome?.callerStayedOn ? "Caller stayed on" : call.outcome?.hungUpEarly ? "Caller hung up early" : "Needs review")}</span>
     </div>
     <div class="call-metrics">
@@ -1672,8 +1660,6 @@ function renderSelectedCall() {
       <div><dt>Started</dt><dd>${escapeHtml(formatTime(call.startedAt || call.createdAt) || "Unknown")}</dd></div>
       <div><dt>Ended</dt><dd>${escapeHtml(formatTime(call.endedAt) || "Not recorded")}</dd></div>
       <div><dt>Duration</dt><dd>${escapeHtml(call.durationLabel || "Unknown")}</dd></div>
-      <div><dt>Final status</dt><dd>${escapeHtml(call.status || "logged")}</dd></div>
-      <div><dt>Call ID</dt><dd>${escapeHtml(call.callId || "Not available")}</dd></div>
       <div><dt>Recording</dt><dd>${recording}</dd></div>
     </dl>
     <div class="call-section">
@@ -1689,10 +1675,6 @@ function renderSelectedCall() {
       <h4>Transcript</h4>
       <div class="transcript-box">${transcriptHtml}</div>
     </div>
-    <div class="call-section">
-      <h4>Status timeline</h4>
-      <ul class="status-timeline">${statusEventsHtml}</ul>
-    </div>
   `;
 }
 
@@ -1704,11 +1686,11 @@ function buildCallSynopsis(call) {
   const vehicle = booking.vehicle || lead.vehicle || "Vehicle not captured yet";
   const nextStep = booking.nextStep || lead.nextStep || call.outcome?.detail || "Review this call and follow up if needed.";
   return [
-    `Outcome: ${call.outcome?.label || call.status || "Logged"}${call.durationLabel ? ` in ${call.durationLabel}` : ""}.`,
+    `Outcome: ${call.displayStatus || call.outcome?.label || "Logged"}${call.durationLabel ? ` in ${call.durationLabel}` : ""}.`,
     `Request: ${service}.`,
     `Location: ${location}.`,
     `Vehicle: ${vehicle}.`,
-    `Next step: ${nextStep}`
+    `Next step: ${cleanCallText(nextStep)}`
   ];
 }
 
@@ -1755,6 +1737,12 @@ function formatSmsStatus(status = "") {
     "inbound only": "Inbound only"
   };
   return labels[value] || value;
+}
+
+function cleanCallText(value = "") {
+  const text = String(value || "");
+  if (/sip|routing|twilio reported/i.test(text)) return "The call is logged for review.";
+  return text;
 }
 
 function formatDuration(seconds) {

@@ -395,6 +395,7 @@ export async function listCallLog(limit = 50) {
       const durationSeconds = getCallDurationSeconds(sortedEvents, summary);
       const finalStatus = firstTruthy(latestEvent.status, firstEvent.status, summary.endedAt ? "completed" : "logged");
       const outcome = summarizeCallOutcome({ status: finalStatus, transcript, relatedLeads, relatedBookings, relatedSms, durationSeconds });
+      const displayStatus = getCallDisplayStatus(finalStatus, outcome, relatedBookings, relatedLeads);
       return {
         id: callId || `${firstEvent.createdAt || "call"}-${firstEvent.type || "event"}`,
         callId,
@@ -405,10 +406,12 @@ export async function listCallLog(limit = 50) {
         caller,
         destination,
         status: finalStatus,
+        displayStatus,
         statusEvents: sortedEvents.map((event) => ({
           at: event.createdAt,
           type: event.type,
           status: event.status || "",
+          displayStatus: getCleanStatusLabel(event.status || event.type || ""),
           durationSeconds: event.durationSeconds || 0
         })),
         durationSeconds,
@@ -954,10 +957,10 @@ function summarizeCallOutcome({ status, transcript, relatedLeads, relatedBooking
     detail = "The call ended before intake was completed.";
   } else if (failed) {
     label = "Missed or failed";
-    detail = `Twilio reported ${status || "a missed/failed status"}.`;
+    detail = "The call did not complete and needs a human follow-up check.";
   } else if (!transcript.length) {
     label = "No transcript yet";
-    detail = "No transcript was stored for this call.";
+    detail = "The call is logged, but the AI transcript is not ready or was not received.";
   }
   return {
     label,
@@ -967,6 +970,25 @@ function summarizeCallOutcome({ status, transcript, relatedLeads, relatedBooking
     hungUpEarly,
     smsStatus
   };
+}
+
+function getCallDisplayStatus(status, outcome = {}, bookings = [], leads = []) {
+  if (bookings.length) return "Booking captured";
+  if (leads.length) return "Message saved";
+  if (outcome.hungUpEarly) return "Caller hung up early";
+  return getCleanStatusLabel(status || outcome.label || "");
+}
+
+function getCleanStatusLabel(value = "") {
+  const status = String(value).toLowerCase();
+  if (/routing|sip|incoming|accepted|in-progress|ringing|queued|initiated/.test(status)) return "Connected";
+  if (/completed|complete/.test(status)) return "Completed";
+  if (/busy/.test(status)) return "Busy";
+  if (/no-answer|missed/.test(status)) return "Missed";
+  if (/failed|canceled|cancelled/.test(status)) return "Failed";
+  if (/recording/.test(status)) return "Recording saved";
+  if (/outbound/.test(status)) return "Outbound call";
+  return "Logged";
 }
 
 function formatDuration(seconds) {

@@ -128,7 +128,7 @@ export default function App() {
           apiGet(targetBaseUrl, "/api/settings"),
           apiGet(targetBaseUrl, "/api/setup-status"),
           apiGet(targetBaseUrl, "/api/business"),
-          apiGet(targetBaseUrl, "/api/calls"),
+          apiGet(targetBaseUrl, "/api/call-log", accessPin).catch(() => ({ calls: [] })),
           apiGet(targetBaseUrl, "/api/leads"),
           apiGet(targetBaseUrl, "/api/bookings"),
           apiGet(targetBaseUrl, "/api/conversations", accessPin).catch(() => ({ conversations: [], locked: true })),
@@ -854,12 +854,12 @@ function CallCard({ call }) {
         <Text style={styles.pill}>{call.durationLabel || formatDuration(call.durationSeconds) || "No time"}</Text>
       </View>
       <View style={styles.callChipRow}>
-        <Text style={[styles.smallChip, complete && styles.smallChipOk, incomplete && styles.smallChipWarn]}>{call.outcome?.label || call.status || "Logged"}</Text>
-        <Text style={styles.smallChip}>{call.callerStayedOn ? "Stayed on" : call.outcome?.hungUpEarly ? "Hung up early" : "Review time"}</Text>
+        <Text style={[styles.smallChip, complete && styles.smallChipOk, incomplete && styles.smallChipWarn]}>{call.displayStatus || call.outcome?.label || "Logged"}</Text>
+        <Text style={styles.smallChip}>{call.outcome?.callerStayedOn ? "Stayed on" : call.outcome?.hungUpEarly ? "Hung up early" : "Review time"}</Text>
         <Text style={styles.smallChip}>{call.smsStatus ? `SMS ${call.smsStatus}` : "SMS none"}</Text>
         <Text style={styles.smallChip}>{call.recordingUrl || call.recordingStatus === "available" ? "Recording" : "No recording"}</Text>
       </View>
-      <Text style={styles.record}>{call.outcome?.detail || "Call logged for review."}</Text>
+      <Text style={styles.record}>{cleanCallDetail(call.outcome?.detail || "Call logged for review.")}</Text>
       {vehicle ? <Text style={styles.record}>Vehicle: {vehicle}</Text> : null}
       {missing.length ? <Text style={styles.warningText}>Needs: {missing.join(", ")}</Text> : null}
       <View style={styles.transcriptBox}>
@@ -1222,6 +1222,12 @@ function formatDuration(seconds) {
   const minutes = Math.floor(total / 60);
   const remainder = total % 60;
   return minutes ? `${minutes}m ${String(remainder).padStart(2, "0")}s` : `${remainder}s`;
+}
+
+function cleanCallDetail(value) {
+  const text = String(value || "");
+  if (/sip|routing|twilio reported/i.test(text)) return "The call is logged for review.";
+  return text;
 }
 
 function buildScriptPreview(settings) {
