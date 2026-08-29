@@ -106,8 +106,8 @@ export default function App() {
           apiGet(targetBaseUrl, "/api/calls"),
           apiGet(targetBaseUrl, "/api/leads"),
           apiGet(targetBaseUrl, "/api/bookings"),
-          apiGet(targetBaseUrl, "/api/conversations"),
-          apiGet(targetBaseUrl, "/api/insights")
+          apiGet(targetBaseUrl, "/api/conversations", adminPin).catch(() => ({ conversations: [], locked: true })),
+          apiGet(targetBaseUrl, "/api/insights", adminPin).catch(() => null)
         ]);
 
       const nextSettings = toFormSettings(settingsResponse);
@@ -122,7 +122,7 @@ export default function App() {
         conversations: conversationsResponse.conversations || [],
         insights: insightsResponse || null
       });
-      setStatus("Connected to DDD AI Dispatch.");
+      setStatus(conversationsResponse.locked ? "Connected. Enter admin PIN to load inbox." : "Connected to DDD AI Dispatch.");
     } catch (error) {
       setStatus(error.message);
     } finally {
@@ -240,7 +240,7 @@ export default function App() {
       <StatusBar style="dark" />
       <LinearGradient colors={["#fff7fb", "#f8fff9", "#f7f5ff"]} style={styles.shell}>
         <Header business={business} settings={settings} activity={activity} editMode={editMode} />
-        <View style={styles.tabWrap}>
+        <LinearGradient colors={["rgba(255, 255, 255, 0.92)", "rgba(255, 255, 255, 0.72)"]} style={styles.tabWrap}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabContent}>
             {tabs.map((tab) => (
               <Pressable
@@ -258,7 +258,7 @@ export default function App() {
               </Pressable>
             ))}
           </ScrollView>
-        </View>
+        </LinearGradient>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {activeTab === "Home" ? (
@@ -299,7 +299,7 @@ export default function App() {
           ) : null}
 
           {activeTab === "Flows" ? <FlowsTab editMode={editMode} settings={settings} setSettings={setSettings} /> : null}
-          {activeTab === "Inbox" ? <InboxTab conversations={activity.conversations} /> : null}
+          {activeTab === "Inbox" ? <InboxTab conversations={activity.conversations} hasPin={Boolean(adminPin)} /> : null}
           {activeTab === "Calls" ? <CallsTab calls={activity.calls} /> : null}
           {activeTab === "Insights" ? <InsightsTab insights={activity.insights} /> : null}
 
@@ -494,9 +494,10 @@ function FlowsTab({ editMode, settings, setSettings }) {
   );
 }
 
-function InboxTab({ conversations }) {
+function InboxTab({ conversations, hasPin }) {
   return (
     <Card title="Shared inbox">
+      {!hasPin ? <Text style={styles.warningText}>Enter your admin PIN on Home, then tap Refresh to load protected inbox messages.</Text> : null}
       {(conversations || []).slice(0, 12).map((conversation, index) => (
         <LinearGradient key={conversation.threadId || conversation.customer || index} colors={["#fffaff", "#f7fffb"]} style={styles.listCard}>
           <View style={styles.listHeader}>
@@ -687,8 +688,10 @@ function normalizeBaseUrl(value) {
   return cleaned.startsWith("http") ? cleaned : defaultApiBaseUrl;
 }
 
-async function apiGet(baseUrl, path) {
-  const response = await fetch(`${baseUrl}${path}`);
+async function apiGet(baseUrl, path, adminPin = "") {
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: adminPin ? { "x-admin-pin": adminPin } : {}
+  });
   if (!response.ok) throw new Error(`Could not load ${path}.`);
   return response.json();
 }
@@ -819,12 +822,12 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#fff7fb" },
   shell: { flex: 1, backgroundColor: "#fff7fb" },
   header: {
-    marginHorizontal: 14,
-    marginTop: 12,
+    marginHorizontal: 12,
+    marginTop: 10,
     overflow: "hidden",
     borderRadius: 24,
     backgroundColor: "#ffffff",
-    padding: 16,
+    padding: 14,
     shadowColor: "#3b2267",
     shadowOffset: { width: 0, height: 16 },
     shadowOpacity: 0.14,
@@ -832,51 +835,73 @@ const styles = StyleSheet.create({
     elevation: 8
   },
   heroGlow: { height: 8, borderRadius: 999, backgroundColor: "#ff3ea5", marginBottom: 14 },
-  brandRow: { alignItems: "center", flexDirection: "row", gap: 12 },
+  brandRow: { alignItems: "center", flexDirection: "row", gap: 10 },
   logoFrame: {
     alignItems: "center",
     justifyContent: "center",
-    width: 66,
-    height: 66,
-    borderRadius: 22,
+    width: 60,
+    height: 60,
+    borderRadius: 20,
     shadowColor: "#e640a5",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18,
     shadowRadius: 16,
     elevation: 5
   },
-  logo: { width: 58, height: 58, borderRadius: 18 },
+  logo: { width: 52, height: 52, borderRadius: 17 },
   brandCopy: { flex: 1, minWidth: 0 },
   eyebrow: { color: "#b7218f", fontSize: 12, fontWeight: "900", textTransform: "uppercase" },
-  title: { color: "#161827", fontSize: 27, fontWeight: "900" },
-  subtitle: { color: "#5d6178", fontSize: 14, fontWeight: "700", lineHeight: 19 },
-  metricStrip: { flexDirection: "row", gap: 8, marginTop: 14 },
+  title: { color: "#161827", fontSize: 24, fontWeight: "900" },
+  subtitle: { color: "#5d6178", fontSize: 13, fontWeight: "700", lineHeight: 18 },
+  metricStrip: { flexDirection: "row", gap: 7, marginTop: 12 },
   metric: {
     flex: 1,
-    minHeight: 58,
-    borderColor: "rgba(118, 87, 255, 0.12)",
-    borderRadius: 18,
+    minHeight: 52,
+    borderColor: "rgba(118, 87, 255, 0.14)",
+    borderRadius: 16,
     borderWidth: 1,
     backgroundColor: "#fbf7ff",
     padding: 9
   },
   metricLabel: { color: "#a81586", fontSize: 10, fontWeight: "900", textTransform: "uppercase" },
-  metricValue: { color: "#161827", fontSize: 16, fontWeight: "900", marginTop: 3 },
-  tabWrap: { marginTop: 12 },
-  tabContent: { gap: 8, paddingHorizontal: 14, paddingVertical: 4 },
+  metricValue: { color: "#161827", fontSize: 15, fontWeight: "900", marginTop: 3 },
+  tabWrap: {
+    marginHorizontal: 12,
+    marginTop: 10,
+    borderColor: "rgba(118, 87, 255, 0.16)",
+    borderRadius: 20,
+    borderWidth: 1,
+    overflow: "hidden",
+    paddingVertical: 6,
+    shadowColor: "#3b2267",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 3
+  },
+  tabContent: { gap: 6, paddingHorizontal: 8 },
   tabButton: {
-    minHeight: 42,
+    minHeight: 36,
     justifyContent: "center",
-    borderColor: "rgba(118, 87, 255, 0.18)",
+    borderColor: "rgba(118, 87, 255, 0.12)",
     borderRadius: 999,
     borderWidth: 1,
-    backgroundColor: "#ffffff",
+    backgroundColor: "rgba(255, 255, 255, 0.74)",
     overflow: "hidden",
-    paddingHorizontal: 16
+    paddingHorizontal: 13
   },
-  tabButtonActive: { borderColor: "#ff3ea5", backgroundColor: "#7d4dff", paddingHorizontal: 0 },
-  tabGradient: { minHeight: 42, justifyContent: "center", paddingHorizontal: 16 },
-  tabText: { color: "#34364d", fontWeight: "900" },
+  tabButtonActive: {
+    borderColor: "transparent",
+    backgroundColor: "#7d4dff",
+    paddingHorizontal: 0,
+    shadowColor: "#e640a5",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 2
+  },
+  tabGradient: { minHeight: 36, justifyContent: "center", paddingHorizontal: 13 },
+  tabText: { color: "#34364d", fontSize: 13, fontWeight: "900" },
   tabTextActive: { color: "#ffffff" },
   content: { gap: 12, padding: 14, paddingBottom: 44 },
   card: {
@@ -990,6 +1015,18 @@ const styles = StyleSheet.create({
   insightRow: { alignItems: "center", borderTopColor: "#f0edf8", borderTopWidth: 1, flexDirection: "row", justifyContent: "space-between", gap: 12, paddingTop: 10 },
   muted: { color: "#686a80", fontSize: 13, lineHeight: 18 },
   record: { color: "#55576d", fontSize: 13, lineHeight: 19 },
+  warningText: {
+    overflow: "hidden",
+    borderColor: "rgba(255, 122, 61, 0.28)",
+    borderRadius: 16,
+    borderWidth: 1,
+    backgroundColor: "#fff7ed",
+    color: "#9a3412",
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 18,
+    padding: 12
+  },
   status: { color: "#55576d", minHeight: 24, fontWeight: "800" },
   testOutput: { borderColor: "#ddd8ec", borderRadius: 16, borderWidth: 1, backgroundColor: "#fffaff", color: "#34364a", fontSize: 13, lineHeight: 19, padding: 12 }
 });
