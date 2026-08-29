@@ -225,6 +225,8 @@ DDD_TECH_TEAM_SECRET
 
 Outbound calls from the mobile app use Twilio to call the staff member first, then bridge to the customer with `TWILIO_VOICE_FROM` as caller ID. Use the same Twilio number as `TWILIO_SMS_FROM` if you want texts and outbound calls to show the same DDD number.
 
+Native app push alerts use Expo push tokens. The mobile app registers a phone through `POST /api/push/register`; the backend sends alerts for new calls, missed/busy calls, incoming texts, and manual test alerts. Real remote push notifications need an installed Expo development/App Store build so iOS can issue a usable push token.
+
 Twilio voice webhook:
 
 ```text

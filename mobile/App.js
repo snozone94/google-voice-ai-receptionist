@@ -1,12 +1,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio } from "expo-av";
+import Constants from "expo-constants";
+import * as Device from "expo-device";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Notifications from "expo-notifications";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
   Linking,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -32,6 +36,15 @@ const tabs = [
 ];
 const rainbowColors = ["#7657ff", "#ff3ea5", "#ff7a3d", "#ffc83d", "#23c779", "#16b8ff", "#7657ff"];
 const softRainbowColors = ["rgba(255, 62, 165, 0.16)", "rgba(255, 200, 61, 0.12)", "rgba(35, 199, 121, 0.12)", "rgba(22, 184, 255, 0.16)", "rgba(118, 87, 255, 0.14)"];
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true
+  })
+});
 
 const billingLinks = [
   ["Twilio billing", "Top up phone and SMS", "https://console.twilio.com/us1/billing"],
@@ -92,6 +105,8 @@ export default function App() {
   const [previewing, setPreviewing] = useState(false);
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState("");
+  const [pushStatus, setPushStatus] = useState("Not enabled on this phone yet.");
+  const [pushToken, setPushToken] = useState("");
   const [testCallerMessage, setTestCallerMessage] = useState("I have a flat tire and need help now.");
   const [testOutput, setTestOutput] = useState("");
   const [setup, setSetup] = useState(null);
@@ -246,17 +261,90 @@ export default function App() {
     }
   }
 
+  async function enablePushNotifications() {
+    if (Platform.OS === "web") {
+      setPushStatus("Open the iPhone app build to enable native push notifications.");
+      return;
+    }
+
+    setPushStatus("Requesting notification permission...");
+    try {
+      if (Platform.OS === "android") {
+        await Notifications.setNotificationChannelAsync("ddd-dispatch", {
+          name: "DDD Dispatch",
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: "#ff3ea5"
+        });
+      }
+
+      const existing = await Notifications.getPermissionsAsync();
+      let finalStatus = existing.status;
+      if (existing.status !== "granted") {
+        const requested = await Notifications.requestPermissionsAsync();
+        finalStatus = requested.status;
+      }
+      if (finalStatus !== "granted") {
+        setPushStatus("Notifications were not allowed on this phone.");
+        return;
+      }
+      if (!Device.isDevice) {
+        setPushStatus("Permission is on. Remote push tokens need a real iPhone build.");
+        return;
+      }
+
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId || Constants.easConfig?.projectId;
+      const tokenResponse = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
+      const token = tokenResponse.data;
+      setPushToken(token);
+      await apiPost(cleanBaseUrl, "/api/push/register", {
+        token,
+        platform: Platform.OS,
+        staffPhone
+      }, adminPin);
+      setPushStatus("Native push is connected on this phone.");
+      setStatus("Push notifications connected.");
+    } catch (error) {
+      setPushStatus(error.message);
+      setStatus(error.message);
+    }
+  }
+
+  async function sendTestNotification() {
+    try {
+      if (Platform.OS !== "web") {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "DDD AI Dispatch",
+            body: "This is how new call and text alerts will show on your phone.",
+            data: { type: "local-test" }
+          },
+          trigger: null
+        });
+      }
+      if (adminPin) {
+        const result = await apiPost(cleanBaseUrl, "/api/push/test", {}, adminPin);
+        setPushStatus(result.sent ? `Test push sent to ${result.sent} phone${result.sent === 1 ? "" : "s"}.` : "No registered phones yet. Enable push in the iPhone app first.");
+      } else {
+        setPushStatus("Local test shown. Enter admin PIN to send a server test.");
+      }
+    } catch (error) {
+      setPushStatus(error.message);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
       <LinearGradient colors={["#fff7fb", "#f8fff9", "#f7f5ff"]} style={styles.shell}>
-        <Header business={business} settings={settings} activity={activity} editMode={editMode} />
+        <Header business={business} settings={settings} editMode={editMode} />
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {activeTab === "Home" ? (
             <HomeTab
               adminPin={adminPin}
               apiBaseUrl={apiBaseUrl}
+              activity={activity}
               editMode={editMode}
               loading={loading}
               savedApiBaseUrl={savedApiBaseUrl}
@@ -269,9 +357,13 @@ export default function App() {
               setStaffPhone={setStaffPhone}
               setSettings={setSettings}
               staffPhone={staffPhone}
+              pushStatus={pushStatus}
+              pushToken={pushToken}
+              onEnablePush={enablePushNotifications}
               onRefresh={() => loadAll(cleanBaseUrl, adminPin)}
               onSaveBaseUrl={saveBaseUrl}
               onSaveSettings={() => saveSettings("manual")}
+              onSendTestNotification={sendTestNotification}
             />
           ) : null}
 
@@ -304,7 +396,7 @@ export default function App() {
               staffPhone={staffPhone}
             />
           ) : null}
-          {activeTab === "Calls" ? <CallsTab calls={activity.calls} /> : null}
+          {activeTab === "Calls" ? <CallsTab calls={activity.calls} insights={activity.insights} /> : null}
           {activeTab === "Insights" ? <InsightsTab insights={activity.insights} /> : null}
 
           {loading ? <ActivityIndicator color="#7d4dff" /> : null}
@@ -342,10 +434,9 @@ function BottomTabs({ activeTab, onSelect }) {
   );
 }
 
-function Header({ activity, business, editMode, settings }) {
+function Header({ business, editMode, settings }) {
   return (
     <LinearGradient colors={["rgba(255, 255, 255, 0.96)", "rgba(255, 255, 255, 0.78)"]} style={styles.header}>
-      <LinearGradient colors={rainbowColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.heroGlow} />
       <View style={styles.brandRow}>
         <LinearGradient colors={["#ffffff", "#fff0fa"]} style={styles.logoFrame}>
           <Image source={require("./assets/icon.png")} style={styles.logo} />
@@ -353,15 +444,13 @@ function Header({ activity, business, editMode, settings }) {
         <View style={styles.brandCopy}>
           <Text style={styles.eyebrow}>DDD AI Dispatch</Text>
           <Text style={styles.title}>{business?.name || "DDD AI Dispatch"}</Text>
-          <Text style={styles.subtitle}>Calls, texts, bookings, insights, and voice control.</Text>
         </View>
+        <Text style={[styles.modePill, settings.enabled ? styles.modePillLive : styles.modePillPaused]}>
+          {settings.enabled ? "Live" : "Paused"}
+        </Text>
       </View>
-      <View style={styles.metricStrip}>
-        <Metric label="AI" value={settings.enabled ? "On" : "Paused"} />
-        <Metric label="Calls" value={activity.calls.length} />
-        <Metric label="Texts" value={activity.conversations.length} />
-        <Metric label="Mode" value={editMode ? "Editing" : "Locked"} />
-      </View>
+      <Text style={styles.subtitle} numberOfLines={1}>{editMode ? "Editing settings" : "Locked"} - calls, texts, bookings, insights</Text>
+      <LinearGradient colors={rainbowColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.heroGlow} />
     </LinearGradient>
   );
 }
@@ -369,6 +458,7 @@ function Header({ activity, business, editMode, settings }) {
 function HomeTab({
   adminPin,
   apiBaseUrl,
+  activity,
   editMode,
   loading,
   savedApiBaseUrl,
@@ -381,12 +471,27 @@ function HomeTab({
   setStaffPhone,
   setSettings,
   staffPhone,
+  pushStatus,
+  pushToken,
+  onEnablePush,
   onRefresh,
   onSaveBaseUrl,
-  onSaveSettings
+  onSaveSettings,
+  onSendTestNotification
 }) {
+  const todayCalls = activity?.insights?.sections?.daily?.calls ?? activity?.calls?.length ?? 0;
+  const weeklyBookings = activity?.insights?.sections?.weekly?.bookings ?? 0;
   return (
     <>
+      <Card title="At a glance">
+        <View style={styles.metricStrip}>
+          <Metric label="AI" value={settings.enabled ? "On" : "Paused"} />
+          <Metric label="Today" value={todayCalls} />
+          <Metric label="Booked" value={weeklyBookings} />
+          <Metric label="Texts" value={activity?.conversations?.length || 0} />
+        </View>
+      </Card>
+
       <Card title="Answering">
         <SwitchRow
           disabled={!editMode}
@@ -423,6 +528,21 @@ function HomeTab({
           value={staffPhone}
         />
         <Text style={styles.muted}>Outbound calls ring this phone first, then connect the customer with DDD as caller ID.</Text>
+      </Card>
+
+      <Card title="Phone alerts">
+        <View style={styles.statusRow}>
+          <View style={styles.flexText}>
+            <Text style={styles.label}>Native push notifications</Text>
+            <Text style={styles.muted}>{pushStatus}</Text>
+          </View>
+          <Text style={[styles.tinyStatusDot, pushToken ? styles.dotLive : styles.dotPaused]} />
+        </View>
+        <View style={styles.buttonRow}>
+          <ActionButton label="Enable alerts" onPress={onEnablePush} />
+          <ActionButton label="Test alert" onPress={onSendTestNotification} variant="light" />
+        </View>
+        <Text style={styles.muted}>Alerts cover new calls, missed/busy calls, customer texts, bookings, and QA follow-ups after the iPhone build is installed.</Text>
       </Card>
 
       <Card title="Run costs">
@@ -655,10 +775,13 @@ function ConversationCard({ conversation, draft, onCall, onDraftChange, onSend, 
   );
 }
 
-function CallsTab({ calls }) {
+function CallsTab({ calls, insights }) {
   const recentCalls = (calls || []).slice(0, 10);
   const completed = recentCalls.filter((call) => call.completion === "complete" || call.bookings?.length).length;
   const needsReview = recentCalls.filter((call) => call.completion === "needs-review" || call.smsStatus === "failed").length;
+  const daily = insights?.sections?.daily || {};
+  const weekly = insights?.sections?.weekly || {};
+  const monthly = insights?.sections?.monthly || {};
   return (
     <>
       <Card title="Call summary">
@@ -669,24 +792,66 @@ function CallsTab({ calls }) {
           <SummaryTile label="SMS sent" value={recentCalls.filter((call) => call.smsStatus === "sent").length} />
         </View>
       </Card>
+      <Card title="Call insights">
+        <PeriodInsight label="Today" period={daily} />
+        <PeriodInsight label="Week" period={weekly} />
+        <PeriodInsight label="Month" period={monthly} />
+      </Card>
       <Card title="Recent calls">
         {recentCalls.map((call, index) => (
-        <LinearGradient key={call.id || call.callId || index} colors={["#fffaff", "#f7fffb"]} style={styles.listCard}>
-          <View style={styles.listHeader}>
-            <Text style={styles.listTitle} numberOfLines={1}>{formatPhone(call.caller || call.from || "Unknown caller")}</Text>
-            <Text style={styles.pill}>{call.durationLabel || "No time"}</Text>
-          </View>
-          <View style={styles.callChipRow}>
-            <Text style={styles.smallChip}>{call.outcome?.label || call.status || "Logged"}</Text>
-            <Text style={styles.smallChip}>{call.smsStatus ? `SMS ${call.smsStatus}` : "SMS none"}</Text>
-            <Text style={styles.smallChip}>{call.recordingStatus === "available" ? "Recording" : "No recording"}</Text>
-          </View>
-          <Text style={styles.record} numberOfLines={3}>{call.outcome?.detail || call.transcriptText || "Transcript will appear after the call is processed."}</Text>
-        </LinearGradient>
+          <CallCard call={call} key={call.id || call.callId || index} />
         ))}
         {recentCalls.length ? null : <Text style={styles.muted}>Forwarded calls will appear here.</Text>}
       </Card>
     </>
+  );
+}
+
+function CallCard({ call }) {
+  const complete = call.completion === "complete" || call.bookings?.length;
+  const incomplete = call.completion === "incomplete" || call.outcome?.hungUpEarly;
+  const transcript = call.transcriptText || call.transcript?.map((item) => `${item.speaker || "Call"}: ${item.text}`).join("\n") || "";
+  const vehicle = call.bookings?.[0]?.vehicle || call.leads?.[0]?.vehicle || "";
+  const missing = call.bookings?.[0]?.confidence?.missing || call.leads?.[0]?.confidence?.missing || [];
+  return (
+    <LinearGradient colors={complete ? ["#f5fff8", "#fffaff"] : incomplete ? ["#fff7ed", "#fffaff"] : ["#fffaff", "#f7fffb"]} style={styles.listCard}>
+      <View style={styles.listHeader}>
+        <Text style={styles.listTitle} numberOfLines={1}>{formatPhone(call.caller || call.from || "Unknown caller")}</Text>
+        <Text style={styles.pill}>{call.durationLabel || formatDuration(call.durationSeconds) || "No time"}</Text>
+      </View>
+      <View style={styles.callChipRow}>
+        <Text style={[styles.smallChip, complete && styles.smallChipOk, incomplete && styles.smallChipWarn]}>{call.outcome?.label || call.status || "Logged"}</Text>
+        <Text style={styles.smallChip}>{call.callerStayedOn ? "Stayed on" : call.outcome?.hungUpEarly ? "Hung up early" : "Review time"}</Text>
+        <Text style={styles.smallChip}>{call.smsStatus ? `SMS ${call.smsStatus}` : "SMS none"}</Text>
+        <Text style={styles.smallChip}>{call.recordingUrl || call.recordingStatus === "available" ? "Recording" : "No recording"}</Text>
+      </View>
+      <Text style={styles.record}>{call.outcome?.detail || "Call logged for review."}</Text>
+      {vehicle ? <Text style={styles.record}>Vehicle: {vehicle}</Text> : null}
+      {missing.length ? <Text style={styles.warningText}>Needs: {missing.join(", ")}</Text> : null}
+      <View style={styles.transcriptBox}>
+        <Text style={styles.linkLabel}>Transcript</Text>
+        <Text style={styles.record} numberOfLines={9}>{transcript || "Transcript will appear after the call is processed."}</Text>
+      </View>
+    </LinearGradient>
+  );
+}
+
+function PeriodInsight({ label, period = {} }) {
+  return (
+    <LinearGradient colors={["#fffaff", "#f7fffb"]} style={styles.periodCard}>
+      <View style={styles.listHeader}>
+        <Text style={styles.listTitle}>{label}</Text>
+        <Text style={styles.pill}>{period.calls || 0} calls</Text>
+      </View>
+      <View style={styles.callChipRow}>
+        <Text style={styles.smallChip}>{period.bookings || 0} booked</Text>
+        <Text style={styles.smallChip}>{period.missed || 0} missed</Text>
+        <Text style={styles.smallChip}>{formatDuration(period.averageDurationSeconds || 0)} avg</Text>
+      </View>
+      <Text style={styles.record} numberOfLines={2}>
+        Top: {period.topServices?.[0]?.label || "not enough data"} - {period.topLocations?.[0]?.label || "no location trend yet"}
+      </Text>
+    </LinearGradient>
   );
 }
 
@@ -1053,36 +1218,46 @@ const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: "#fff7fb" },
   header: {
     marginHorizontal: 12,
-    marginTop: 10,
+    marginTop: 6,
     overflow: "hidden",
-    borderRadius: 24,
+    borderRadius: 20,
     backgroundColor: "#ffffff",
-    padding: 14,
+    padding: 10,
     shadowColor: "#3b2267",
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.14,
-    shadowRadius: 28,
-    elevation: 8
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 18,
+    elevation: 5
   },
-  heroGlow: { height: 8, borderRadius: 999, backgroundColor: "#ff3ea5", marginBottom: 14 },
+  heroGlow: { height: 4, borderRadius: 999, backgroundColor: "#ff3ea5", marginTop: 8 },
   brandRow: { alignItems: "center", flexDirection: "row", gap: 10 },
   logoFrame: {
     alignItems: "center",
     justifyContent: "center",
-    width: 60,
-    height: 60,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 16,
     shadowColor: "#e640a5",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    elevation: 5
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
+    elevation: 3
   },
-  logo: { width: 52, height: 52, borderRadius: 17 },
+  logo: { width: 38, height: 38, borderRadius: 13 },
   brandCopy: { flex: 1, minWidth: 0 },
-  eyebrow: { color: "#b7218f", fontSize: 12, fontWeight: "900", textTransform: "uppercase" },
-  title: { color: "#161827", fontSize: 24, fontWeight: "900" },
-  subtitle: { color: "#5d6178", fontSize: 13, fontWeight: "700", lineHeight: 18 },
+  eyebrow: { color: "#b7218f", fontSize: 10, fontWeight: "900", textTransform: "uppercase" },
+  title: { color: "#161827", fontSize: 18, fontWeight: "900" },
+  subtitle: { color: "#5d6178", fontSize: 11, fontWeight: "800", lineHeight: 15, marginTop: 4 },
+  modePill: {
+    overflow: "hidden",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: "900",
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  modePillLive: { backgroundColor: "#e9fff3", color: "#12824d" },
+  modePillPaused: { backgroundColor: "#fff0f3", color: "#c23b52" },
   metricStrip: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 12 },
   metric: {
     width: "48.5%",
@@ -1265,6 +1440,35 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     paddingHorizontal: 8,
     paddingVertical: 4
+  },
+  smallChipOk: { backgroundColor: "#e9fff3", color: "#12824d" },
+  smallChipWarn: { backgroundColor: "#fff7ed", color: "#9a3412" },
+  tinyStatusDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 999,
+    shadowColor: "#23c779",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 10
+  },
+  dotLive: { backgroundColor: "#23c779" },
+  dotPaused: { backgroundColor: "#d9d3ee", shadowOpacity: 0 },
+  periodCard: {
+    gap: 7,
+    borderColor: "rgba(217, 211, 238, 0.9)",
+    borderRadius: 18,
+    borderWidth: 1,
+    backgroundColor: "#fffaff",
+    padding: 12
+  },
+  transcriptBox: {
+    gap: 6,
+    borderColor: "rgba(118, 87, 255, 0.16)",
+    borderRadius: 16,
+    borderWidth: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.72)",
+    padding: 10
   },
   messagePreviewStack: { gap: 7 },
   textBubble: {

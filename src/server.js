@@ -10,6 +10,7 @@ import {
   listBookingsByPhone,
   listCallLog,
   listLeads,
+  listPushTokens,
   listSummaries,
   loadReceptionistSettings,
   loadBusiness,
@@ -24,6 +25,7 @@ import {
   saveOutgoingSms,
   saveBookingRequest,
   saveLead,
+  savePushToken,
   saveReceptionistSettings,
   normalizeStaffAccessCodes,
   parseStaffAccessCodes
@@ -131,6 +133,11 @@ app.post("/api/twilio/sms", express.urlencoded({ extended: false }), async (req,
 
     const record = await saveIncomingSms(req.body || {});
     console.log(`Inbound Twilio SMS stored from ${record.from || "unknown"} to ${record.to || "unknown"}`);
+    notifyTeam({
+      title: "New DDD text",
+      body: `${formatPhoneForAlert(record.from)}: ${record.body || "New customer message"}`.slice(0, 160),
+      data: { type: "sms", from: record.from || "" }
+    });
     res.type("text/xml").send("<Response></Response>");
   } catch (error) {
     next(error);
@@ -289,6 +296,46 @@ app.post("/api/calls/outbound", express.json(), async (req, res, next) => {
   }
 });
 
+app.post("/api/push/register", express.json(), async (req, res, next) => {
+  try {
+    const staff = await getStaffAccess(req);
+    if (!staff.ok) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+
+    const subscription = await savePushToken({
+      token: req.body?.token,
+      platform: req.body?.platform,
+      staffName: staff.name,
+      staffRole: staff.role,
+      staffPhone: req.body?.staffPhone
+    });
+    res.status(201).json({ ok: true, staff, subscription: maskPushSubscription(subscription) });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+app.post("/api/push/test", express.json(), async (req, res, next) => {
+  try {
+    const staff = await getStaffAccess(req);
+    if (!staff.ok) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+
+    const result = await notifyTeam({
+      title: "DDD AI Dispatch test",
+      body: "Push notifications are connected for calls, texts, bookings, and follow-ups.",
+      data: { type: "test", staff: staff.name }
+    });
+    res.json({ ok: result.ok, staff, sent: result.sent, skipped: result.skipped, errors: result.errors });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/twilio/voice-verify", express.urlencoded({ extended: false }), async (req, res) => {
   if (!hasTwilioSmsAccess(req)) {
     res.status(403).send("Forbidden");
@@ -360,6 +407,11 @@ async function handleTwilioVoice(req, res, next) {
           { name: "to", value: req.body?.To || req.query?.To || "" }
         ]
       }
+    });
+    notifyTeam({
+      title: "New DDD call",
+      body: `${formatPhoneForAlert(req.body?.From || req.query?.From)} is calling DDD AI Dispatch.`,
+      data: { type: "call", from: req.body?.From || req.query?.From || "" }
     });
 
     if (!sipUri) {
@@ -445,6 +497,13 @@ app.post("/api/twilio/call-status", express.urlencoded({ extended: false }), asy
         ]
       }
     });
+    if (/busy|failed|no-answer|canceled|cancelled|missed/.test(String(status).toLowerCase())) {
+      notifyTeam({
+        title: "DDD call needs review",
+        body: `${formatPhoneForAlert(req.body.From || "")} ended as ${status || "missed"}.`,
+        data: { type: "missed-call", status, from: req.body.From || "" }
+      });
+    }
     res.type("text/xml").send("<Response></Response>");
   } catch (error) {
     next(error);
@@ -1191,6 +1250,68 @@ async function startTwilioBridgeCall(staffPhone, customerPhone) {
     from: payload.from,
     customerPhone
   };
+}
+
+async function notifyTeam({ title, body, data = {} }) {
+  let tokens = [];
+  try {
+    tokens = await listPushTokens(100);
+  } catch (error) {
+    console.warn(`Could not load push tokens: ${error.message}`);
+    return { ok: false, sent: 0, skipped: true, errors: [error.message] };
+  }
+
+  const messages = tokens
+    .filter((subscription) => /^Expo(nent)?PushToken\[[^\]]+\]$/.test(subscription.token || ""))
+    .map((subscription) => ({
+      to: subscription.token,
+      sound: "default",
+      title,
+      body,
+      data: {
+        app: "ddd-ai-dispatch",
+        ...data
+      }
+    }));
+
+  if (!messages.length) return { ok: true, sent: 0, skipped: true, errors: [] };
+
+  try {
+    const response = await fetch("https://exp.host/--/api/v2/push/send", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Accept-Encoding": "gzip, deflate",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(messages.length === 1 ? messages[0] : messages)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = payload?.errors?.[0]?.message || payload?.message || `Expo push failed with ${response.status}`;
+      console.warn(message);
+      return { ok: false, sent: 0, skipped: false, errors: [message] };
+    }
+    return { ok: true, sent: messages.length, skipped: false, errors: [] };
+  } catch (error) {
+    console.warn(`Expo push failed: ${error.message}`);
+    return { ok: false, sent: 0, skipped: false, errors: [error.message] };
+  }
+}
+
+function maskPushSubscription(subscription = {}) {
+  const token = String(subscription.token || "");
+  return {
+    ...subscription,
+    token: token ? `${token.slice(0, 18)}...${token.slice(-8)}` : ""
+  };
+}
+
+function formatPhoneForAlert(value = "") {
+  const phone = normalizeE164(value);
+  if (!phone) return "A customer";
+  const digits = phone.replace(/\D/g, "");
+  return `(${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
 }
 
 function normalizeE164(value) {

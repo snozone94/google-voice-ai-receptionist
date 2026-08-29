@@ -10,6 +10,7 @@ const callsPath = path.join(dataDir, "calls.jsonl");
 const summariesPath = path.join(dataDir, "summaries.jsonl");
 const bookingsPath = path.join(dataDir, "bookings.jsonl");
 const smsPath = path.join(dataDir, "sms.jsonl");
+const pushTokensPath = path.join(dataDir, "push-tokens.jsonl");
 const settingsPath = path.join(dataDir, "settings.json");
 const bundledSettingsPath = path.join(bundledDataDir, "settings.json");
 const bookingStatuses = ["Requested", "Confirmed", "Technician Assigned", "Technician En Route", "Arrived", "In Progress", "Completed", "Cancelled"];
@@ -773,6 +774,33 @@ export async function saveOutgoingSms(message) {
 
 export async function listSms(limit = 50) {
   return listRecords(smsPath, limit);
+}
+
+export async function savePushToken(subscription = {}) {
+  const token = cleanText(subscription.token, "", 180);
+  if (!token || !/^Expo(nent)?PushToken\[[^\]]+\]$/.test(token)) {
+    throw new Error("Enter a valid Expo push token.");
+  }
+
+  const existing = await listPushTokens(1000);
+  const record = {
+    createdAt: new Date().toISOString(),
+    token,
+    platform: cleanText(subscription.platform, "", 40),
+    staffName: cleanText(subscription.staffName, "DDD team", 80),
+    staffRole: cleanText(subscription.staffRole, "staff", 40),
+    staffPhone: normalizeE164(subscription.staffPhone || ""),
+    enabled: subscription.enabled !== false
+  };
+  const withoutToken = existing.filter((item) => item.token !== token);
+  await ensureDataDir();
+  await fs.writeFile(pushTokensPath, `${[record, ...withoutToken].map((item) => JSON.stringify(item)).join("\n")}\n`);
+  return record;
+}
+
+export async function listPushTokens(limit = 100) {
+  const records = await listRecords(pushTokensPath, limit);
+  return records.filter((record) => record.enabled !== false && record.token);
 }
 
 export async function listConversations(limit = 200) {

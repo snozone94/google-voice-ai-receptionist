@@ -19,6 +19,9 @@ Expo admin app for controlling the live DDD AI Dispatch system from iPhone.
 - Shared inbox preview
 - Recent calls, leads, and booking requests
 - Daily/weekly/monthly insights preview
+- Native push notification registration and test alerts
+- Shared inbox replies from the DDD number
+- Outbound customer calls that ring the tech first, then show DDD caller ID
 
 ## Product Structure
 
@@ -35,6 +38,16 @@ https://google-voice-ai-receptionist.onrender.com
 ```
 
 You can change this inside the app if the backend moves.
+
+## Callback Number Flow
+
+The app cannot make the native iPhone dialer spoof the DDD number. Instead, the tech enters their own call-back phone on Home. When they tap Call Customer, the backend asks Twilio to call that tech phone first. Once the tech answers, Twilio bridges the customer and uses the configured DDD/Twilio caller ID. The customer sees DDD, not the tech's personal number.
+
+Texts work similarly: replies in Inbox call the backend, and the backend sends the SMS from the configured DDD/Twilio texting number.
+
+## Push Notifications
+
+Native push is wired for new calls, missed/busy calls, customer texts, and test alerts. Local test alerts can appear in development, but real remote push alerts need an installed Expo development/App Store build so the phone can register a production push token. Expo Go is useful for layout testing, but the final push setup belongs in the real iOS build.
 
 ## Run For Testing
 
