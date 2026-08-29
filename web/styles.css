@@ -853,6 +853,10 @@ h2 {
   margin-bottom: 14px;
 }
 
+.insight-highlights:empty {
+  display: none;
+}
+
 .insight-highlight,
 .focus-card,
 .insight-card,
@@ -1008,7 +1012,7 @@ h2 {
 }
 
 .insight-columns {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .insight-metric,

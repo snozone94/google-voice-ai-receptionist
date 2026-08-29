@@ -746,42 +746,7 @@ async function refreshInsights() {
   const daily = sections.daily || {};
   const weekly = sections.weekly || {};
   const monthly = sections.monthly || {};
-  insightHighlights.innerHTML = [
-    {
-      label: "Today",
-      value: `${daily.bookings || 0}/${daily.calls || 0}`,
-      detail: "bookings from calls",
-      change: daily.changes?.bookings
-    },
-    {
-      label: "Needs follow-up",
-      value: String((daily.missed || 0) + (daily.needsReview || 0)),
-      detail: "missed or review calls",
-      change: daily.changes?.missed
-    },
-    {
-      label: "SMS coverage",
-      value: `${weekly.smsSent || 0}`,
-      detail: "texts sent this week",
-      change: weekly.changes?.smsSent
-    },
-    {
-      label: "Avg call",
-      value: formatDuration(weekly.averageDurationSeconds || 0) || "0s",
-      detail: "this week",
-      change: weekly.changes?.averageDurationSeconds
-    }
-  ]
-    .map(
-      (item) => `
-        <div class="insight-highlight">
-          <span>${escapeHtml(item.label)}</span>
-          <strong>${escapeHtml(item.value)}</strong>
-          <small>${escapeHtml(item.detail)} · ${escapeHtml(formatInsightChange(item.change))}</small>
-        </div>
-      `
-    )
-    .join("");
+  insightHighlights.innerHTML = "";
   if (insightFocusStrip) {
     insightFocusStrip.innerHTML = renderInsightFocusStrip(daily, weekly, monthly);
   }
@@ -804,21 +769,17 @@ function renderInsightCard(key, report) {
       <span>${escapeHtml(report.calls)} call${report.calls === 1 ? "" : "s"}</span>
     </div>
     <div class="insight-mini-grid">
+      ${renderInsightMetric("Calls", report.calls, report.changes?.calls)}
       ${renderInsightMetric("Bookings", report.bookings, report.changes?.bookings)}
-      ${renderInsightMetric("Leads", report.leads, report.changes?.leads)}
-      ${renderInsightMetric("Missed", report.missed, report.changes?.missed)}
-      ${renderInsightMetric("Needs review", report.needsReview || 0)}
+      ${renderInsightMetric("Follow-up", (report.missed || 0) + (report.needsReview || 0), report.changes?.missed)}
       ${renderInsightMetric("Conversion", formatPercent(report.bookingRate))}
-      ${renderInsightMetric("SMS coverage", formatPercent(report.smsCoverageRate))}
       ${renderInsightMetric("Avg time", formatDuration(report.averageDurationSeconds) || "0s", report.changes?.averageDurationSeconds)}
-      ${renderInsightMetric("SMS sent", report.smsSent, report.changes?.smsSent)}
-      ${renderInsightMetric("Transcripts", report.transcripts)}
+      ${renderInsightMetric("SMS coverage", formatPercent(report.smsCoverageRate))}
     </div>
     <div class="insight-columns">
       ${renderTopList("Top services", report.topServices)}
       ${renderTopList("Top locations", report.topLocations)}
       ${renderTopList("Caller types", report.callerTypes)}
-      ${renderTopList("Common questions", report.commonQuestions)}
     </div>
     <div class="insight-change-box">
       <strong>What changed</strong>
@@ -828,10 +789,12 @@ function renderInsightCard(key, report) {
       <strong>What to watch</strong>
       ${renderInsightWatchList(report)}
     </div>
-    <div class="recent-call-strip">
-      <strong>Recent calls</strong>
-      ${renderRecentInsightCalls(report.recentCalls)}
-    </div>
+    ${key === "daily" ? `
+      <div class="recent-call-strip">
+        <strong>Today's calls</strong>
+        ${renderRecentInsightCalls(report.recentCalls)}
+      </div>
+    ` : ""}
   `;
 }
 
