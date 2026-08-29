@@ -482,7 +482,8 @@ function HomeTab({
   onUnlockAdmin,
   onSendTestNotification
 }) {
-  const todayCalls = activity?.insights?.sections?.daily?.calls ?? activity?.calls?.length ?? 0;
+  const activeDay = activity?.insights?.sections?.latestActiveDay || activity?.insights?.sections?.daily || {};
+  const todayCalls = activeDay.calls ?? activity?.calls?.length ?? 0;
   const weeklyBookings = activity?.insights?.sections?.weekly?.bookings ?? 0;
   const hasAdminPin = Boolean(String(adminPin || "").trim());
   return (
@@ -839,6 +840,7 @@ function CallsTab({ calls, insights }) {
   const completed = recentCalls.filter((call) => call.completion === "complete" || call.bookings?.length).length;
   const needsReview = recentCalls.filter((call) => call.completion === "needs-review" || call.smsStatus === "failed").length;
   const daily = insights?.sections?.daily || {};
+  const activeDay = insights?.sections?.latestActiveDay || daily;
   const weekly = insights?.sections?.weekly || {};
   const monthly = insights?.sections?.monthly || {};
   return (
@@ -852,7 +854,7 @@ function CallsTab({ calls, insights }) {
         </View>
       </Card>
       <Card title="Call insights">
-        <PeriodInsight label="Today" period={daily} />
+        <PeriodInsight label={activeDay.label || "Today"} period={activeDay} />
         <PeriodInsight label="Week" period={weekly} />
         <PeriodInsight label="Month" period={monthly} />
       </Card>
@@ -916,16 +918,17 @@ function PeriodInsight({ label, period = {} }) {
 
 function InsightsTab({ insights }) {
   const daily = insights?.sections?.daily || {};
+  const activeDay = insights?.sections?.latestActiveDay || daily;
   const weekly = insights?.sections?.weekly || {};
   const monthly = insights?.sections?.monthly || {};
   return (
     <>
       <Card title="Business brain">
         <View style={styles.summaryGrid}>
-          <SummaryTile label="Today" value={daily.calls || 0} />
+          <SummaryTile label={activeDay.label === daily.label ? "Today" : "Latest"} value={activeDay.calls || 0} />
           <SummaryTile label="Week" value={weekly.calls || 0} />
           <SummaryTile label="Month" value={monthly.calls || 0} />
-          <SummaryTile label="SMS" value={formatPercent(weekly.smsCoverageRate || daily.smsCoverageRate)} />
+          <SummaryTile label="SMS" value={formatPercent(weekly.smsCoverageRate || activeDay.smsCoverageRate)} />
         </View>
         {(insights?.suggestions || []).slice(0, 5).map((suggestion, index) => (
           <LinearGradient key={`${suggestion}-${index}`} colors={["#fffaff", "#f7fffb"]} style={styles.listCard}>
@@ -937,14 +940,14 @@ function InsightsTab({ insights }) {
       </Card>
       <Card title="What changed">
         <InsightRow label="Bookings" value={`${weekly.bookings || 0} weekly / ${monthly.bookings || 0} monthly`} />
-        <InsightRow label="Needs review" value={weekly.needsReview || daily.needsReview || 0} />
-        <InsightRow label="Missed/fallback" value={weekly.missed || daily.missed || 0} />
-        <InsightRow label="Avg time" value={formatDuration(weekly.averageDurationSeconds || daily.averageDurationSeconds || 0)} />
+        <InsightRow label="Needs review" value={weekly.needsReview || activeDay.needsReview || 0} />
+        <InsightRow label="Missed/fallback" value={weekly.missed || activeDay.missed || 0} />
+        <InsightRow label="Avg time" value={formatDuration(weekly.averageDurationSeconds || activeDay.averageDurationSeconds || 0)} />
       </Card>
       <Card title="Hot spots">
-        <MiniList title="Top services" items={weekly.topServices || daily.topServices || []} />
-        <MiniList title="Top locations" items={weekly.topLocations || daily.topLocations || []} />
-        <MiniList title="Caller types" items={weekly.callerTypes || daily.callerTypes || []} />
+        <MiniList title="Top services" items={weekly.topServices?.length ? weekly.topServices : activeDay.topServices || []} />
+        <MiniList title="Top locations" items={weekly.topLocations?.length ? weekly.topLocations : activeDay.topLocations || []} />
+        <MiniList title="Caller types" items={weekly.callerTypes?.length ? weekly.callerTypes : activeDay.callerTypes || []} />
       </Card>
     </>
   );

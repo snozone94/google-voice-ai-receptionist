@@ -353,12 +353,30 @@ export async function buildBusinessInsights() {
     weekly: summarizeInsightPeriod(windows[2], windows[3], { callLog, leads, bookings, sms }),
     monthly: summarizeInsightPeriod(windows[4], windows[5], { callLog, leads, bookings, sms })
   };
+  sections.latestActiveDay = sections.daily.calls || sections.daily.bookings || sections.daily.leads || sections.daily.smsSent || sections.daily.smsReceived
+    ? sections.daily
+    : summarizeLatestActiveDay(generatedAt, { callLog, leads, bookings, sms });
   return {
     ok: true,
     generatedAt: generatedAt.toISOString(),
     sections,
     suggestions: buildInsightSuggestions(sections),
     highlights: buildInsightHighlights(sections)
+  };
+}
+
+function summarizeLatestActiveDay(now, records) {
+  for (let offset = 1; offset <= 30; offset += 1) {
+    const currentWindow = makeInsightWindow(`Latest active day (${offset === 1 ? "yesterday" : `${offset} days ago`})`, "day", now, 1, offset);
+    const previousWindow = makeInsightWindow("Previous active comparison", "day", now, 1, offset + 1);
+    const summary = summarizeInsightPeriod(currentWindow, previousWindow, records);
+    if (summary.calls || summary.bookings || summary.leads || summary.smsSent || summary.smsReceived) {
+      return summary;
+    }
+  }
+  return {
+    ...summarizeInsightPeriod(makeInsightWindow("Latest active day", "day", now, 1), makeInsightWindow("Previous active comparison", "day", now, 1, 1), records),
+    label: "No activity yet"
   };
 }
 
