@@ -353,25 +353,33 @@
             <p class="eyebrow">Shared DDD inbox</p>
             <h2>Texts</h2>
           </div>
+          <button id="inboxLoginButton" type="button">Open inbox</button>
         </div>
         <div class="inbox-auth">
-          <label>
-            Staff code
-            <input id="staffPinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Enter your staff code" />
-          </label>
-          <label>
-            Your name
-            <input id="staffNameInput" autocomplete="name" placeholder="Brianna, tech name, dispatch..." />
-          </label>
-          <label>
-            Status
-            <select id="staffStatusSelect">
-              <option value="available">Available</option>
-              <option value="busy">Busy</option>
-              <option value="on-call">On-call</option>
-              <option value="active-call">Active call</option>
-            </select>
-          </label>
+          <div class="inbox-login-card">
+            <div>
+              <p class="eyebrow">Login</p>
+              <h3>Enter your staff code once</h3>
+              <p>Each tech uses their own code. Your name/status shows other team members who is online or replying.</p>
+            </div>
+            <label>
+              Staff code
+              <input id="staffPinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="9706 or tech code" />
+            </label>
+            <label>
+              Your name
+              <input id="staffNameInput" autocomplete="name" placeholder="Brianna, tech name, dispatch..." />
+            </label>
+            <label>
+              Status
+              <select id="staffStatusSelect">
+                <option value="available">Available</option>
+                <option value="busy">Busy</option>
+                <option value="on-call">On-call</option>
+                <option value="active-call">Active call</option>
+              </select>
+            </label>
+          </div>
         </div>
         <div class="settings-grid staff-code-editor">
           <label>
@@ -391,12 +399,17 @@
           <aside class="conversation-list" id="conversationList"></aside>
           <div class="conversation-panel">
             <div class="conversation-header">
-              <strong id="selectedConversationTitle">Select a conversation</strong>
-              <span id="selectedConversationMeta"></span>
+              <div>
+                <strong id="selectedConversationTitle">Select a conversation</strong>
+                <span id="selectedConversationMeta"></span>
+              </div>
+              <div id="conversationConfidence" class="confidence-pill muted">No booking selected</div>
             </div>
+            <div id="conversationDetails" class="conversation-details"></div>
             <div class="message-list" id="messageList"></div>
             <div id="typingStatus" class="typing-status"></div>
             <form id="replyForm" class="reply-form">
+              <div class="quick-replies" id="quickReplies"></div>
               <textarea id="replyMessageInput" rows="3" maxlength="1000" placeholder="Type a reply from DDD..."></textarea>
               <button id="sendReplyButton" type="submit" disabled>Send text</button>
             </form>

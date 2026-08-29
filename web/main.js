@@ -88,6 +88,7 @@ const saveSettingsButton = document.querySelector("#saveSettingsButton");
 const editSettingsButton = document.querySelector("#editSettingsButton");
 const settingsStatus = document.querySelector("#settingsStatus");
 const refreshInboxButton = document.querySelector("#refreshInboxButton");
+const inboxLoginButton = document.querySelector("#inboxLoginButton");
 const staffPinInput = document.querySelector("#staffPinInput");
 const staffNameInput = document.querySelector("#staffNameInput");
 const staffStatusSelect = document.querySelector("#staffStatusSelect");
@@ -95,10 +96,13 @@ const staffAccessCodesInput = document.querySelector("#staffAccessCodesInput");
 const conversationList = document.querySelector("#conversationList");
 const selectedConversationTitle = document.querySelector("#selectedConversationTitle");
 const selectedConversationMeta = document.querySelector("#selectedConversationMeta");
+const conversationConfidence = document.querySelector("#conversationConfidence");
+const conversationDetails = document.querySelector("#conversationDetails");
 const messageList = document.querySelector("#messageList");
 const replyForm = document.querySelector("#replyForm");
 const replyMessageInput = document.querySelector("#replyMessageInput");
 const sendReplyButton = document.querySelector("#sendReplyButton");
+const quickReplies = document.querySelector("#quickReplies");
 const inboxStatus = document.querySelector("#inboxStatus");
 const teamPresenceList = document.querySelector("#teamPresenceList");
 const typingStatus = document.querySelector("#typingStatus");
@@ -1086,13 +1090,18 @@ function renderConversations() {
   }
 
   for (const conversation of conversations) {
+    const booking = getLatestConversationBooking(conversation);
+    const confidence = booking?.confidence || estimateConversationConfidence(conversation);
     const button = document.createElement("button");
     button.type = "button";
     button.className = conversation.phone === selectedConversationPhone ? "conversation-item selected" : "conversation-item";
     button.innerHTML = `
-      <strong>${formatPhone(conversation.phone)}</strong>
+      <div class="conversation-item-top">
+        <strong>${formatPhone(conversation.phone)}</strong>
+        <small>${formatTime(conversation.lastMessageAt)}</small>
+      </div>
       <span>${conversation.lastBody || "No message body"}</span>
-      <small>${formatTime(conversation.lastMessageAt)}</small>
+      <em class="mini-confidence ${confidenceClass(confidence)}">${escapeHtml(confidence.label)}</em>
     `;
     button.addEventListener("click", () => {
       selectedConversationPhone = conversation.phone;
@@ -1111,12 +1120,26 @@ function renderSelectedConversation() {
   if (!conversation) {
     selectedConversationTitle.textContent = "Select a conversation";
     selectedConversationMeta.textContent = "";
+    if (conversationConfidence) {
+      conversationConfidence.className = "confidence-pill muted";
+      conversationConfidence.textContent = "No booking selected";
+    }
+    if (conversationDetails) conversationDetails.innerHTML = "";
+    if (quickReplies) quickReplies.innerHTML = "";
     sendReplyButton.disabled = true;
     return;
   }
 
+  const booking = getLatestConversationBooking(conversation);
+  const confidence = booking?.confidence || estimateConversationConfidence(conversation);
   selectedConversationTitle.textContent = formatPhone(conversation.phone);
-  selectedConversationMeta.textContent = `${conversation.messages.length} message${conversation.messages.length === 1 ? "" : "s"}`;
+  selectedConversationMeta.textContent = `${conversation.messages.length} message${conversation.messages.length === 1 ? "" : "s"} · ${booking?.serviceType || "No booking yet"}`;
+  if (conversationConfidence) {
+    conversationConfidence.className = `confidence-pill ${confidenceClass(confidence)}`;
+    conversationConfidence.textContent = `${confidence.label} · ${confidence.score}%`;
+  }
+  renderConversationDetails(conversation, booking, confidence);
+  renderQuickReplies(conversation, booking, confidence);
   sendReplyButton.disabled = !replyMessageInput.value.trim();
   sendPresence().catch(() => {});
 
@@ -1136,6 +1159,80 @@ function renderSelectedConversation() {
   renderTypingStatus();
 }
 
+function getLatestConversationBooking(conversation = {}) {
+  return [...(conversation.bookings || [])].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0] || null;
+}
+
+function estimateConversationConfidence(conversation = {}) {
+  const text = `${conversation.lastBody || ""} ${(conversation.messages || []).map((message) => message.body).join(" ")}`;
+  const missing = [];
+  if (!conversation.phone) missing.push("callback number");
+  if (!/\b\d{3,}\s+\w+| at | near | cross street|location|address/i.test(text)) missing.push("location");
+  if (!inferServiceFromText(text)) missing.push("service");
+  const score = Math.max(0, Math.round(((4 - Math.min(missing.length, 4)) / 4) * 100));
+  return {
+    score,
+    label: missing.includes("location") ? "Needs location" : missing.length ? "Needs review" : "Ready to dispatch",
+    missing
+  };
+}
+
+function confidenceClass(confidence = {}) {
+  const label = String(confidence.label || "").toLowerCase();
+  if (label.includes("ready")) return "ready";
+  if (label.includes("location")) return "needs-location";
+  if (label.includes("callback") || label.includes("vehicle")) return "needs-info";
+  return "needs-review";
+}
+
+function renderConversationDetails(conversation, booking, confidence) {
+  if (!conversationDetails) return;
+  const detailItems = [
+    ["Service", booking?.serviceType || inferServiceFromText(conversation.lastBody || "") || "Not clear yet"],
+    ["Location", booking?.location || "Not captured yet"],
+    ["Vehicle", [booking?.vehicle, booking?.vehicleColor].filter(Boolean).join(" · ") || "Not captured yet"],
+    ["Missing", confidence.missing?.length ? confidence.missing.join(", ") : "Nothing obvious"]
+  ];
+  conversationDetails.innerHTML = detailItems
+    .map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`)
+    .join("");
+}
+
+function renderQuickReplies(conversation, booking, confidence) {
+  if (!quickReplies) return;
+  const locationUrl = booking?.customerLocationUrl || "";
+  const replies = [
+    {
+      label: "Ask location",
+      text: locationUrl
+        ? `Please confirm your service location here so DDD can dispatch correctly: ${locationUrl}`
+        : "What is the exact address, business name, or nearest cross street for service?"
+    },
+    {
+      label: "On it",
+      text: "Thanks. DDD received this and will follow up with the next step shortly."
+    },
+    {
+      label: "Need vehicle",
+      text: "What is the vehicle year, make, model, and color?"
+    },
+    {
+      label: "Payment",
+      text: "DDD accepts cash, card, tap pay, and installments. We do not accept checks."
+    }
+  ];
+  quickReplies.innerHTML = replies
+    .map((reply) => `<button type="button" data-reply="${escapeHtml(reply.text)}">${escapeHtml(reply.label)}</button>`)
+    .join("");
+  for (const button of quickReplies.querySelectorAll("button")) {
+    button.addEventListener("click", () => {
+      replyMessageInput.value = button.dataset.reply || "";
+      sendReplyButton.disabled = !replyMessageInput.value.trim();
+      replyMessageInput.focus();
+    });
+  }
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -1150,10 +1247,16 @@ async function refreshInbox() {
   localStorage.setItem("dddStaffName", staffNameInput.value.trim());
   staffStatusSelect.value = normalizeStaffStatus(staffStatusSelect.value);
   localStorage.setItem("dddStaffStatus", staffStatusSelect.value);
-  setInboxStatus("Loading texts...");
+  if (!staffPinInput.value.trim() && !adminPinInput.value.trim()) {
+    setInboxStatus("Enter your staff code, then tap Open inbox.");
+    conversations = [];
+    renderConversations();
+    return;
+  }
+  setInboxStatus("Opening inbox...");
   const response = await fetch("/api/conversations", { headers: staffHeaders() });
   if (response.status === 403) {
-    setInboxStatus("Enter your staff code to load texts.");
+    setInboxStatus("That code did not work. Check the staff code or ask admin to update it.");
     conversations = [];
     renderConversations();
     return;
@@ -1170,7 +1273,7 @@ async function refreshInbox() {
   conversations = payload.conversations || [];
   renderConversations();
   renderTeamPresence();
-  setInboxStatus(conversations.length ? "Inbox is up to date." : "No texts yet. New SMS will appear here after Twilio receives the number.");
+  setInboxStatus(conversations.length ? `Signed in as ${payload.staff?.name || "DDD team"}. Inbox is up to date.` : "Signed in. No texts yet.");
 }
 
 async function refreshPresence() {
@@ -1220,6 +1323,12 @@ refreshInboxButton.addEventListener("click", () => {
   refreshInsights().catch((error) => {
     if (insightsStatus) insightsStatus.textContent = error.message;
   });
+});
+
+inboxLoginButton?.addEventListener("click", () => {
+  setActiveTab("inbox");
+  refreshInbox().catch((error) => setInboxStatus(error.message));
+  sendPresence().catch(() => {});
 });
 
 adminPinInput.addEventListener("change", () => {

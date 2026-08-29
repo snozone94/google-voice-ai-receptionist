@@ -275,6 +275,7 @@ export async function saveCallSummary(summary) {
 
 export async function saveBookingRequest(booking) {
   const record = normalizeBookingRecord(booking);
+  record.confidence = calculateBookingConfidence(record);
   const sync = await syncBookingRequest(record);
   record.externalSync = sync;
   if (sync.ok && sync.trackingUrl) {
@@ -316,7 +317,8 @@ export async function listSummaries(limit) {
 }
 
 export async function listBookings(limit) {
-  return listRecords(bookingsPath, limit);
+  const records = await listRecords(bookingsPath, limit);
+  return records.map((booking) => ({ ...booking, confidence: booking.confidence || calculateBookingConfidence(booking) }));
 }
 
 export async function buildBusinessInsights() {
@@ -680,13 +682,36 @@ export async function listBookingsByPhone(phone, limit = 20) {
   const records = await listRecords(bookingsPath, 1000);
   return records
     .filter((booking) => normalizeE164(booking.phone || booking.customer_phone) === target)
+    .map((booking) => ({ ...booking, confidence: booking.confidence || calculateBookingConfidence(booking) }))
     .slice(0, limit);
 }
 
 export async function getBookingStatus(bookingId, token) {
   if (!bookingId || !token) return null;
   const records = await listRecords(bookingsPath, 1000);
-  return records.find((booking) => booking.bookingId === bookingId && booking.statusToken === token) || null;
+  const booking = records.find((item) => item.bookingId === bookingId && item.statusToken === token) || null;
+  return booking ? { ...booking, confidence: booking.confidence || calculateBookingConfidence(booking) } : null;
+}
+
+export async function updateBookingLocation(bookingId, token, locationUpdate = {}) {
+  if (!bookingId || !token) return null;
+  await ensureDataDir();
+  const records = await listRecords(bookingsPath, 5000);
+  const index = records.findIndex((booking) => booking.bookingId === bookingId && booking.statusToken === token);
+  if (index < 0) return null;
+  const existing = records[index];
+  const next = {
+    ...existing,
+    location: cleanLongText(locationUpdate.location || existing.location, existing.location || "", 700),
+    latitude: cleanText(locationUpdate.latitude || locationUpdate.lat || existing.latitude || "", "", 80),
+    longitude: cleanText(locationUpdate.longitude || locationUpdate.lng || existing.longitude || "", "", 80),
+    locationConfirmedAt: new Date().toISOString(),
+    locationSource: cleanText(locationUpdate.source || "customer_location_page", "customer_location_page", 80)
+  };
+  next.confidence = calculateBookingConfidence(next);
+  records[index] = next;
+  await fs.writeFile(bookingsPath, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
+  return next;
 }
 
 export async function saveCallEvent(event) {
@@ -744,6 +769,14 @@ export async function listSms(limit = 50) {
 
 export async function listConversations(limit = 200) {
   const messages = await listRecords(smsPath, limit);
+  const bookings = await listRecords(bookingsPath, 1000);
+  const bookingsByPhone = new Map();
+  for (const booking of bookings) {
+    const phone = normalizeConversationPhone(booking.phone || booking.customer_phone);
+    if (!phone) continue;
+    if (!bookingsByPhone.has(phone)) bookingsByPhone.set(phone, []);
+    bookingsByPhone.get(phone).push({ ...booking, confidence: booking.confidence || calculateBookingConfidence(booking) });
+  }
   const conversations = new Map();
   for (const message of [...messages].reverse()) {
     const direction = message.direction || "inbound";
@@ -756,6 +789,7 @@ export async function listConversations(limit = 200) {
         lastMessageAt: message.createdAt,
         lastBody: message.body || "",
         unread: 0,
+        bookings: bookingsByPhone.get(key) || [],
         messages: []
       });
     }
@@ -776,6 +810,37 @@ export async function listConversations(limit = 200) {
       messages: conversation.messages.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
     }))
     .sort((a, b) => String(b.lastMessageAt).localeCompare(String(a.lastMessageAt)));
+}
+
+export function calculateBookingConfidence(booking = {}) {
+  const missing = [];
+  if (!cleanText(booking.name, "", 160) || cleanText(booking.name, "", 160).toLowerCase() === "customer") missing.push("customer name");
+  if (!normalizeE164(booking.phone || booking.customer_phone || booking.customerPhone)) missing.push("callback number");
+  if (!cleanLongText(booking.location || booking.service_address || booking.address, "", 700)) missing.push("location");
+  if (!cleanText(booking.serviceType || booking.service || booking.reason, "", 160)) missing.push("service");
+  const serviceText = String(booking.serviceType || booking.reason || booking.notes || "").toLowerCase();
+  if (/(roadside|tire|flat|jump|battery|lockout|fuel|gas|oil|brake|rotor|hub|vehicle|mobile)/.test(serviceText)) {
+    if (!cleanText(booking.vehicle || booking.vehicleInfo, "", 200)) missing.push("vehicle");
+    if (!cleanText(booking.vehicleColor || booking.color, "", 80)) missing.push("vehicle color");
+  }
+  if (/tire|flat|spare|plug|wheel/.test(serviceText) && !/wheel lock|special key|lock key|no key|has key/i.test(`${booking.notes || ""} ${booking.reason || ""}`)) {
+    missing.push("wheel lock/key answer");
+  }
+  if (/oil|brake|rotor|hub|battery install/.test(serviceText) && !/part|parts|oil|filter|pad|rotor|battery|suppl/i.test(`${booking.notes || ""} ${booking.reason || ""}`)) {
+    missing.push("parts/materials answer");
+  }
+  const score = Math.max(0, Math.round(((7 - Math.min(missing.length, 7)) / 7) * 100));
+  const label =
+    missing.length === 0
+      ? "Ready to dispatch"
+      : missing.includes("location")
+        ? "Needs location"
+        : missing.includes("callback number")
+          ? "Needs callback"
+          : missing.includes("vehicle") || missing.includes("vehicle color")
+            ? "Needs vehicle info"
+            : "Needs review";
+  return { score, label, missing };
 }
 
 function groupByCallId(records) {
@@ -1395,6 +1460,10 @@ function normalizeBookingRecord(booking = {}) {
     (publicBaseUrl && !publicBaseUrl.includes("your-domain")
       ? `${publicBaseUrl.replace(/\/$/, "")}/api/bookings/${encodeURIComponent(bookingId)}/status?token=${encodeURIComponent(statusToken)}`
       : "");
+  const customerLocationUrl =
+    publicBaseUrl && !publicBaseUrl.includes("your-domain")
+      ? `${publicBaseUrl.replace(/\/$/, "")}/api/bookings/${encodeURIComponent(bookingId)}/confirm-location?token=${encodeURIComponent(statusToken)}`
+      : "";
 
   return {
     createdAt,
@@ -1412,12 +1481,17 @@ function normalizeBookingRecord(booking = {}) {
     location,
     vehicle,
     vehicleColor,
+    latitude: cleanText(booking.latitude || booking.lat || "", "", 80),
+    longitude: cleanText(booking.longitude || booking.lng || "", "", 80),
+    locationConfirmedAt: cleanText(booking.locationConfirmedAt || "", "", 80),
+    locationSource: cleanText(booking.locationSource || "", "", 80),
     urgency: cleanText(booking.urgency || "normal", "normal", 40),
     reason: cleanLongText(booking.reason || serviceType, serviceType, 600),
     notes: cleanLongText(booking.notes || booking.customer_notes || booking.problem_description || booking.nextStep || "", "", 1200),
     nextStep: cleanLongText(booking.nextStep || "DDD should review and confirm the booking request.", "", 900),
     smsConsent: booking.smsConsent === true,
     customerStatusUrl,
+    customerLocationUrl,
     externalSync: { ok: false, skipped: true, reason: "Not attempted yet." }
   };
 }

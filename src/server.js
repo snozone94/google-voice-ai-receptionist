@@ -15,6 +15,7 @@ import {
   loadBusiness,
   getStorageInfo,
   getBookingStatus,
+  updateBookingLocation,
   buildDryRun,
   buildBusinessInsights,
   normalizeVoice,
@@ -612,6 +613,11 @@ app.get("/api/bookings/:bookingId/status", async (req, res, next) => {
         serviceType: booking.serviceType,
         preferredTime: booking.preferredTime,
         location: booking.location,
+        latitude: booking.latitude,
+        longitude: booking.longitude,
+        locationConfirmedAt: booking.locationConfirmedAt,
+        confidence: booking.confidence,
+        customerLocationUrl: booking.customerLocationUrl,
         vehicle: booking.vehicle,
         createdAt: booking.createdAt,
         customerStatusUrl: booking.customerStatusUrl,
@@ -623,6 +629,42 @@ app.get("/api/bookings/:bookingId/status", async (req, res, next) => {
               message: booking.externalSync.message
             }
           : undefined
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/bookings/:bookingId/confirm-location", async (req, res, next) => {
+  try {
+    const booking = await getBookingStatus(req.params.bookingId, req.query.token || "");
+    if (!booking) {
+      res.status(404).type("html").send("<h1>Booking not found</h1><p>Please text or call DDD.</p>");
+      return;
+    }
+    res.type("html").send(locationPage(booking));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/bookings/:bookingId/location", express.json(), async (req, res, next) => {
+  try {
+    const booking = await updateBookingLocation(req.params.bookingId, req.query.token || req.body?.token || "", req.body || {});
+    if (!booking) {
+      res.status(404).json({ ok: false, error: "Booking not found." });
+      return;
+    }
+    res.json({
+      ok: true,
+      booking: {
+        bookingId: booking.bookingId,
+        location: booking.location,
+        latitude: booking.latitude,
+        longitude: booking.longitude,
+        locationConfirmedAt: booking.locationConfirmedAt,
+        confidence: booking.confidence
       }
     });
   } catch (error) {
@@ -1049,6 +1091,102 @@ app.use((error, _req, res, _next) => {
 app.listen(port, () => {
   console.log(`AI receptionist listening on http://localhost:${port}`);
 });
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function locationPage(booking) {
+  const token = escapeHtml(booking.statusToken || "");
+  const bookingId = escapeHtml(booking.bookingId || "");
+  const currentLocation = escapeHtml(booking.location || "");
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Confirm DDD Location</title>
+    <style>
+      :root { font-family: Arial, sans-serif; color: #171827; }
+      body { margin: 0; min-height: 100vh; background: linear-gradient(135deg, #fff7fb, #f5fffb 46%, #f7f4ff); }
+      main { width: min(680px, calc(100vw - 28px)); margin: 28px auto; }
+      section { overflow: hidden; border: 1px solid rgba(118, 87, 255, .24); border-radius: 10px; background: rgba(255,255,255,.92); box-shadow: 0 18px 46px rgba(35, 38, 69, .12); }
+      section::before { content: ""; display: block; height: 7px; background: linear-gradient(90deg, #ff3ea5, #ff7a3d, #ffc83d, #23c779, #16b8ff, #7657ff); }
+      .wrap { display: grid; gap: 14px; padding: 22px; }
+      .eyebrow { margin: 0; color: #a81586; font-size: 12px; font-weight: 800; text-transform: uppercase; }
+      h1 { margin: 0; font-size: clamp(28px, 8vw, 44px); line-height: 1.04; }
+      p { margin: 0; color: #5f6477; line-height: 1.45; }
+      label { display: grid; gap: 7px; font-weight: 800; }
+      input { width: 100%; box-sizing: border-box; border: 1px solid #d9d3ee; border-radius: 8px; padding: 13px; font: inherit; }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      button { min-height: 46px; border: 0; border-radius: 8px; padding: 0 14px; background: linear-gradient(90deg, #7657ff, #ff3ea5, #ff7a3d); color: white; font: inherit; font-weight: 900; cursor: pointer; }
+      button.secondary { border: 1px solid rgba(118,87,255,.28); background: white; color: #34364d; }
+      #status { min-height: 24px; font-weight: 800; color: #12824d; }
+      @media (max-width: 560px) { .row { grid-template-columns: 1fr; } main { margin: 14px auto; } .wrap { padding: 16px; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <div class="wrap">
+          <p class="eyebrow">DDD location</p>
+          <h1>Confirm your service location</h1>
+          <p>This helps DDD dispatch to the right spot. You can type the address/cross street or share your phone location.</p>
+          <label>
+            Address or nearest cross street
+            <input id="locationInput" autocomplete="street-address" value="${currentLocation}" placeholder="Address, business name, or nearest cross street" />
+          </label>
+          <div class="row">
+            <button id="useLocationButton" type="button" class="secondary">Use my current location</button>
+            <button id="saveButton" type="button">Save location</button>
+          </div>
+          <p id="status"></p>
+        </div>
+      </section>
+    </main>
+    <script>
+      const bookingId = ${JSON.stringify(booking.bookingId || "")};
+      const token = ${JSON.stringify(booking.statusToken || "")};
+      const input = document.querySelector("#locationInput");
+      const status = document.querySelector("#status");
+      const saveButton = document.querySelector("#saveButton");
+      let coords = {};
+      document.querySelector("#useLocationButton").addEventListener("click", () => {
+        if (!navigator.geolocation) {
+          status.textContent = "Location sharing is not available on this browser. Type your address instead.";
+          return;
+        }
+        status.textContent = "Getting your location...";
+        navigator.geolocation.getCurrentPosition((position) => {
+          coords = {
+            latitude: String(position.coords.latitude),
+            longitude: String(position.coords.longitude),
+            source: "browser_geolocation"
+          };
+          input.value = input.value || "Live location shared from phone";
+          status.textContent = "Location captured. Tap Save location.";
+        }, () => {
+          status.textContent = "Could not access location. Type your address or cross street instead.";
+        }, { enableHighAccuracy: true, timeout: 10000 });
+      });
+      saveButton.addEventListener("click", async () => {
+        status.textContent = "Saving...";
+        const response = await fetch("/api/bookings/" + encodeURIComponent(bookingId) + "/location?token=" + encodeURIComponent(token), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ location: input.value, ...coords })
+        });
+        status.textContent = response.ok ? "Saved. DDD has your location." : "Could not save. Please text or call DDD.";
+      });
+    </script>
+  </body>
+</html>`;
+}
 
 function bookingPage() {
   return `<!doctype html>

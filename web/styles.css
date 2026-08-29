@@ -278,10 +278,28 @@ h2 {
 }
 
 .inbox-auth {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  display: block;
   margin-bottom: 14px;
+}
+
+.inbox-login-card {
+  display: grid;
+  grid-template-columns: 1.1fr repeat(3, minmax(150px, 1fr));
+  align-items: end;
+  gap: 12px;
+  border: 1px solid rgba(124, 118, 255, 0.18);
+  border-radius: 8px;
+  padding: 12px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.78)) padding-box,
+    linear-gradient(135deg, rgba(255, 62, 165, 0.2), rgba(255, 200, 61, 0.16), rgba(22, 184, 255, 0.18)) border-box;
+}
+
+.inbox-login-card p:not(.eyebrow) {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.35;
 }
 
 .inbox-shell {
@@ -320,6 +338,13 @@ h2 {
   box-shadow: none;
 }
 
+.conversation-item-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .conversation-item.selected {
   border-color: var(--pink);
   background: linear-gradient(135deg, rgba(255, 62, 165, 0.12), rgba(255, 200, 61, 0.12), rgba(35, 199, 121, 0.12));
@@ -339,9 +364,44 @@ h2 {
   font-size: 0.78rem;
 }
 
+.mini-confidence,
+.confidence-pill {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(255, 137, 80, 0.12);
+  color: #b45309;
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.mini-confidence.ready,
+.confidence-pill.ready {
+  background: rgba(35, 199, 121, 0.12);
+  color: #087443;
+}
+
+.mini-confidence.needs-location,
+.confidence-pill.needs-location {
+  background: rgba(255, 62, 165, 0.12);
+  color: #a81586;
+}
+
+.mini-confidence.needs-info,
+.confidence-pill.needs-info {
+  background: rgba(22, 184, 255, 0.13);
+  color: #086e9e;
+}
+
+.confidence-pill.muted {
+  background: rgba(107, 114, 128, 0.1);
+  color: var(--muted);
+}
+
 .conversation-panel {
   display: grid;
-  grid-template-rows: auto minmax(260px, 1fr) 24px auto auto;
+  grid-template-rows: auto auto minmax(260px, 1fr) 24px auto auto;
   min-width: 0;
 }
 
@@ -356,6 +416,45 @@ h2 {
   background: rgba(255, 255, 255, 0.72);
 }
 
+.conversation-header > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.conversation-details {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(124, 118, 255, 0.12);
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.conversation-details:empty {
+  display: none;
+}
+
+.conversation-details div {
+  display: grid;
+  gap: 2px;
+  border: 1px solid rgba(217, 211, 238, 0.78);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.conversation-details span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.conversation-details strong {
+  overflow-wrap: anywhere;
+  font-size: 0.84rem;
+}
+
 .message-list {
   display: flex;
   flex-direction: column;
@@ -363,6 +462,27 @@ h2 {
   padding: 14px;
   overflow: auto;
   overscroll-behavior: contain;
+}
+
+.quick-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.quick-replies:empty {
+  display: none;
+}
+
+.quick-replies button {
+  width: auto;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(124, 118, 255, 0.2);
+  background: #fff;
+  color: #34364d;
+  box-shadow: none;
+  font-size: 0.82rem;
 }
 
 .team-strip {
@@ -1492,7 +1612,9 @@ li.missing {
   .lead-capture,
   .top-actions,
   .inbox-auth,
+  .inbox-login-card,
   .inbox-shell,
+  .conversation-details,
   .team-strip,
   .call-log-shell,
   .call-metrics,
@@ -1670,13 +1792,23 @@ li.missing {
 
   .conversation-panel {
     min-height: 0;
-    grid-template-rows: auto minmax(300px, 48vh) 24px auto auto;
+    grid-template-rows: auto auto minmax(300px, 48vh) 24px auto auto;
   }
 
   .message-list {
     min-height: 300px;
     max-height: 48vh;
     padding: 12px;
+  }
+
+  .conversation-details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 10px;
+  }
+
+  .quick-replies button {
+    flex: 1 1 120px;
+    width: auto;
   }
 
   .call-log-list {
