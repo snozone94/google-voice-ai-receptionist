@@ -64,6 +64,7 @@ const blankSettings = {
   pricingNotes: "",
   emergencyInstructions: "",
   humanHandoffRules: "",
+  complaintInstructions: "",
   applyInstructions: "",
   customInstructions: "",
   qualifyingServicesText: "",
@@ -73,7 +74,7 @@ const blankSettings = {
   smsFollowUp: {
     enabled: true,
     message:
-      "Thanks for calling DDD. Your request was received: {{link}}. iPhone users: open the DDD Mobile app link and log in with the same phone number used for booking. Non-iPhone users: log in at {{webLoginLink}} with the same phone number to see booking updates. Reply here if anything changes."
+      "Thanks for calling DDD. Your request was received: {{link}}. iPhone users: open the DDD Mobile app link and log in with the same phone number used for booking. Non-iPhone users: log in at {{webLoginLink}} with the same phone number to see booking updates. Reply here if anything changes. Reply STOP to stop."
   },
   reviewFollowUp: {
     enabled: true,
@@ -632,6 +633,7 @@ function FlowsTab({ editMode, settings, setSettings }) {
         <Field editable={editMode} label="Pricing and payment rules" multiline onChangeText={(pricingNotes) => setSettings((current) => ({ ...current, pricingNotes }))} value={settings.pricingNotes} />
         <Field editable={editMode} label="Emergency handling" multiline onChangeText={(emergencyInstructions) => setSettings((current) => ({ ...current, emergencyInstructions }))} value={settings.emergencyInstructions} />
         <Field editable={editMode} label="Human handoff" multiline onChangeText={(humanHandoffRules) => setSettings((current) => ({ ...current, humanHandoffRules }))} value={settings.humanHandoffRules} />
+        <Field editable={editMode} label="Complaints and escalations" multiline onChangeText={(complaintInstructions) => setSettings((current) => ({ ...current, complaintInstructions }))} value={settings.complaintInstructions} />
         <Field editable={editMode} label="Apply-to-work handling" multiline onChangeText={(applyInstructions) => setSettings((current) => ({ ...current, applyInstructions }))} value={settings.applyInstructions} />
       </Card>
 
@@ -1143,6 +1145,7 @@ function fromFormSettings(settings) {
     pricingNotes: settings.pricingNotes,
     emergencyInstructions: settings.emergencyInstructions,
     humanHandoffRules: settings.humanHandoffRules,
+    complaintInstructions: settings.complaintInstructions,
     applyInstructions: settings.applyInstructions,
     qualifyingServices: settings.qualifyingServicesText,
     followUpStyle: settings.followUpStyle,
@@ -1243,6 +1246,7 @@ function buildScriptPreview(settings) {
     `Service area: ${settings.serviceArea || "Greater Cincinnati and nearby service areas."}`,
     `Pricing rules: ${settings.pricingNotes || "Do not quote exact pricing unless added here."}`,
     `Emergency: ${settings.emergencyInstructions || "Collect safety, location, vehicle, and callback number."}`,
+    `Complaints: ${settings.complaintInstructions || "Save a high-priority message and share support@dddcincy.com."}`,
     `Apply-to-work: ${settings.applyInstructions || "Collect applicant details and share the apply link."}`,
     `SMS follow-up: ${settings.smsFollowUp.enabled ? "on" : "off"}. ${settings.smsFollowUp.message || "Text the best DDD link after permission."}`,
     `Google review: ${settings.reviewFollowUp.enabled ? "on" : "off"}. ${settings.reviewFollowUp.message || "Ask after completed jobs."}`,

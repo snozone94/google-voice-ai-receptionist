@@ -269,7 +269,7 @@ function applySettings(settings) {
   smsFollowUpToggle.checked = settings.smsFollowUp?.enabled !== false;
   smsFollowUpMessageInput.value =
     settings.smsFollowUp?.message ||
-    "Thanks for calling DDD. Your request was received: {{link}}. iPhone users: open the DDD Mobile app link and log in with the same phone number used for booking. Non-iPhone users: log in at {{webLoginLink}} with the same phone number to see booking updates. Reply here if anything changes.";
+    "Thanks for calling DDD. Your request was received: {{link}}. iPhone users: open the DDD Mobile app link and log in with the same phone number used for booking. Non-iPhone users: log in at {{webLoginLink}} with the same phone number to see booking updates. Reply here if anything changes. Reply STOP to stop.";
   reviewFollowUpToggle.checked = settings.reviewFollowUp?.enabled !== false;
   reviewFollowUpUrlInput.value = settings.reviewFollowUp?.url || "https://g.page/r/CfVinSqxHOIDEAE/review";
   reviewFollowUpMessageInput.value =
@@ -1931,6 +1931,32 @@ leadForm.addEventListener("submit", async (event) => {
 
 async function handleRealtimeEvent(message) {
   const event = JSON.parse(message.data);
+  if (event.type === "response.function_call_arguments.done" && event.name === "lookup_customer_history") {
+    const args = JSON.parse(event.arguments || "{}");
+    const response = await fetch(`/api/customer/bookings?phone=${encodeURIComponent(args.phone || "")}`, {
+      headers: adminHeaders()
+    });
+    const payload = await response.json().catch(() => ({}));
+    dataChannel.send(
+      JSON.stringify({
+        type: "conversation.item.create",
+        item: {
+          type: "function_call_output",
+          call_id: event.call_id,
+          output: JSON.stringify({
+            ok: response.ok,
+            history: {
+              phone: args.phone || "",
+              returningCustomer: Boolean(payload.bookings?.length),
+              bookings: payload.bookings || []
+            }
+          })
+        }
+      })
+    );
+    return;
+  }
+
   if (
     event.type !== "response.function_call_arguments.done" ||
     (event.name !== "save_lead" && event.name !== "save_booking_request")

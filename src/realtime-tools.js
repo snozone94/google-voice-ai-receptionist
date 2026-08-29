@@ -1,5 +1,5 @@
 import WebSocket from "ws";
-import { saveBookingRequest, saveCallSummary, saveLead } from "./receptionist.js";
+import { getCustomerHistory, saveBookingRequest, saveCallSummary, saveLead } from "./receptionist.js";
 
 const activeMonitors = new Map();
 
@@ -68,6 +68,33 @@ class CallMonitor {
   }
 
   async handleEvent(event) {
+    if (event.type === "response.function_call_arguments.done" && event.name === "lookup_customer_history") {
+      const args = JSON.parse(event.arguments || "{}");
+      const history = await getCustomerHistory(args.phone || "");
+      this.ws.send(
+        JSON.stringify({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: event.call_id,
+            output: JSON.stringify({ ok: true, history })
+          }
+        })
+      );
+      this.ws.send(
+        JSON.stringify({
+          type: "response.create",
+          response: {
+            instructions:
+              history.returningCustomer
+                ? "Use the returning-customer history to avoid re-asking vehicle/service details. Confirm old details briefly and ask what changed, if anything."
+                : "No saved customer history was found. Continue normal intake."
+          }
+        })
+      );
+      return;
+    }
+
     if (
       event.type === "response.function_call_arguments.done" &&
       (event.name === "save_lead" || event.name === "save_booking_request")

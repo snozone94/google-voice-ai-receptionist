@@ -45,7 +45,7 @@ const defaultHumanHandoffRules =
 const defaultApplyInstructions =
   "For work, contractor, technician, or job-interest calls, collect name, phone, email, role or service type, experience, and location, then direct them to the DDD apply to work link.";
 const defaultSmsFollowUpText =
-  "Thanks for calling {{business}}. Your request was received: {{link}}. iPhone users: open the DDD Mobile app link and log in with the same phone number used for booking. Non-iPhone users: log in at {{webLoginLink}} with the same phone number to see booking updates. Reply here if anything changes.";
+  "Thanks for calling {{business}}. Your request was received: {{link}}. iPhone users: open the DDD Mobile app link and log in with the same phone number used for booking. Non-iPhone users: log in at {{webLoginLink}} with the same phone number to see booking updates. Reply here if anything changes. Reply STOP to stop.";
 const defaultReviewFollowUpUrl = "https://g.page/r/CfVinSqxHOIDEAE/review";
 const defaultReviewFollowUpText =
   "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}";
@@ -106,6 +106,8 @@ const defaultCallOutcomeRules =
   "For every call, end with one clear outcome: booking created, lead/message saved, best DDD link texted or queued, apply-to-work info captured, existing job message captured, sales message captured, spam/irrelevant declined, or human follow-up needed. Do not leave the caller unsure what happens next. Do not read long URLs out loud.";
 const defaultFallbackRules =
   "If the AI cannot hear the caller, the caller is upset, the caller requests a human twice, the call is urgent and details are incomplete, booking sync fails, or the call drops before intake is complete, save a missed/fallback lead with caller ID if available and mark the next step as urgent human follow-up.";
+const defaultComplaintInstructions =
+  "If the caller is complaining, upset about a job, requesting a refund, reporting damage, or escalating a problem, stay calm, apologize once, collect name, callback number, job/service details, what happened, and desired resolution. Save it as high priority or emergency if safety-related. Tell them DDD can also be reached at support@dddcincy.com. If SMS is allowed, text the support email/link instead of reading a long link.";
 const defaultQaChecklist =
   "QA should confirm: AI answered, caller intent identified, name/phone captured when possible, emergency callers were handled quickly, booking or lead was saved, correct DDD link was selected, SMS consent was asked before texting, transcript/recording was attached when available, and call ended with a clear next step.";
 const defaultSoundPreferences = {
@@ -171,6 +173,11 @@ const defaultBookingDestinations = [
     label: "DDD apply to work",
     url: "https://dddcincy.com/apply-to-work-with-ddd/",
     useWhen: "Caller wants to apply to work with DDD, contractor interest, technician approval, or service provider onboarding."
+  },
+  {
+    label: "DDD support email",
+    url: "mailto:support@dddcincy.com",
+    useWhen: "Caller has a complaint, refund concern, damage report, bad experience, billing issue, or wants management/support follow-up."
   }
 ];
 
@@ -605,6 +612,16 @@ function countTopValues(values, limit = 6) {
     .map(([label, count]) => ({ label, count }));
 }
 
+function dedupeTextValues(values = []) {
+  const seen = new Set();
+  return values.filter((value) => {
+    const key = String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function cleanInsightLabel(value) {
   const cleaned = String(value || "")
     .replace(/\s+/g, " ")
@@ -696,6 +713,47 @@ export async function listBookingsByPhone(phone, limit = 20) {
     .filter((booking) => normalizeE164(booking.phone || booking.customer_phone) === target)
     .map((booking) => ({ ...booking, confidence: booking.confidence || calculateBookingConfidence(booking) }))
     .slice(0, limit);
+}
+
+export async function getCustomerHistory(phone, limit = 8) {
+  const target = normalizeE164(phone);
+  if (!target) return { phone: "", returningCustomer: false, bookings: [], knownVehicles: [], lastOilService: null };
+  const bookings = await listBookingsByPhone(target, limit);
+  const knownVehicles = dedupeTextValues(
+    bookings.map((booking) => [booking.vehicle, booking.vehicleColor].filter(Boolean).join(" ").trim()).filter(Boolean)
+  ).slice(0, 5);
+  const lastOilService = bookings.find((booking) =>
+    /oil/i.test(`${booking.serviceType || ""} ${booking.reason || ""} ${booking.notes || ""}`)
+  ) || null;
+  return {
+    phone: target,
+    returningCustomer: bookings.length > 0,
+    bookings: bookings.map((booking) => ({
+      createdAt: booking.createdAt,
+      name: booking.name,
+      serviceType: booking.serviceType,
+      vehicle: booking.vehicle,
+      vehicleColor: booking.vehicleColor,
+      location: booking.location,
+      preferredTime: booking.preferredTime,
+      notes: booking.notes,
+      oilType: booking.oilType,
+      oilQuantity: booking.oilQuantity,
+      partsStatus: booking.partsStatus,
+      status: booking.status,
+      confidence: booking.confidence
+    })),
+    knownVehicles,
+    lastOilService: lastOilService
+      ? {
+          createdAt: lastOilService.createdAt,
+          vehicle: lastOilService.vehicle,
+          vehicleColor: lastOilService.vehicleColor,
+          notes: lastOilService.notes,
+          serviceType: lastOilService.serviceType
+        }
+      : null
+  };
 }
 
 export async function getBookingStatus(bookingId, token) {
@@ -1057,7 +1115,10 @@ Voice and manner:
 - Do not repeat the greeting, the same reassurance, or the same question after the caller already answered. If you missed something, ask only for the missing detail.
 - Do not invent business policies, prices, addresses, or availability.
 - If a caller wants to book, collect their name, phone, email if available, service, location, vehicle year/make/model/color when relevant, issue, urgency, and preferred date/time.
+- After the caller gives a callback number, call lookup_customer_history before asking repeat details. If history exists, confirm the saved name, vehicle, service, or oil-change notes briefly and ask what changed, if anything.
+- If a returning customer needs another oil change, use their saved vehicle and previous oil notes/type/quantity when available unless they say the vehicle changed. Do not pretend to know oil type or quantity if it is not in history.
 - For oil changes, brake pads, rotors, bolt-in hub bearings, and battery installs, ask whether the customer already has the parts/materials or needs DDD to confirm parts.
+- For oil changes, capture oilType and oilQuantity if the caller knows them or returning-customer history contains them. If not known, save that DDD should confirm oil type and quantity.
 - For brake pads, rotors, tire replacement, tire plug, and spare tire calls, accept quantity/position if the caller already says it. If they do not, ask whether it is one wheel, front axle, rear axle, both axles/all four, or a spare/tire-specific need.
 - For tire-related jobs, ask whether the vehicle has a wheel lock/special key and whether the caller has that key available.
 - As soon as you have enough booking details and callback information, call save_booking_request. Do not require the caller to fill out a form first.
@@ -1079,7 +1140,9 @@ Intake flow:
 - For every meaningful call, collect and confirm name, best callback number, service needed, location or service area if relevant, urgency, and preferred appointment time when scheduling.
 - For roadside or vehicle-related requests, ask for vehicle year, make, model, color, current location, what happened, and whether the caller is in a safe place.
 - For pricing or payment questions, follow admin pricing guidance, gather job details when needed, and say DDD will confirm final price before service. Accepted payment methods are cash, card, tap pay, and installments. No checks.
-- For existing customers, collect their name, callback number, and what appointment or job they are calling about.
+- For existing customers, collect their name, callback number, and what appointment or job they are calling about. If they call to reschedule, cancel, or add notes, save a message/booking update with changeRequestType set to reschedule, cancel, or add_notes. Tell them DDD received the update request and will confirm if needed.
+- For complaints, refund concerns, damage reports, bad experiences, or upset callers: ${activeSettings.complaintInstructions}
+- Complaint support destination: support@dddcincy.com
 - Before ending, summarize the message in one sentence and confirm the next step.
 - Do not turn intake into a long interview. Get the minimum useful details, then move the caller to the link or saved callback.
 - Avoid looping. If a detail is already known from the caller's words, do not ask for it again; confirm it briefly only if important.
@@ -1127,6 +1190,7 @@ SMS follow-up:
 - SMS follow-up is ${activeSettings.smsFollowUp.enabled ? "enabled" : "disabled"} in admin.
 - If enabled, ask permission before texting the caller the best DDD link.
 - Message template: ${activeSettings.smsFollowUp.message}
+- All outbound SMS must include opt-out wording: "Reply STOP to stop." If the template already includes it, do not repeat it.
 - Use the most relevant DDD destination as {{link}}. Do not use a booking/customer tracking URL for immediate SMS until a technician is assigned, active, or en route.
 - If the caller asks how to check the booking, say iPhone users can use the DDD Mobile app link and non-iPhone users can use the dddcincy.com login link, and that DDD will text those instructions. Do not read the links out loud.
 - When calling save_lead or save_booking_request, set smsConsent to true only if the caller clearly agreed to receive the text.
@@ -1221,6 +1285,21 @@ export function receptionistTools() {
   return [
     {
       type: "function",
+      name: "lookup_customer_history",
+      description: "Look up recent DDD booking history after the caller provides a callback phone number. Use this before re-asking vehicle or oil-change details for returning customers.",
+      parameters: {
+        type: "object",
+        properties: {
+          phone: {
+            type: "string",
+            description: "Caller phone number to search."
+          }
+        },
+        required: ["phone"]
+      }
+    },
+    {
+      type: "function",
       name: "save_lead",
       description: "Save caller contact details and reason for calling after confirming them with the caller.",
       parameters: {
@@ -1271,6 +1350,11 @@ export function receptionistTools() {
             type: "string",
             description: "Vehicle color, if provided separately."
           },
+          changeRequestType: {
+            type: "string",
+            enum: ["reschedule", "cancel", "add_notes", "complaint", "general"],
+            description: "Use reschedule, cancel, add_notes, or complaint for existing customer changes."
+          },
           smsConsent: {
             type: "boolean",
             description: "True only if the caller clearly agreed to receive an SMS follow-up."
@@ -1300,6 +1384,14 @@ export function receptionistTools() {
           serviceType: { type: "string", description: "Type of service requested." },
           vehicle: { type: "string", description: "Vehicle year, make, model, color, or related details." },
           vehicleColor: { type: "string", description: "Vehicle color, if provided separately." },
+          oilType: { type: "string", description: "Oil type/spec if known or confirmed, such as 5W-30 synthetic." },
+          oilQuantity: { type: "string", description: "Oil quantity if known or confirmed, such as 5 quarts." },
+          partsStatus: { type: "string", description: "Whether the customer has parts/materials or needs DDD to confirm/supply them." },
+          changeRequestType: {
+            type: "string",
+            enum: ["new_booking", "reschedule", "cancel", "add_notes"],
+            description: "Use for booking changes or normal new booking."
+          },
           nextStep: { type: "string", description: "What DDD should do next." },
           smsConsent: {
             type: "boolean",
@@ -1457,6 +1549,7 @@ function normalizeSettings(settings = {}) {
       1400
     ),
     fallbackRules: cleanLongText(settings.fallbackRules, defaultFallbackRules, 1400),
+    complaintInstructions: cleanLongText(settings.complaintInstructions, defaultComplaintInstructions, 1200),
     qaChecklist: cleanLongText(settings.qaChecklist, defaultQaChecklist, 1400),
     applyInstructions: cleanLongText(settings.applyInstructions, defaultApplyInstructions, 1200),
     smsFollowUp: normalizeSmsFollowUp(settings.smsFollowUp),
@@ -1590,6 +1683,10 @@ function normalizeBookingRecord(booking = {}) {
     urgency: cleanText(booking.urgency || "normal", "normal", 40),
     reason: cleanLongText(booking.reason || serviceType, serviceType, 600),
     notes: cleanLongText(booking.notes || booking.customer_notes || booking.problem_description || booking.nextStep || "", "", 1200),
+    oilType: cleanText(booking.oilType || booking.oil_type || "", "", 80),
+    oilQuantity: cleanText(booking.oilQuantity || booking.oil_quantity || "", "", 80),
+    partsStatus: cleanText(booking.partsStatus || booking.parts_status || "", "", 160),
+    changeRequestType: cleanText(booking.changeRequestType || booking.change_request_type || "", "", 80),
     nextStep: cleanLongText(booking.nextStep || "DDD should review and confirm the booking request.", "", 900),
     smsConsent: booking.smsConsent === true,
     customerStatusUrl,
@@ -1665,6 +1762,10 @@ function buildDddBookingPayload(record) {
     notes: [
       record.reason ? `Reason: ${record.reason}` : "",
       record.vehicleColor ? `Vehicle color: ${record.vehicleColor}` : "",
+      record.oilType ? `Oil type: ${record.oilType}` : "",
+      record.oilQuantity ? `Oil quantity: ${record.oilQuantity}` : "",
+      record.partsStatus ? `Parts/materials: ${record.partsStatus}` : "",
+      record.changeRequestType ? `Change request: ${record.changeRequestType}` : "",
       record.notes ? `Notes: ${record.notes}` : "",
       record.nextStep ? `AI next step: ${record.nextStep}` : "",
       record.callId ? `OpenAI call ID: ${record.callId}` : "",
@@ -1695,6 +1796,10 @@ export function buildDryRun(settings = {}, callerMessage = "") {
       ? buildEmergencyQuestions(activeSettings.emergencyQuestions, message)
       : intent === "apply"
         ? ["What kind of DDD work are you applying for?", "What experience do you have?", "What is your best callback number and email?"]
+        : intent === "complaint"
+          ? ["What name and callback number should DDD use?", "What happened?", "What job or service is this about?", "What resolution are you looking for?"]
+          : intent === "booking_change"
+            ? ["What name and callback number is the booking under?", "Do you need to reschedule, cancel, or add notes?", "What booking date, service, or vehicle is this about?", "What exact change should DDD make?"]
         : intent === "unsupported"
           ? ["What service were you looking for?", "What is your name and best callback number if you want DDD to follow up?", "Can DDD text you a referral or directory link if available?"]
           : buildBookingQuestions(message);
@@ -1704,6 +1809,10 @@ export function buildDryRun(settings = {}, callerMessage = "") {
       ? `${reflectedNeed} I'll keep this quick and can create the request for you. First, are you in a safe place right now?`
       : intent === "apply"
         ? `${reflectedNeed} I can get your info to DDD quickly. What kind of work are you applying for?`
+        : intent === "complaint"
+          ? "I'm sorry that happened. I can send this to DDD as a priority support message. What name and callback number should DDD use?"
+        : intent === "booking_change"
+          ? "I can help update that request. What name and callback number is the booking under?"
         : intent === "payment"
           ? "DDD accepts cash, card, tap pay, and installments. We do not accept checks. Do you want me to help make the booking now?"
         : intent === "unsupported"
@@ -1716,6 +1825,10 @@ export function buildDryRun(settings = {}, callerMessage = "") {
   const action =
     intent === "apply"
       ? "Save an apply-to-work message and send the DDD apply link."
+      : intent === "complaint"
+        ? "Save a high-priority complaint/support message and offer to text support@dddcincy.com."
+      : intent === "booking_change"
+        ? "Save the reschedule, cancel, or add-notes request with the caller's booking details and tell them DDD received it."
       : intent === "payment"
         ? "Answer accepted payment methods clearly, then offer to book the service if the caller is ready."
         : intent === "unsupported"
@@ -1801,6 +1914,12 @@ function estimateStartingPrice(message) {
 }
 
 function classifyIntent(message) {
+  if (/complain|complaint|upset|angry|refund|damage|damaged|bad service|manager|supervisor|charged wrong|overcharged/.test(message)) {
+    return "complaint";
+  }
+  if (/reschedule|re-schedule|cancel|add note|add notes|update.*booking|change.*booking|change.*appointment|move.*appointment/.test(message)) {
+    return "booking_change";
+  }
   if (/\btow\b|\btowing\b|transmission|engine rebuild|\brebuild\b|body work|\bpaint\b|windshield|glass|impound|sell.*tire|new tire/.test(message)) {
     return "unsupported";
   }
@@ -1914,6 +2033,8 @@ function chooseDestination(destinations, message) {
   const wanted = {
     emergency: /emergency/i,
     apply: /apply/i,
+    complaint: /support|complaint|refund|damage|billing/i,
+    booking_change: /mobile app|book|status|login/i,
     app: /auto doc|mobile app/i,
     payment: /shop|service|book/i,
     shopping: /shop|service/i,
@@ -2091,13 +2212,21 @@ function renderSmsTemplate(template, destination, settings = {}) {
   const fallbackLink = destination?.url || process.env.BOOKING_URL || "";
   const reviewLink = settings.reviewFollowUp?.url || defaultReviewFollowUpUrl;
   const webLoginLink = process.env.DDD_WEB_LOGIN_URL || "https://dddcincy.com/login";
-  return String(template || defaultSmsFollowUpText)
+  return appendSmsCompliance(String(template || defaultSmsFollowUpText)
     .replaceAll("{{link}}", fallbackLink)
     .replaceAll("{{webLoginLink}}", webLoginLink)
     .replaceAll("{{reviewLink}}", reviewLink)
     .replaceAll("{{business}}", "DDD")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim());
+}
+
+export function appendSmsCompliance(message = "") {
+  const cleaned = String(message || "").replace(/\s+/g, " ").trim();
+  if (!cleaned) return "";
+  if (/\bstop\b.*\bstop\b|\breply stop\b|text stop/i.test(cleaned)) return cleaned;
+  const footer = " Reply STOP to stop.";
+  return `${cleaned.slice(0, Math.max(0, 1000 - footer.length)).trim()}${footer}`;
 }
 
 async function sendConfiguredSms(to, message) {
