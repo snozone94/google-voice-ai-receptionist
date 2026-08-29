@@ -517,7 +517,7 @@ function HomeTab({
             <ActionButton disabled={loading || !hasAdminPin} label={loading ? "Checking..." : "Unlock admin"} onPress={onUnlockAdmin} />
           </View>
         </View>
-        <Text style={styles.muted}>For App Review/testing: use PIN 9706. The PIN is saved only on this phone.</Text>
+        <Text style={styles.muted}>Use your assigned DDD admin or staff PIN. The PIN is saved only on this phone.</Text>
         <Field
           keyboardType="phone-pad"
           label="Your call-back phone"

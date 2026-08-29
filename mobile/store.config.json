@@ -83,9 +83,9 @@
       "email": "support@dddcincy.com",
       "phone": "+15134091342",
       "demoUsername": "Admin PIN",
-      "demoPassword": "9706",
+      "demoPassword": "4444",
       "demoRequired": true,
-      "notes": "This is the DDD AI Dispatch admin app for DDD Roadside Assistance staff. To review protected features, open the app, enter admin PIN 9706, and tap Unlock admin. The app connects to the live DDD AI Dispatch backend at https://google-voice-ai-receptionist.onrender.com. Reviewers can view settings, voice controls, script controls, shared inbox, call log, and insights. Push notification setup can be tested from the Home tab; phone/SMS/calling features depend on the connected DDD Twilio account and live service data."
+      "notes": "This is the DDD AI Dispatch admin app for DDD Roadside Assistance staff. To review protected read-only features, open the app, enter review PIN 4444, and tap Unlock admin. The review PIN loads synthetic demo inbox, call log, and insights data only. It cannot send texts, place outbound calls, or save live DDD settings. The app connects to the live DDD AI Dispatch backend at https://google-voice-ai-receptionist.onrender.com. Production phone/SMS/calling features depend on the connected DDD Twilio account and live service data."
     }
   }
 }

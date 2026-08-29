@@ -36,6 +36,104 @@ import { monitorRealtimeCall } from "./realtime-tools.js";
 const app = express();
 const port = Number(process.env.PORT || 8787);
 const presence = new Map();
+const appReviewPin = String(process.env.APP_REVIEW_PIN || process.env.REVIEWER_PIN || "").trim();
+const appReviewStaff = { ok: true, name: "App Review", role: "reviewer" };
+const appReviewConversations = [
+  {
+    threadId: "app-review-demo-flat-tire",
+    customer: "Demo Customer",
+    phone: "+15135550144",
+    updatedAt: "2026-08-29T14:20:00.000Z",
+    messages: [
+      {
+        direction: "inbound",
+        from: "+15135550144",
+        body: "I have a flat tire in Liberty Township. Can someone come out?",
+        createdAt: "2026-08-29T14:17:00.000Z"
+      },
+      {
+        direction: "outbound",
+        to: "+15135550144",
+        body: "DDD received your roadside request. Reply here with any updates. Text STOP to stop.",
+        agentName: "DDD AI",
+        createdAt: "2026-08-29T14:20:00.000Z"
+      }
+    ]
+  }
+];
+const appReviewCallLog = [
+  {
+    id: "app-review-call-1",
+    caller: "+15135550144",
+    startedAt: "2026-08-29T14:13:00.000Z",
+    durationSeconds: 138,
+    durationLabel: "2m 18s",
+    displayStatus: "Booked",
+    completion: "complete",
+    smsStatus: "sent",
+    recordingStatus: "available",
+    outcome: {
+      label: "Booked roadside request",
+      callerStayedOn: true,
+      detail: "Customer needed flat-tire help. AI collected location, vehicle details, tire issue, and confirmed text follow-up."
+    },
+    bookings: [
+      {
+        name: "Demo Customer",
+        phone: "+15135550144",
+        service: "Flat tire",
+        location: "Liberty Township, OH",
+        vehicle: "2018 Honda Accord, gray",
+        confidence: { missing: [] }
+      }
+    ],
+    transcriptText:
+      "DDD AI: Thanks for calling Triple D Roadside. This will be quick and I can make the booking for you. What do you need help with?\nCustomer: I have a flat tire in Liberty Township.\nDDD AI: Got it. What vehicle are you with, and do you have the special wheel-lock key if needed?\nCustomer: A gray 2018 Honda Accord. I have the key.\nDDD AI: Perfect. I have the booking details and will text the link now."
+  }
+];
+const appReviewInsights = {
+  generatedAt: "2026-08-29T14:30:00.000Z",
+  sections: {
+    daily: {
+      calls: 1,
+      bookings: 1,
+      missed: 0,
+      needsReview: 0,
+      averageDurationSeconds: 138,
+      smsCoverageRate: 1,
+      topServices: [{ label: "Flat tire", count: 1 }],
+      topLocations: [{ label: "Liberty Township", count: 1 }],
+      callerTypes: [{ label: "New customer", count: 1 }]
+    },
+    weekly: {
+      calls: 8,
+      bookings: 6,
+      missed: 1,
+      needsReview: 1,
+      averageDurationSeconds: 151,
+      smsCoverageRate: 0.88,
+      topServices: [{ label: "Flat tire", count: 3 }, { label: "Oil change", count: 2 }],
+      topLocations: [{ label: "Cincinnati", count: 4 }, { label: "Liberty Township", count: 2 }],
+      callerTypes: [{ label: "New customer", count: 5 }, { label: "Returning customer", count: 3 }]
+    },
+    monthly: {
+      calls: 24,
+      bookings: 18,
+      missed: 3,
+      needsReview: 2,
+      averageDurationSeconds: 144,
+      smsCoverageRate: 0.91,
+      topServices: [{ label: "Flat tire", count: 7 }, { label: "Brake service", count: 5 }],
+      topLocations: [{ label: "Cincinnati", count: 10 }, { label: "Hamilton", count: 4 }],
+      callerTypes: [{ label: "New customer", count: 15 }, { label: "Returning customer", count: 9 }]
+    }
+  },
+  suggestions: [
+    "Keep the emergency intake short: service, exact location, vehicle, color, parts/key details, and text follow-up.",
+    "Flat-tire calls are common in the demo data, so the AI should continue asking whether the customer has the wheel-lock key.",
+    "Use SMS follow-up after calls instead of reading long links aloud."
+  ]
+};
 
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -251,7 +349,8 @@ app.get("/api/sms", async (req, res, next) => {
 
 app.get("/api/conversations", async (req, res, next) => {
   try {
-    const staff = await getStaffAccess(req);
+    const reviewAccess = hasAppReviewAccess(req) && !hasAdminAccess(req);
+    const staff = reviewAccess ? appReviewStaff : await getStaffAccess(req);
     if (!staff.ok) {
       res.status(403).json({ ok: false, error: "Forbidden" });
       return;
@@ -264,7 +363,7 @@ app.get("/api/conversations", async (req, res, next) => {
       team: teamInfo.team,
       teamSource: teamInfo.source,
       presence: listPresence(),
-      conversations: await listConversations(limit)
+      conversations: reviewAccess ? appReviewConversations.slice(0, limit) : await listConversations(limit)
     });
   } catch (error) {
     next(error);
@@ -758,8 +857,12 @@ app.get("/api/qa-dashboard", async (req, res, next) => {
 
 app.get("/api/insights", async (req, res, next) => {
   try {
-    if (!hasAdminAccess(req)) {
+    if (!hasAdminAccess(req) && !hasAppReviewAccess(req)) {
       res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+    if (hasAppReviewAccess(req) && !hasAdminAccess(req)) {
+      res.json(appReviewInsights);
       return;
     }
     res.json(await buildBusinessInsights());
@@ -912,8 +1015,12 @@ app.get("/api/calls", async (req, res, next) => {
 
 app.get("/api/call-log", async (req, res, next) => {
   try {
-    if (!hasAdminAccess(req)) {
+    if (!hasAdminAccess(req) && !hasAppReviewAccess(req)) {
       res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+    if (hasAppReviewAccess(req) && !hasAdminAccess(req)) {
+      res.json({ calls: appReviewCallLog.slice(0, Number(req.query.limit || 50)) });
       return;
     }
     res.json({ calls: await listCallLog(Number(req.query.limit || 50)) });
@@ -1082,6 +1189,12 @@ function hasAdminAccess(req) {
   const pin = process.env.ADMIN_PIN;
   if (!pin) return process.env.ALLOW_UNPROTECTED_ADMIN === "true";
   return req.get("x-admin-pin") === pin || req.query.adminPin === pin;
+}
+
+function hasAppReviewAccess(req) {
+  if (!appReviewPin) return false;
+  const submittedCode = String(req.get("x-admin-pin") || req.query.adminPin || "").trim();
+  return submittedCode === appReviewPin;
 }
 
 async function getStaffAccess(req) {

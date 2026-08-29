@@ -28,7 +28,7 @@ const screens = [
           ${button("Unlock admin")}
           ${button("Enable alerts", "soft")}
         </div>
-        <p class="hint">For App Review/testing: use PIN 9706. Protected tabs load after unlock.</p>
+        <p class="hint">Use your DDD admin or staff PIN. Protected tabs load after unlock.</p>
       `)}
       ${metrics([["AI", "On"], ["Today", "8"], ["Booked", "5"], ["Texts", "12"]])}
       ${card("Run costs", `
