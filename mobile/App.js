@@ -364,6 +364,7 @@ export default function App() {
               onRefresh={() => loadAll(cleanBaseUrl, adminPin)}
               onSaveBaseUrl={saveBaseUrl}
               onSaveSettings={() => saveSettings("manual")}
+              onUnlockAdmin={() => loadAll(cleanBaseUrl, adminPin)}
               onSendTestNotification={sendTestNotification}
             />
           ) : null}
@@ -478,12 +479,57 @@ function HomeTab({
   onRefresh,
   onSaveBaseUrl,
   onSaveSettings,
+  onUnlockAdmin,
   onSendTestNotification
 }) {
   const todayCalls = activity?.insights?.sections?.daily?.calls ?? activity?.calls?.length ?? 0;
   const weeklyBookings = activity?.insights?.sections?.weekly?.bookings ?? 0;
+  const hasAdminPin = Boolean(String(adminPin || "").trim());
   return (
     <>
+      <Card title="Admin login">
+        <View style={styles.accessBanner}>
+          <View style={styles.flexText}>
+            <Text style={styles.accessTitle}>{hasAdminPin ? "Ready for admin tabs" : "Locked"}</Text>
+            <Text style={styles.muted}>
+              {hasAdminPin
+                ? "Tap Unlock admin to refresh protected inbox, calls, and insights."
+                : "Enter the tester/admin PIN, then unlock to load protected areas."}
+            </Text>
+          </View>
+          <Text style={[styles.accessPill, hasAdminPin ? styles.accessPillReady : styles.accessPillLocked]}>
+            {hasAdminPin ? "PIN saved" : "Need PIN"}
+          </Text>
+        </View>
+        <View style={styles.pinLoginRow}>
+          <View style={styles.pinFieldWrap}>
+            <Field
+              label="Admin PIN"
+              onChangeText={(value) => {
+                setAdminPin(value);
+                AsyncStorage.setItem(adminPinStorageKey, value).catch(() => {});
+              }}
+              secureTextEntry
+              value={adminPin}
+            />
+          </View>
+          <View style={styles.pinButtonWrap}>
+            <ActionButton disabled={loading || !hasAdminPin} label={loading ? "Checking..." : "Unlock admin"} onPress={onUnlockAdmin} />
+          </View>
+        </View>
+        <Text style={styles.muted}>For App Review/testing: use PIN 9706. The PIN is saved only on this phone.</Text>
+        <Field
+          keyboardType="phone-pad"
+          label="Your call-back phone"
+          onChangeText={(value) => {
+            setStaffPhone(value);
+            AsyncStorage.setItem(staffPhoneStorageKey, value).catch(() => {});
+          }}
+          value={staffPhone}
+        />
+        <Text style={styles.muted}>Outbound calls ring this phone first, then connect the customer with DDD as caller ID.</Text>
+      </Card>
+
       <Card title="At a glance">
         <View style={styles.metricStrip}>
           <Metric label="AI" value={settings.enabled ? "On" : "Paused"} />
@@ -506,29 +552,6 @@ function HomeTab({
           <ActionButton disabled={saving || loading || !editMode} label={saving ? "Saving..." : "Save now"} onPress={onSaveSettings} variant="light" />
           <ActionButton label="Refresh" onPress={onRefresh} variant="light" />
         </View>
-      </Card>
-
-      <Card title="Admin access">
-        <Field
-          label="Admin PIN"
-          onChangeText={(value) => {
-            setAdminPin(value);
-            AsyncStorage.setItem(adminPinStorageKey, value).catch(() => {});
-          }}
-          secureTextEntry
-          value={adminPin}
-        />
-        <Text style={styles.muted}>The PIN is saved only on this phone for easier testing.</Text>
-        <Field
-          keyboardType="phone-pad"
-          label="Your call-back phone"
-          onChangeText={(value) => {
-            setStaffPhone(value);
-            AsyncStorage.setItem(staffPhoneStorageKey, value).catch(() => {});
-          }}
-          value={staffPhone}
-        />
-        <Text style={styles.muted}>Outbound calls ring this phone first, then connect the customer with DDD as caller ID.</Text>
       </Card>
 
       <Card title="Phone alerts">
@@ -1319,6 +1342,30 @@ const styles = StyleSheet.create({
   },
   metricLabel: { color: "#a81586", fontSize: 10, fontWeight: "900", textTransform: "uppercase" },
   metricValue: { color: "#161827", fontSize: 15, fontWeight: "900", marginTop: 3 },
+  accessBanner: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    borderColor: "rgba(118, 87, 255, 0.16)",
+    borderRadius: 18,
+    borderWidth: 1,
+    backgroundColor: "#fffaff",
+    padding: 10
+  },
+  accessTitle: { color: "#161827", fontSize: 17, fontWeight: "900" },
+  accessPill: {
+    overflow: "hidden",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: "900",
+    paddingHorizontal: 10,
+    paddingVertical: 7
+  },
+  accessPillReady: { backgroundColor: "#e9fff3", color: "#12824d" },
+  accessPillLocked: { backgroundColor: "#fff0f3", color: "#c23b52" },
+  pinLoginRow: { alignItems: "flex-end", flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  pinFieldWrap: { flex: 1, minWidth: 170 },
+  pinButtonWrap: { minWidth: 142 },
   tabWrap: {
     position: "absolute",
     left: 10,
