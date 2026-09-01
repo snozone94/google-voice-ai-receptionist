@@ -158,6 +158,30 @@
             <textarea id="voiceDirectionInput" rows="4" maxlength="700"></textarea>
           </label>
         </div>
+        <div class="noise-panel">
+          <div>
+            <p class="eyebrow">Noise handling</p>
+            <h3>Caller interruption sensitivity</h3>
+          </div>
+          <div class="settings-grid two-column">
+            <label>
+              Listening style
+              <select id="noiseModeSelect" disabled>
+                <option value="patient">Patient - best for noisy roadside calls</option>
+                <option value="balanced">Balanced - normal back and forth</option>
+                <option value="fast">Fast - quicker, but more sensitive</option>
+              </select>
+            </label>
+            <label class="switch-row noise-switch">
+              <input id="interruptResponseToggle" type="checkbox" />
+              <span>Let callers interrupt the AI mid-sentence</span>
+            </label>
+            <label class="wide-field">
+              Noise instructions
+              <textarea id="noiseNotesInput" rows="3" maxlength="700"></textarea>
+            </label>
+          </div>
+        </div>
         <div class="button-row">
           <button id="previewVoiceButton" type="button" disabled>Preview voice</button>
           <audio id="voicePreviewAudio" controls></audio>

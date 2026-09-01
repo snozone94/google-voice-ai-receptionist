@@ -58,6 +58,13 @@ const blankSettings = {
   voice: "marin",
   voiceSpeed: 1,
   voiceDirection: "",
+  noiseHandling: {
+    mode: "patient",
+    eagerness: "low",
+    interruptResponse: false,
+    notes:
+      "Let the receptionist finish short statements before listening. Ignore tiny background noises, road noise, breathing, and quick filler sounds unless the caller is clearly speaking."
+  },
   greeting: "",
   businessKnowledge: "",
   serviceArea: "",
@@ -620,6 +627,46 @@ function VoiceTab({ editMode, previewing, settings, setSettings, onPreviewVoice 
       <Card title="Voice direction">
         <Field editable={editMode} label="How it should sound" multiline onChangeText={(voiceDirection) => setSettings((current) => ({ ...current, voiceDirection }))} value={settings.voiceDirection} />
       </Card>
+      <Card title="Noise handling">
+        <SegmentedOptions
+          disabled={!editMode}
+          options={[
+            { id: "patient", label: "Patient" },
+            { id: "balanced", label: "Balanced" },
+            { id: "fast", label: "Fast" }
+          ]}
+          selected={settings.noiseHandling?.mode || "patient"}
+          onSelect={(mode) =>
+            setSettings((current) => ({
+              ...current,
+              noiseHandling: {
+                ...current.noiseHandling,
+                mode,
+                eagerness: mode === "fast" ? "medium" : "low"
+              }
+            }))
+          }
+        />
+        <SwitchRow
+          disabled={!editMode}
+          label="Caller can interrupt mid-sentence"
+          note="Keep off for noisy roadside calls."
+          value={settings.noiseHandling?.interruptResponse === true}
+          onValueChange={(interruptResponse) =>
+            setSettings((current) => ({
+              ...current,
+              noiseHandling: { ...current.noiseHandling, interruptResponse }
+            }))
+          }
+        />
+        <Field
+          editable={editMode}
+          label="Noise instructions"
+          multiline
+          onChangeText={(notes) => setSettings((current) => ({ ...current, noiseHandling: { ...current.noiseHandling, notes } }))}
+          value={settings.noiseHandling?.notes || ""}
+        />
+      </Card>
     </>
   );
 }
@@ -1146,6 +1193,10 @@ function toFormSettings(settings) {
       ...blankSettings.soundPreferences,
       ...(settings.soundPreferences || {})
     },
+    noiseHandling: {
+      ...blankSettings.noiseHandling,
+      ...(settings.noiseHandling || {})
+    },
     smsFollowUp: {
       ...blankSettings.smsFollowUp,
       ...(settings.smsFollowUp || {})
@@ -1178,6 +1229,10 @@ function fromFormSettings(settings) {
     outOfScopeHandling: settings.outOfScopeHandling,
     callerFlows: settings.callerFlows,
     soundPreferences: settings.soundPreferences,
+    noiseHandling: {
+      ...settings.noiseHandling,
+      eagerness: settings.noiseHandling?.mode === "fast" ? "medium" : "low"
+    },
     smsFollowUp: settings.smsFollowUp,
     reviewFollowUp: settings.reviewFollowUp,
     bookingDestinations: parseBookingDestinations(settings.bookingDestinationsText)
@@ -1264,6 +1319,7 @@ function buildScriptPreview(settings) {
     settings.enabled ? "AI answers new calls." : "AI is paused.",
     `Voice: ${settings.voice}`,
     `Speed: ${Number(settings.voiceSpeed || 1).toFixed(2)}x`,
+    `Noise handling: ${settings.noiseHandling?.mode || "patient"}; interruptions ${settings.noiseHandling?.interruptResponse ? "on" : "off"}.`,
     `Greeting: ${settings.greeting || "Thank you for calling Triple D Roadside, this is the receptionist. How can I help today?"}`,
     "",
     "Business knowledge:",

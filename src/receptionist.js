@@ -120,6 +120,13 @@ const defaultSoundPreferences = {
     url: ""
   }
 };
+const defaultNoiseHandling = {
+  mode: "patient",
+  eagerness: "low",
+  interruptResponse: false,
+  notes:
+    "Let the receptionist finish short statements before listening. Ignore tiny background noises, road noise, breathing, and quick filler sounds unless the caller is clearly speaking."
+};
 const defaultNotificationPreferences = {
   newCalls: true,
   missedCalls: true,
@@ -269,6 +276,7 @@ export async function saveReceptionistSettings(settings) {
         outOfScopeHandling: next.outOfScopeHandling,
         followUpStyle: next.followUpStyle,
         soundPreferences: next.soundPreferences,
+        noiseHandling: next.noiseHandling,
         notificationPreferences: next.notificationPreferences,
         insightLearning: next.insightLearning,
         humanRouting: next.humanRouting,
@@ -1239,6 +1247,11 @@ Sound preferences:
 - Thinking bridge: ${activeSettings.soundPreferences.thinkingSound ? activeSettings.soundPreferences.thinkingPhrase : "Avoid filler sounds or thinking noises; stay silent briefly if needed."}
 - Background audio/music: ${activeSettings.soundPreferences.backgroundAudio.enabled ? `${activeSettings.soundPreferences.backgroundAudio.label || "enabled"} (${activeSettings.soundPreferences.backgroundAudio.url || "no URL set"})` : "off"}. Keep emergency calls clear. Do not play or mention music unless the system is actually configured to mix licensed audio.
 
+Noise and interruption handling:
+- ${activeSettings.noiseHandling.notes}
+- If you hear a tiny noise while speaking, keep finishing the current short sentence. Do not restart from the top.
+- After you ask a question, stay quiet and listen until the caller finishes. If they pause briefly, wait instead of jumping in.
+
 SMS follow-up:
 - SMS follow-up is ${activeSettings.smsFollowUp.enabled ? "enabled" : "disabled"} in admin.
 - If enabled, ask permission before texting the caller the best DDD link.
@@ -1461,10 +1474,11 @@ export function receptionistTools() {
 }
 
 export function callAcceptPayload(business, settings = {}) {
+  const activeSettings = normalizeSettings(settings);
   return {
     type: "realtime",
     model: "gpt-realtime",
-    instructions: buildReceptionistInstructions(business, settings),
+    instructions: buildReceptionistInstructions(business, activeSettings),
     tools: receptionistTools(),
     tool_choice: "auto",
     output_modalities: ["audio"],
@@ -1480,14 +1494,14 @@ export function callAcceptPayload(business, settings = {}) {
         },
         turn_detection: {
           type: "semantic_vad",
-          eagerness: "high",
+          eagerness: activeSettings.noiseHandling.eagerness,
           create_response: true,
-          interrupt_response: true
+          interrupt_response: activeSettings.noiseHandling.interruptResponse
         }
       },
       output: {
-        voice: normalizeVoice(settings.voice) || "marin",
-        speed: normalizeSpeed(settings.voiceSpeed)
+        voice: normalizeVoice(activeSettings.voice) || "marin",
+        speed: normalizeSpeed(activeSettings.voiceSpeed)
       }
     }
   };
@@ -1623,6 +1637,7 @@ function normalizeSettings(settings = {}) {
       600
     ),
     soundPreferences: normalizeSoundPreferences(settings.soundPreferences),
+    noiseHandling: normalizeNoiseHandling(settings.noiseHandling),
     notificationPreferences: normalizeNotificationPreferences(settings.notificationPreferences),
     insightLearning: normalizeInsightLearning(settings.insightLearning),
     humanRouting: normalizeHumanRouting(settings.humanRouting),
@@ -2155,6 +2170,17 @@ function normalizeSoundPreferences(value = {}) {
       label: cleanText(value.backgroundAudio?.label, defaultSoundPreferences.backgroundAudio.label, 80),
       url: cleanText(value.backgroundAudio?.url, "", 500)
     }
+  };
+}
+
+function normalizeNoiseHandling(value = {}) {
+  const mode = ["fast", "balanced", "patient"].includes(value.mode) ? value.mode : defaultNoiseHandling.mode;
+  const eagerness = ["low", "medium", "high", "auto"].includes(value.eagerness) ? value.eagerness : mode === "fast" ? "medium" : "low";
+  return {
+    mode,
+    eagerness,
+    interruptResponse: value.interruptResponse === true,
+    notes: cleanLongText(value.notes, defaultNoiseHandling.notes, 700)
   };
 }
 

@@ -1506,6 +1506,28 @@ button:hover:not(:disabled) {
   background: linear-gradient(135deg, rgba(255, 62, 165, 0.08), rgba(255, 200, 61, 0.08), rgba(35, 199, 121, 0.08), rgba(22, 184, 255, 0.08));
 }
 
+.noise-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  border-radius: 8px;
+  padding: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.78)) padding-box,
+    linear-gradient(135deg, rgba(118, 87, 255, 0.85), rgba(255, 62, 165, 0.78), rgba(255, 200, 61, 0.78), rgba(22, 184, 255, 0.82)) border-box;
+  border-color: transparent;
+  box-shadow: 0 16px 32px rgba(118, 87, 255, 0.1);
+}
+
+.noise-panel h3 {
+  margin: 0;
+}
+
+.noise-switch {
+  min-height: 46px;
+}
+
 .web-push-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

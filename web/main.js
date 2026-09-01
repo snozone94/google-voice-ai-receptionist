@@ -44,6 +44,9 @@ const voiceSelect = document.querySelector("#voiceSelect");
 const voiceSpeedInput = document.querySelector("#voiceSpeedInput");
 const voiceSpeedOutput = document.querySelector("#voiceSpeedOutput");
 const voiceDirectionInput = document.querySelector("#voiceDirectionInput");
+const noiseModeSelect = document.querySelector("#noiseModeSelect");
+const interruptResponseToggle = document.querySelector("#interruptResponseToggle");
+const noiseNotesInput = document.querySelector("#noiseNotesInput");
 const previewVoiceButton = document.querySelector("#previewVoiceButton");
 const voicePreviewAudio = document.querySelector("#voicePreviewAudio");
 const greetingInput = document.querySelector("#greetingInput");
@@ -254,6 +257,11 @@ function applySettings(settings) {
   voiceSpeedInput.value = settings.voiceSpeed || 1;
   voiceSpeedOutput.value = `${Number(voiceSpeedInput.value).toFixed(2)}x`;
   voiceDirectionInput.value = settings.voiceDirection || "";
+  noiseModeSelect.value = settings.noiseHandling?.mode || "patient";
+  interruptResponseToggle.checked = settings.noiseHandling?.interruptResponse === true;
+  noiseNotesInput.value =
+    settings.noiseHandling?.notes ||
+    "Let the receptionist finish short statements before listening. Ignore tiny background noises, road noise, breathing, and quick filler sounds unless the caller is clearly speaking.";
   greetingInput.value = settings.greeting || "";
   businessKnowledgeInput.value = settings.businessKnowledge || "";
   serviceAreaInput.value = settings.serviceArea || "";
@@ -357,6 +365,12 @@ async function saveSettings(reason = "auto") {
         voice: voiceSelect.value,
         voiceSpeed: voiceSpeedInput.value,
         voiceDirection: voiceDirectionInput.value,
+        noiseHandling: {
+          mode: noiseModeSelect.value,
+          eagerness: noiseModeSelect.value === "fast" ? "medium" : "low",
+          interruptResponse: interruptResponseToggle.checked,
+          notes: noiseNotesInput.value
+        },
         greeting: greetingInput.value,
         businessKnowledge: businessKnowledgeInput.value,
         serviceArea: serviceAreaInput.value,
@@ -493,6 +507,9 @@ for (const input of [
   voiceSelect,
   voiceSpeedInput,
   voiceDirectionInput,
+  noiseModeSelect,
+  interruptResponseToggle,
+  noiseNotesInput,
   greetingInput,
   businessKnowledgeInput,
   serviceAreaInput,
@@ -579,6 +596,9 @@ function setEditMode(nextEditMode) {
     voiceSelect,
     voiceSpeedInput,
     voiceDirectionInput,
+    noiseModeSelect,
+    interruptResponseToggle,
+    noiseNotesInput,
     greetingInput,
     businessKnowledgeInput,
     serviceAreaInput,
@@ -716,6 +736,8 @@ function updateScriptPreview() {
     `Voice: ${voiceSelect.selectedOptions[0]?.textContent || voiceSelect.value || "Marin"}`,
     `Speed: ${Number(voiceSpeedInput.value || 1).toFixed(2)}x`,
     `Voice direction: ${voiceDirectionInput.value || "Warm, confident, friendly receptionist."}`,
+    `Noise handling: ${noiseModeSelect.selectedOptions[0]?.textContent || "Patient - best for noisy roadside calls"}. Interruptions ${interruptResponseToggle.checked ? "allowed" : "off"}.`,
+    `Noise notes: ${noiseNotesInput.value || "Ignore tiny background noises and wait until the caller finishes."}`,
     `Greeting: ${greetingInput.value || "Thank you for calling Triple D Roadside, this is the receptionist. How can I help today?"}`,
     `Call route mode: ${humanRouteModeSelect.selectedOptions[0]?.textContent || humanRouteModeSelect.value}. Timeout ${humanRouteTimeoutInput.value || 22}s.`,
     `Human route numbers: ${parseHumanRouteNumbersInput(humanRouteNumbersInput.value).map((entry) => `${entry.label} ${entry.phone}`).join(", ") || "none set"}`,
