@@ -876,7 +876,11 @@ export async function savePushToken(subscription = {}) {
   const webSubscription = subscription.subscription && typeof subscription.subscription === "object" ? subscription.subscription : null;
   const endpoint = cleanLongText(webSubscription?.endpoint || "", "", 900);
   const isExpoToken = /^Expo(nent)?PushToken\[[^\]]+\]$/.test(token);
-  const isWebPush = endpoint && webSubscription?.keys?.p256dh && webSubscription?.keys?.auth;
+  const isWebPush =
+    /^https:\/\/[^.\s]+(\.[^/\s]+)+\/.+/.test(endpoint) &&
+    !/^https:\/\/example\.com\//i.test(endpoint) &&
+    webSubscription?.keys?.p256dh &&
+    webSubscription?.keys?.auth;
   if (!isExpoToken && !isWebPush) {
     throw new Error("Enter a valid push token or browser notification subscription.");
   }

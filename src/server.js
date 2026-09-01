@@ -1615,7 +1615,9 @@ async function notifyTeam({ title, body, data = {} }) {
         ...data
       }
     }));
-  const webSubscriptions = tokens.filter((subscription) => subscription.subscription?.endpoint);
+  const webSubscriptions = tokens.filter(
+    (subscription) => subscription.subscription?.endpoint && !/^https:\/\/example\.com\//i.test(subscription.subscription.endpoint)
+  );
 
   if (!expoMessages.length && !webSubscriptions.length) return { ok: true, sent: 0, skipped: true, errors: [] };
 

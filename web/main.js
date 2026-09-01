@@ -1126,6 +1126,13 @@ function staffHeaders() {
   return code ? { "x-staff-code": code } : {};
 }
 
+function pushAuthHeaders() {
+  return {
+    ...adminHeaders(),
+    ...staffHeaders()
+  };
+}
+
 function urlBase64ToUint8Array(value) {
   const padding = "=".repeat((4 - (value.length % 4)) % 4);
   const base64 = `${value}${padding}`.replace(/-/g, "+").replace(/_/g, "/");
@@ -1174,7 +1181,7 @@ async function enableWebPushNotifications() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...staffHeaders()
+        ...pushAuthHeaders()
       },
       body: JSON.stringify({
         platform: "web",
@@ -1182,7 +1189,9 @@ async function enableWebPushNotifications() {
       })
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "Could not save this browser for alerts.");
+    if (!response.ok) {
+      throw new Error(response.status === 403 ? "Use your real admin PIN or staff code. Demo code cannot enable live alerts." : payload.error || "Could not save this browser for alerts.");
+    }
     setWebPushStatus("Browser alerts are connected here.");
   } catch (error) {
     setWebPushStatus(error.message);
@@ -1200,12 +1209,14 @@ async function sendWebPushTest() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...staffHeaders()
+        ...pushAuthHeaders()
       },
       body: JSON.stringify({})
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "Could not send test alert.");
+    if (!response.ok) {
+      throw new Error(response.status === 403 ? "Use your real admin PIN or staff code. Demo code cannot send live alerts." : payload.error || "Could not send test alert.");
+    }
     setWebPushStatus(payload.sent ? `Test alert sent to ${payload.sent} device${payload.sent === 1 ? "" : "s"}.` : "No devices are registered yet.");
   } catch (error) {
     setWebPushStatus(error.message);
