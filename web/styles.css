@@ -430,14 +430,6 @@ button:hover:not(:disabled) {
   line-height: 1.35;
 }
 
-.staff-code-editor {
-  display: none;
-}
-
-body.edit-mode .staff-code-editor {
-  display: grid;
-}
-
 .team-control-grid {
   display: grid;
   grid-template-columns: minmax(220px, 0.65fr) minmax(0, 1.35fr);
@@ -446,6 +438,7 @@ body.edit-mode .staff-code-editor {
 }
 
 .team-current-card,
+.team-code-editor,
 .editor-note {
   border: 1px solid rgba(118, 87, 255, 0.16);
   border-radius: 16px;
@@ -478,6 +471,58 @@ body.edit-mode .staff-code-editor {
   color: #34364d;
   font-size: 0.84rem;
   font-weight: 900;
+}
+
+.team-code-editor {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 12px;
+}
+
+.compact-row {
+  gap: 12px;
+}
+
+.staff-code-rows {
+  display: grid;
+  gap: 10px;
+}
+
+.staff-code-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(110px, 0.7fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid rgba(217, 211, 238, 0.86);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.staff-code-row label {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.staff-code-row label span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.staff-code-row input {
+  min-height: 44px;
+}
+
+.staff-code-row button {
+  min-height: 44px;
+  padding: 0 14px;
+  background: #fff4f8;
+  color: #b21f62;
+  box-shadow: none;
 }
 
 .inbox-shell {
@@ -2135,6 +2180,10 @@ li.missing {
   .call-metrics,
   .call-facts,
   .reply-form {
+    grid-template-columns: 1fr;
+  }
+
+  .staff-code-row {
     grid-template-columns: 1fr;
   }
 

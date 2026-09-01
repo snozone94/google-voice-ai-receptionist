@@ -115,6 +115,8 @@ const staffPinInput = document.querySelector("#staffPinInput");
 const staffNameInput = document.querySelector("#staffNameInput");
 const staffStatusSelect = document.querySelector("#staffStatusSelect");
 const staffAccessCodesInput = document.querySelector("#staffAccessCodesInput");
+const staffCodeRows = document.querySelector("#staffCodeRows");
+const addStaffCodeButton = document.querySelector("#addStaffCodeButton");
 const teamCurrentCodeStatus = document.querySelector("#teamCurrentCodeStatus");
 const teamCurrentStatus = document.querySelector("#teamCurrentStatus");
 const conversationList = document.querySelector("#conversationList");
@@ -334,6 +336,7 @@ function applySettings(settings) {
     settings.reviewFollowUp?.message ||
     "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}";
   staffAccessCodesInput.value = formatStaffAccessCodes(settings.staffAccessCodes || []);
+  renderStaffCodeRows(settings.staffAccessCodes || []);
   qaChecklistInput.value = settings.qaChecklist || "";
   notifyNewCallsToggle.checked = settings.notificationPreferences?.newCalls !== false;
   notifyMissedCallsToggle.checked = settings.notificationPreferences?.missedCalls !== false;
@@ -374,6 +377,7 @@ saveSettingsButton.addEventListener("click", () => {
 async function saveSettings(reason = "auto") {
   if (isSavingSettings) return;
   clearTimeout(saveTimer);
+  syncStaffCodesFromRows();
   isSavingSettings = true;
   voiceSelect.disabled = true;
   updateSaveControls(reason === "auto" ? "Autosaving..." : "Saving receptionist settings...");
@@ -683,6 +687,10 @@ function setEditMode(nextEditMode) {
   ]) {
     setSettingsControlLock(input, !editMode || isSavingSettings);
   }
+  for (const control of staffCodeRows?.querySelectorAll("input,button") || []) {
+    setSettingsControlLock(control, !editMode || isSavingSettings);
+  }
+  if (addStaffCodeButton) setSettingsControlLock(addStaffCodeButton, !editMode || isSavingSettings);
   updateSaveControls();
   previewVoiceButton.disabled = false;
   document.body.classList.toggle("edit-mode", editMode);
@@ -1132,9 +1140,85 @@ function parseBookingDestinations(value) {
 
 function formatStaffAccessCodes(codes) {
   return (codes || [])
-    .map((entry) => `${entry.name || ""} | ${entry.code || ""}`.trim())
+    .map((entry) => `${entry.name || ""} | ${entry.code || ""}`)
     .filter(Boolean)
     .join("\n");
+}
+
+function syncStaffCodesFromRows() {
+  if (!staffCodeRows || !staffAccessCodesInput) return;
+  const rows = [...staffCodeRows.querySelectorAll(".staff-code-row")];
+  staffAccessCodesInput.value = rows
+    .map((row) => {
+      const name = row.querySelector("[data-staff-name]")?.value.trim() || "";
+      const code = row.querySelector("[data-staff-code]")?.value.replace(/\s+/g, "") || "";
+      return name && code ? `${name} | ${code}` : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function renderStaffCodeRows(codes = []) {
+  if (!staffCodeRows) return;
+  staffCodeRows.innerHTML = "";
+  const rows = codes.length ? codes : [{ name: "", code: "" }];
+  rows.forEach((entry) => appendStaffCodeRow(entry));
+  syncStaffCodesFromRows();
+}
+
+function appendStaffCodeRow(entry = {}) {
+  if (!staffCodeRows) return;
+  const row = document.createElement("div");
+  row.className = "staff-code-row";
+
+  const nameLabel = document.createElement("label");
+  const nameText = document.createElement("span");
+  const nameInput = document.createElement("input");
+  nameText.textContent = "Name";
+  nameInput.dataset.staffName = "true";
+  nameInput.type = "text";
+  nameInput.autocomplete = "off";
+  nameInput.placeholder = "Tech name";
+  nameInput.value = entry.name || "";
+  nameLabel.append(nameText, nameInput);
+
+  const codeLabel = document.createElement("label");
+  const codeText = document.createElement("span");
+  const codeInput = document.createElement("input");
+  codeText.textContent = "Code";
+  codeInput.dataset.staffCode = "true";
+  codeInput.type = "text";
+  codeInput.inputMode = "numeric";
+  codeInput.autocomplete = "off";
+  codeInput.placeholder = "4-6 digits";
+  codeInput.value = entry.code || "";
+  codeLabel.append(codeText, codeInput);
+
+  const removeButton = document.createElement("button");
+  removeButton.type = "button";
+  removeButton.dataset.removeStaffCode = "true";
+  removeButton.textContent = "Remove";
+  removeButton.addEventListener("click", () => {
+    row.remove();
+    if (!staffCodeRows.querySelector(".staff-code-row")) appendStaffCodeRow();
+    syncStaffCodesFromRows();
+    handleSettingsChange();
+  });
+
+  row.append(nameLabel, codeLabel, removeButton);
+  staffCodeRows.append(row);
+  for (const input of [nameInput, codeInput]) {
+    setSettingsControlLock(input, !editMode || isSavingSettings);
+    input.addEventListener("input", () => {
+      syncStaffCodesFromRows();
+      handleSettingsChange();
+    });
+    input.addEventListener("change", () => {
+      syncStaffCodesFromRows();
+      handleSettingsChange();
+    });
+  }
+  setSettingsControlLock(removeButton, !editMode || isSavingSettings);
 }
 
 function parseStaffAccessCodesInput(value) {
@@ -1199,7 +1283,14 @@ function pushAuthHeaders() {
 
 function updateTeamCurrentCard() {
   if (teamCurrentCodeStatus) {
-    teamCurrentCodeStatus.textContent = accessCodeValue() ? "Access code saved on this device" : "No access code saved yet";
+    const code = accessCodeValue();
+    if (!code) {
+      teamCurrentCodeStatus.textContent = "No access code entered yet";
+    } else if (code === "4444" || code === "0000") {
+      teamCurrentCodeStatus.textContent = "Demo code saved on this device";
+    } else {
+      teamCurrentCodeStatus.textContent = "Access code saved on this device for login";
+    }
   }
   if (teamCurrentStatus) {
     const name = staffNameInput.value.trim() || "This device";
@@ -1682,6 +1773,12 @@ refreshTeamButton?.addEventListener("click", () => {
   updateTeamCurrentCard();
   refreshPresence().catch(() => {});
   sendPresence().catch(() => {});
+});
+
+addStaffCodeButton?.addEventListener("click", () => {
+  appendStaffCodeRow();
+  syncStaffCodesFromRows();
+  handleSettingsChange();
 });
 
 adminPinInput.addEventListener("change", () => {

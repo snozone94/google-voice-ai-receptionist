@@ -474,11 +474,11 @@
         </div>
         <div class="team-control-grid">
           <div class="team-current-card">
-            <p class="eyebrow">This device</p>
-            <h3>Your login</h3>
-            <p>Use the access code at the top. Your name and status save on this browser and show to the team.</p>
+            <p class="eyebrow">Signed-in user</p>
+            <h3>Your access</h3>
+            <p>The code entered at the top unlocks the right view. Admin can edit global tech codes; techs can use their own code for inbox, replies, callback bridge, and live status.</p>
             <div class="team-current-details">
-              <span id="teamCurrentCodeStatus">Code saved on this device</span>
+              <span id="teamCurrentCodeStatus">No access code entered yet</span>
               <span id="teamCurrentStatus">Available</span>
             </div>
           </div>
@@ -490,12 +490,17 @@
             </div>
             <div id="teamPresenceList" class="presence-list"></div>
           </div>
-          <div class="settings-grid staff-code-editor">
-            <label>
-              Staff names and codes
-              <textarea id="staffAccessCodesInput" rows="6" placeholder="Brianna | 989706&#10;Tech 1 | 2401&#10;Tech 2 | 2402"></textarea>
-            </label>
-            <p class="editor-note">Only the real admin access code can save this list. Techs can use their own code for inbox, replies, call-back bridge, and live status.</p>
+          <div class="team-code-editor staff-code-editor">
+            <div class="section-title-row compact-row">
+              <div>
+                <p class="eyebrow">Global saved codes</p>
+                <h3>Editable Tech Logins</h3>
+              </div>
+              <button id="addStaffCodeButton" type="button">Add tech</button>
+            </div>
+            <div id="staffCodeRows" class="staff-code-rows"></div>
+            <textarea id="staffAccessCodesInput" rows="6" hidden aria-hidden="true"></textarea>
+            <p class="editor-note">These tech codes save to the DDD AI backend, not just this phone or computer. Use the real admin code, tap Edit settings, change names/codes, then Save changes. The master admin code is changed in Render's ADMIN_PIN secret.</p>
           </div>
         </div>
       </section>
