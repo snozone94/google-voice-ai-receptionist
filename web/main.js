@@ -110,10 +110,13 @@ const settingsStatus = document.querySelector("#settingsStatus");
 const refreshInboxButton = document.querySelector("#refreshInboxButton");
 const inboxLoginButton = document.querySelector("#inboxLoginButton");
 const refreshInboxPanelButton = document.querySelector("#refreshInboxPanelButton");
+const refreshTeamButton = document.querySelector("#refreshTeamButton");
 const staffPinInput = document.querySelector("#staffPinInput");
 const staffNameInput = document.querySelector("#staffNameInput");
 const staffStatusSelect = document.querySelector("#staffStatusSelect");
 const staffAccessCodesInput = document.querySelector("#staffAccessCodesInput");
+const teamCurrentCodeStatus = document.querySelector("#teamCurrentCodeStatus");
+const teamCurrentStatus = document.querySelector("#teamCurrentStatus");
 const conversationList = document.querySelector("#conversationList");
 const selectedConversationTitle = document.querySelector("#selectedConversationTitle");
 const selectedConversationMeta = document.querySelector("#selectedConversationMeta");
@@ -160,6 +163,7 @@ adminPinInput.value = savedAccessCode;
 staffPinInput.value = "";
 staffNameInput.value = localStorage.getItem("dddStaffName") || "";
 staffStatusSelect.value = normalizeStaffStatus(localStorage.getItem("dddStaffStatus"));
+updateTeamCurrentCard();
 updateWebPushAvailabilityStatus();
 
 for (const button of tabButtons) {
@@ -175,6 +179,10 @@ function setActiveTab(tabName) {
   }
   for (const panel of tabPanels) {
     panel.classList.toggle("active", panel.dataset.tabPanel === tabName);
+  }
+  if (tabName === "team") {
+    updateTeamCurrentCard();
+    refreshPresence().catch(() => {});
   }
   if (tabName === "inbox" && accessCodeValue()) {
     refreshInbox().catch((error) => setInboxStatus(error.message));
@@ -471,6 +479,7 @@ async function saveSettings(reason = "auto") {
     applySettings(savedSettings);
     isLoadingSettings = false;
     hasUnsavedSettings = false;
+    refreshPresence().catch(() => {});
     updateScriptPreview();
     updateSaveControls(
       enabledToggle.checked
@@ -1178,6 +1187,7 @@ function saveAccessCode() {
   localStorage.setItem("dddAccessCode", code);
   localStorage.setItem("dddAdminPin", code);
   localStorage.setItem("dddStaffCode", code);
+  updateTeamCurrentCard();
 }
 
 function pushAuthHeaders() {
@@ -1185,6 +1195,16 @@ function pushAuthHeaders() {
     ...adminHeaders(),
     ...staffHeaders()
   };
+}
+
+function updateTeamCurrentCard() {
+  if (teamCurrentCodeStatus) {
+    teamCurrentCodeStatus.textContent = accessCodeValue() ? "Access code saved on this device" : "No access code saved yet";
+  }
+  if (teamCurrentStatus) {
+    const name = staffNameInput.value.trim() || "This device";
+    teamCurrentStatus.textContent = `${name}: ${formatPresenceStatus(staffStatusSelect.value)}`;
+  }
 }
 
 function urlBase64ToUint8Array(value) {
@@ -1658,6 +1678,12 @@ refreshInboxPanelButton?.addEventListener("click", () => {
   sendPresence().catch(() => {});
 });
 
+refreshTeamButton?.addEventListener("click", () => {
+  updateTeamCurrentCard();
+  refreshPresence().catch(() => {});
+  sendPresence().catch(() => {});
+});
+
 adminPinInput.addEventListener("change", () => {
   saveAccessCode();
   loadSettings().catch(() => {
@@ -1672,15 +1698,18 @@ adminPinInput.addEventListener("input", () => {
 });
 
 staffNameInput.addEventListener("change", () => {
+  updateTeamCurrentCard();
   queueStaffRefresh();
 });
 
 staffNameInput.addEventListener("input", () => {
+  updateTeamCurrentCard();
   queueStaffRefresh();
 });
 
 staffStatusSelect.addEventListener("change", () => {
   localStorage.setItem("dddStaffStatus", staffStatusSelect.value);
+  updateTeamCurrentCard();
   sendPresence().catch(() => {});
 });
 

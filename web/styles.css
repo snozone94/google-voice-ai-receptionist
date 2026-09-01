@@ -438,6 +438,48 @@ body.edit-mode .staff-code-editor {
   display: grid;
 }
 
+.team-control-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.65fr) minmax(0, 1.35fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.team-current-card,
+.editor-note {
+  border: 1px solid rgba(118, 87, 255, 0.16);
+  border-radius: 16px;
+  padding: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.72)) padding-box,
+    linear-gradient(135deg, rgba(255, 62, 165, 0.22), rgba(255, 200, 61, 0.16), rgba(22, 184, 255, 0.2)) border-box;
+  border-color: transparent;
+  box-shadow: 0 14px 28px rgba(37, 38, 69, 0.08);
+}
+
+.team-current-card p:not(.eyebrow),
+.editor-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.team-current-details {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.team-current-details span {
+  border-radius: 999px;
+  padding: 8px 10px;
+  background: var(--soft-rainbow);
+  color: #34364d;
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
 .inbox-shell {
   display: grid;
   grid-template-columns: minmax(220px, 0.85fr) minmax(0, 1.4fr);
@@ -2083,6 +2125,7 @@ li.missing {
   .lead-capture,
   .top-actions,
   .route-control-strip,
+  .team-control-grid,
   .inbox-auth,
   .inbox-login-card,
   .inbox-shell,
@@ -2150,11 +2193,12 @@ li.missing {
   .tab-button:nth-child(3).active { background: linear-gradient(135deg, #ffc83d, #23c779); }
   .tab-button:nth-child(4).active { background: linear-gradient(135deg, #23c779, #16b8ff); }
   .tab-button:nth-child(5).active { background: linear-gradient(135deg, #16b8ff, #7657ff); }
-  .tab-button:nth-child(6).active { background: linear-gradient(135deg, #7657ff, #ff3ea5); }
-  .tab-button:nth-child(7).active { background: linear-gradient(135deg, #ff5f8f, #ff7a3d); }
-  .tab-button:nth-child(8).active { background: linear-gradient(135deg, #23c779, #7657ff); }
-  .tab-button:nth-child(9).active { background: linear-gradient(135deg, #ffc83d, #ff3ea5); }
-  .tab-button:nth-child(10).active { background: linear-gradient(135deg, #16b8ff, #ff3ea5); }
+  .tab-button:nth-child(6).active { background: linear-gradient(135deg, #7657ff, #23c779); }
+  .tab-button:nth-child(7).active { background: linear-gradient(135deg, #7657ff, #ff3ea5); }
+  .tab-button:nth-child(8).active { background: linear-gradient(135deg, #ff5f8f, #ff7a3d); }
+  .tab-button:nth-child(9).active { background: linear-gradient(135deg, #23c779, #7657ff); }
+  .tab-button:nth-child(10).active { background: linear-gradient(135deg, #ffc83d, #ff3ea5); }
+  .tab-button:nth-child(11).active { background: linear-gradient(135deg, #16b8ff, #ff3ea5); }
 
   .top-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
