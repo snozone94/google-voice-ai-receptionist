@@ -379,6 +379,12 @@ async function saveSettings(reason = "auto") {
   if (isSavingSettings) return;
   clearTimeout(saveTimer);
   syncStaffCodesFromRows();
+  if (hasIncompleteStaffCodeRows()) {
+    hasUnsavedSettings = true;
+    updateSaveControls("Finish each tech name and code before saving Team changes.");
+    if (reason === "manual") throw new Error("Finish each tech name and code before saving Team changes.");
+    return;
+  }
   isSavingSettings = true;
   voiceSelect.disabled = true;
   updateSaveControls(reason === "auto" ? "Autosaving..." : "Saving receptionist settings...");
@@ -615,6 +621,22 @@ function handleSettingsChange() {
   saveTimer = setTimeout(() => {
     saveSettings("auto").catch(() => {});
   }, 900);
+}
+
+function handleStaffCodesChange() {
+  syncStaffCodesFromRows();
+  updateScriptPreview();
+  if (!editMode || isLoadingSettings) return;
+  hasUnsavedSettings = true;
+  clearTimeout(saveTimer);
+  if (hasIncompleteStaffCodeRows()) {
+    updateSaveControls("Finish the tech name and code, then Save changes.");
+    return;
+  }
+  updateSaveControls("Team codes changed. Autosaving soon...");
+  saveTimer = setTimeout(() => {
+    saveSettings("auto").catch(() => {});
+  }, 1100);
 }
 
 function setEditMode(nextEditMode) {
@@ -1159,6 +1181,15 @@ function syncStaffCodesFromRows() {
     .join("\n");
 }
 
+function hasIncompleteStaffCodeRows() {
+  if (!staffCodeRows) return false;
+  return [...staffCodeRows.querySelectorAll(".staff-code-row")].some((row) => {
+    const name = row.querySelector("[data-staff-name]")?.value.trim() || "";
+    const code = row.querySelector("[data-staff-code]")?.value.replace(/\s+/g, "") || "";
+    return Boolean(name || code) && !(name && code);
+  });
+}
+
 function renderStaffCodeRows(codes = []) {
   if (!staffCodeRows) return;
   staffCodeRows.innerHTML = "";
@@ -1202,8 +1233,7 @@ function appendStaffCodeRow(entry = {}) {
   removeButton.addEventListener("click", () => {
     row.remove();
     if (!staffCodeRows.querySelector(".staff-code-row")) appendStaffCodeRow();
-    syncStaffCodesFromRows();
-    handleSettingsChange();
+    handleStaffCodesChange();
   });
 
   row.append(nameLabel, codeLabel, removeButton);
@@ -1211,12 +1241,10 @@ function appendStaffCodeRow(entry = {}) {
   for (const input of [nameInput, codeInput]) {
     setSettingsControlLock(input, !editMode || isSavingSettings);
     input.addEventListener("input", () => {
-      syncStaffCodesFromRows();
-      handleSettingsChange();
+      handleStaffCodesChange();
     });
     input.addEventListener("change", () => {
-      syncStaffCodesFromRows();
-      handleSettingsChange();
+      handleStaffCodesChange();
     });
   }
   setSettingsControlLock(removeButton, !editMode || isSavingSettings);
@@ -1809,8 +1837,7 @@ refreshTeamButton?.addEventListener("click", () => {
 
 addStaffCodeButton?.addEventListener("click", () => {
   appendStaffCodeRow();
-  syncStaffCodesFromRows();
-  handleSettingsChange();
+  updateSaveControls("New tech row added. Enter a name and code, then Save changes.");
 });
 
 adminPinInput.addEventListener("change", () => {
