@@ -41,7 +41,7 @@ const defaultPricingNotes =
 const defaultEmergencyInstructions =
   "For stranded or urgent roadside callers, be extremely brief. Ask if they are safe, get exact location, vehicle year/make/model/color, what happened, callback number, and whether they can receive a text. Then direct them to the emergency service request option and save the lead.";
 const defaultHumanHandoffRules =
-  "Do not promise a live transfer. Save the caller's details and tell them the DDD team will follow up as soon as possible.";
+  "If human routing is on, route callers to the saved DDD human numbers when they ask for a person, when AI is paused, or when the call cannot be handled safely by AI. If no human answers, save the caller's details and tell them DDD will follow up as soon as possible.";
 const defaultApplyInstructions =
   "For work, contractor, technician, or job-interest calls, collect name, phone, email, role or service type, experience, and location, then direct them to the DDD apply to work link.";
 const defaultSmsFollowUpText =
@@ -136,6 +136,21 @@ const defaultInsightLearning = {
   useTopLocations: true,
   useQaIssues: true,
   useSpeedSuggestions: true
+};
+const defaultHumanRouting = {
+  mode: "ai_then_humans",
+  numbers: [],
+  ringStyle: "simultaneous",
+  timeoutSeconds: 22,
+  callerMessage: "Please hold while I connect you with DDD.",
+  fallbackMessage: "DDD could not reach the team live, but your call was logged. Please leave a message or text DDD and the team will follow up.",
+  transferTriggers: [
+    "Caller asks for a person twice",
+    "Caller is upset or complaint is high priority",
+    "AI cannot hear or understand the caller",
+    "Urgent roadside call has incomplete safety or location details",
+    "AI is turned off in admin"
+  ]
 };
 const defaultStaffAccessCodes = [];
 const defaultBookingDestinations = [
@@ -256,6 +271,7 @@ export async function saveReceptionistSettings(settings) {
         soundPreferences: next.soundPreferences,
         notificationPreferences: next.notificationPreferences,
         insightLearning: next.insightLearning,
+        humanRouting: next.humanRouting,
         staffAccessCodes: next.staffAccessCodes,
         bookingDestinations: next.bookingDestinations
       },
@@ -1289,6 +1305,9 @@ Lead capture:
 - If SMS follow-up is enabled and the caller agrees, say DDD will text the best link to the callback number on file.
 - If you cannot complete the request, say a team member will follow up.
 - Never promise that a human is available unless the caller has actually been transferred.
+- Human routing mode: ${activeSettings.humanRouting.mode}. Saved human route numbers: ${activeSettings.humanRouting.numbers.length ? activeSettings.humanRouting.numbers.map((entry) => `${entry.label}: ${entry.phone}`).join(", ") : "none configured"}.
+- Human transfer triggers: ${activeSettings.humanRouting.transferTriggers.join("; ")}.
+- If transfer is needed, follow the human handoff rules and keep the caller calm. If no route number is configured, save an urgent follow-up instead of promising a live transfer.
 
 User-editable receptionist notes:
 ${activeSettings.customInstructions}
@@ -1587,6 +1606,7 @@ function normalizeSettings(settings = {}) {
     soundPreferences: normalizeSoundPreferences(settings.soundPreferences),
     notificationPreferences: normalizeNotificationPreferences(settings.notificationPreferences),
     insightLearning: normalizeInsightLearning(settings.insightLearning),
+    humanRouting: normalizeHumanRouting(settings.humanRouting),
     insightSnapshot: settings.insightSnapshot || null,
     staffAccessCodes: normalizeStaffAccessCodes(settings.staffAccessCodes || parseStaffAccessCodes(process.env.STAFF_ACCESS_CODES || "")),
     bookingDestinations: normalizeBookingDestinations(settings.bookingDestinations),
@@ -2140,6 +2160,55 @@ function normalizeInsightLearning(value = {}) {
     useQaIssues: value.useQaIssues !== false,
     useSpeedSuggestions: value.useSpeedSuggestions !== false
   };
+}
+
+function normalizeHumanRouting(value = {}) {
+  const supportedModes = new Set(["ai", "humans", "ai_then_humans"]);
+  const mode = supportedModes.has(value.mode) ? value.mode : defaultHumanRouting.mode;
+  const numbersSource = Array.isArray(value.numbers) ? value.numbers : parseHumanRouteNumbers(value.numbers || process.env.HUMAN_ROUTE_NUMBERS || "");
+  const numbers = numbersSource
+    .map((entry, index) => ({
+      label: cleanText(entry.label || entry.name || `Route ${index + 1}`, `Route ${index + 1}`, 80),
+      phone: normalizePhoneForSettings(entry.phone || entry.number || entry.value)
+    }))
+    .filter((entry) => entry.phone)
+    .slice(0, 8);
+  const timeout = Number(value.timeoutSeconds);
+  return {
+    mode,
+    numbers,
+    ringStyle: value.ringStyle === "sequential" ? "sequential" : "simultaneous",
+    timeoutSeconds: Number.isFinite(timeout) ? Math.min(45, Math.max(8, Math.round(timeout))) : defaultHumanRouting.timeoutSeconds,
+    callerMessage: cleanText(value.callerMessage, defaultHumanRouting.callerMessage, 220),
+    fallbackMessage: cleanText(value.fallbackMessage, defaultHumanRouting.fallbackMessage, 260),
+    transferTriggers: normalizeTextList(value.transferTriggers, defaultHumanRouting.transferTriggers, 10, 120)
+  };
+}
+
+function parseHumanRouteNumbers(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return defaultHumanRouting.numbers;
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {
+    // Fall through to line format.
+  }
+  return raw
+    .split(/\n|,/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const [label, ...phoneParts] = line.includes("|") ? line.split("|") : [`Route ${index + 1}`, line];
+      return { label: label.trim(), phone: phoneParts.join("|").trim() };
+    });
+}
+
+function normalizePhoneForSettings(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return "";
 }
 
 function normalizeSmsFollowUp(value = {}) {

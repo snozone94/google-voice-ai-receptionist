@@ -245,31 +245,37 @@ app.get("/support", (_req, res) => {
 </html>`);
 });
 
-app.get("/api/setup-status", (_req, res) => {
-  const required = {
-    openAIKey: Boolean(process.env.OPENAI_API_KEY),
-    publicBaseUrl: Boolean(process.env.PUBLIC_BASE_URL && !process.env.PUBLIC_BASE_URL.includes("your-domain")),
-    webhookSecret: Boolean(process.env.OPENAI_WEBHOOK_SECRET),
-    googleVoiceNumber: Boolean(process.env.GOOGLE_VOICE_NUMBER),
-    aiForwardingNumber: Boolean(process.env.AI_FORWARDING_NUMBER),
-    persistentStorage: getStorageInfo().persistent,
-    smsDelivery: Boolean(
-      process.env.SMS_FOLLOWUP_WEBHOOK_URL ||
-        process.env.TWILIO_SMS_WEBHOOK_SECRET ||
-        (process.env.VOIPMS_API_USERNAME && process.env.VOIPMS_API_PASSWORD && process.env.VOIPMS_SMS_DID)
-    )
-  };
+app.get("/api/setup-status", async (_req, res, next) => {
+  try {
+    const settings = await loadReceptionistSettings();
+    const required = {
+      openAIKey: Boolean(process.env.OPENAI_API_KEY),
+      publicBaseUrl: Boolean(process.env.PUBLIC_BASE_URL && !process.env.PUBLIC_BASE_URL.includes("your-domain")),
+      webhookSecret: Boolean(process.env.OPENAI_WEBHOOK_SECRET),
+      googleVoiceNumber: Boolean(process.env.GOOGLE_VOICE_NUMBER),
+      aiForwardingNumber: Boolean(process.env.AI_FORWARDING_NUMBER),
+      humanRouting: Boolean(settings.humanRouting?.numbers?.length),
+      persistentStorage: getStorageInfo().persistent,
+      smsDelivery: Boolean(
+        process.env.SMS_FOLLOWUP_WEBHOOK_URL ||
+          process.env.TWILIO_SMS_WEBHOOK_SECRET ||
+          (process.env.VOIPMS_API_USERNAME && process.env.VOIPMS_API_PASSWORD && process.env.VOIPMS_SMS_DID)
+      )
+    };
 
-  res.json({
-    ok: Object.values(required).every(Boolean),
-    required,
-    googleVoiceNumber: process.env.GOOGLE_VOICE_NUMBER || "",
-    aiForwardingNumber: process.env.AI_FORWARDING_NUMBER || "",
-    webhookUrl:
-      process.env.PUBLIC_BASE_URL && !process.env.PUBLIC_BASE_URL.includes("your-domain")
-        ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/openai/sip-webhook`
-        : ""
-  });
+    res.json({
+      ok: Object.values(required).every(Boolean),
+      required,
+      googleVoiceNumber: process.env.GOOGLE_VOICE_NUMBER || "",
+      aiForwardingNumber: process.env.AI_FORWARDING_NUMBER || "",
+      webhookUrl:
+        process.env.PUBLIC_BASE_URL && !process.env.PUBLIC_BASE_URL.includes("your-domain")
+          ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/openai/sip-webhook`
+          : ""
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get("/api/business", async (_req, res, next) => {
@@ -577,6 +583,7 @@ async function handleTwilioVoice(req, res, next) {
       return;
     }
 
+    const settings = await loadReceptionistSettings();
     const sipUri = normalizeSipUri(process.env.TRANSFER_SIP_URI || process.env.OPENAI_SIP_URI || "");
     const secret = encodeURIComponent(req.query.secret || "");
     const publicBaseUrl = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
@@ -586,12 +593,17 @@ async function handleTwilioVoice(req, res, next) {
     const recordingCallback = publicBaseUrl
       ? `${publicBaseUrl}/api/twilio/recording?secret=${secret}`
       : `/api/twilio/recording?secret=${secret}`;
+    const humanFallbackAction = publicBaseUrl
+      ? `${publicBaseUrl}/api/twilio/human-fallback?secret=${secret}`
+      : `/api/twilio/human-fallback?secret=${secret}`;
+    const routeMode = settings.humanRouting?.mode || "ai_then_humans";
+    const humanNumbers = settings.humanRouting?.numbers || [];
 
     await saveCallEvent({
       type: "twilio.voice.incoming",
       data: {
         call_id: req.body?.CallSid || req.query?.CallSid || "",
-        status: sipUri ? "routing-to-sip" : "missing-sip-uri",
+        status: getInitialVoiceRouteStatus({ routeMode, sipUri, humanNumbers }),
         sip_headers: [
           { name: "from", value: req.body?.From || req.query?.From || "" },
           { name: "to", value: req.body?.To || req.query?.To || "" }
@@ -604,24 +616,95 @@ async function handleTwilioVoice(req, res, next) {
       data: { type: "call", from: req.body?.From || req.query?.From || "" }
     });
 
-    if (!sipUri) {
-      res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say voice="alice">DDD AI Dispatch is not fully connected yet. Please try again shortly.</Say>
-  <Hangup/>
-</Response>`);
+    if (routeMode === "humans" || settings.enabled === false) {
+      res.type("text/xml").send(buildHumanDialTwiml(settings, { recordingCallback }));
       return;
     }
 
+    if (!sipUri) {
+      res.type("text/xml").send(buildHumanDialTwiml(settings, { recordingCallback }));
+      return;
+    }
+
+    const actionAttr = routeMode === "ai_then_humans" ? ` action="${xmlEscape(humanFallbackAction)}" method="POST"` : "";
     res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="30" answerOnBridge="true" record="record-from-answer" recordingStatusCallback="${xmlEscape(recordingCallback)}" recordingStatusCallbackMethod="POST">
+  <Dial timeout="30" answerOnBridge="true"${actionAttr} record="record-from-answer" recordingStatusCallback="${xmlEscape(recordingCallback)}" recordingStatusCallbackMethod="POST">
     <Sip statusCallback="${xmlEscape(statusCallback)}" statusCallbackMethod="POST">${xmlEscape(sipUri)}</Sip>
   </Dial>
 </Response>`);
   } catch (error) {
     next(error);
   }
+}
+
+app.post("/api/twilio/human-fallback", express.urlencoded({ extended: false }), async (req, res, next) => {
+  try {
+    if (!hasTwilioSmsAccess(req)) {
+      res.status(403).send("Forbidden");
+      return;
+    }
+    const settings = await loadReceptionistSettings();
+    await saveCallEvent({
+      type: "twilio.voice.human-fallback",
+      data: {
+        call_id: req.body?.CallSid || "",
+        status: req.body?.DialCallStatus || "fallback",
+        sip_headers: [
+          { name: "from", value: req.body?.From || "" },
+          { name: "to", value: req.body?.To || "" }
+        ]
+      }
+    });
+    const publicBaseUrl = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+    const secret = encodeURIComponent(req.query.secret || "");
+    const recordingCallback = publicBaseUrl
+      ? `${publicBaseUrl}/api/twilio/recording?secret=${secret}`
+      : `/api/twilio/recording?secret=${secret}`;
+    res.type("text/xml").send(buildHumanDialTwiml(settings, { recordingCallback }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+function getInitialVoiceRouteStatus({ routeMode, sipUri, humanNumbers }) {
+  if (routeMode === "humans") return humanNumbers.length ? "routing-to-humans" : "human-route-missing";
+  if (routeMode === "ai") return sipUri ? "routing-to-ai" : "missing-sip-uri";
+  if (!sipUri && humanNumbers.length) return "routing-to-humans-no-ai";
+  if (!sipUri) return "missing-sip-and-human-route";
+  return humanNumbers.length ? "routing-to-ai-with-human-fallback" : "routing-to-ai";
+}
+
+function buildHumanDialTwiml(settings, { recordingCallback = "" } = {}) {
+  const route = settings.humanRouting || {};
+  const numbers = Array.isArray(route.numbers) ? route.numbers : [];
+  const timeout = Math.min(45, Math.max(8, Number(route.timeoutSeconds || 22)));
+  const callerId = normalizeE164(process.env.TWILIO_VOICE_FROM || process.env.TWILIO_SMS_FROM || process.env.AI_FORWARDING_NUMBER || process.env.GOOGLE_VOICE_NUMBER);
+  if (!numbers.length) {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">${xmlEscape(route.fallbackMessage || "DDD could not reach the team live, but your call was logged. Please text DDD and the team will follow up.")}</Say>
+  <Hangup/>
+</Response>`;
+  }
+
+  const numberTwiML = numbers
+    .map((entry) => `<Number>${xmlEscape(entry.phone)}</Number>`)
+    .join("");
+  const callbackAttrs = [
+    callerId ? `callerId="${xmlEscape(callerId)}"` : "",
+    recordingCallback ? `recordingStatusCallback="${xmlEscape(recordingCallback)}"` : "",
+    recordingCallback ? `recordingStatusCallbackMethod="POST"` : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">${xmlEscape(route.callerMessage || "Please hold while I connect you with DDD.")}</Say>
+  <Dial timeout="${timeout}" answerOnBridge="true" record="record-from-answer" ${callbackAttrs}>${numberTwiML}</Dial>
+  <Say voice="alice">${xmlEscape(route.fallbackMessage || "DDD could not reach the team live, but your call was logged. Please text DDD and the team will follow up.")}</Say>
+  <Hangup/>
+</Response>`;
 }
 
 app.post("/api/twilio/voice-verify/capture", express.urlencoded({ extended: false }), async (req, res, next) => {
@@ -800,6 +883,15 @@ app.get("/api/qa-dashboard", async (req, res, next) => {
 
     const checks = [
       qaCheck("AI answering", settings.enabled, settings.enabled ? "AI is on." : "AI is paused."),
+      qaCheck(
+        "Human routing",
+        settings.humanRouting?.mode === "ai" || (settings.humanRouting?.numbers || []).length > 0,
+        settings.humanRouting?.mode === "ai"
+          ? "Human routing is off because AI-only mode is selected."
+          : (settings.humanRouting?.numbers || []).length
+            ? `${settings.humanRouting.numbers.length} human route number${settings.humanRouting.numbers.length === 1 ? "" : "s"} configured.`
+            : "Add at least one cell/tech number before using human fallback or humans-only mode."
+      ),
       qaCheck("Persistent storage", getStorageInfo().persistent, getStorageInfo().persistent ? "Settings/logs are on persistent storage." : "Render disk is not active yet."),
       qaCheck("Recent calls captured", recentCalls.length > 0, recentCalls.length ? `${recentCalls.length} recent calls found.` : "No forwarded calls logged yet."),
       qaCheck("Intake saved", !recentCalls.length || callsWithIntake.length > 0, callsWithIntake.length ? `${callsWithIntake.length} recent calls have leads/bookings.` : "No recent calls have saved intake yet."),

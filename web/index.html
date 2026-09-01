@@ -51,6 +51,24 @@
           <button id="callButton" type="button">Start voice call</button>
           <button id="hangupButton" type="button" disabled>Hang up</button>
         </div>
+        <div class="route-control-strip">
+          <label>
+            Call route mode
+            <select id="humanRouteModeSelect">
+              <option value="ai_then_humans">AI first, humans if needed</option>
+              <option value="ai">AI only</option>
+              <option value="humans">Ring humans only</option>
+            </select>
+          </label>
+          <label>
+            Ring timeout
+            <input id="humanRouteTimeoutInput" type="number" min="8" max="45" step="1" />
+          </label>
+          <div class="route-summary">
+            <strong id="humanRouteSummary">Routing loading...</strong>
+            <span>Use this when you want calls to reach you or techs instead of relying on AI 100%.</span>
+          </div>
+        </div>
       </section>
 
       <nav class="tabbar" aria-label="Admin sections">
@@ -221,6 +239,33 @@
             Human handoff rules
             <textarea id="humanHandoffRulesInput" rows="4" maxlength="1200"></textarea>
           </label>
+          <div class="routing-card wide-field">
+            <div class="section-title-row compact-title">
+              <div>
+                <p class="eyebrow">Live transfer</p>
+                <h3>Human routing numbers</h3>
+              </div>
+              <span id="humanRouteCount" class="confidence-pill ready">0 numbers</span>
+            </div>
+            <div class="admin-subgrid two-column">
+              <label>
+                Route numbers
+                <textarea id="humanRouteNumbersInput" rows="4" placeholder="Brianna | 5134091342&#10;Tech 1 | 5135550101"></textarea>
+              </label>
+              <label>
+                Transfer triggers
+                <textarea id="humanRouteTriggersInput" rows="4" placeholder="One trigger per line"></textarea>
+              </label>
+              <label>
+                Caller hold message
+                <input id="humanRouteCallerMessageInput" maxlength="220" />
+              </label>
+              <label>
+                Nobody answered message
+                <input id="humanRouteFallbackMessageInput" maxlength="260" />
+              </label>
+            </div>
+          </div>
           <label>
             After-hours handling
             <textarea id="afterHoursInstructionsInput" rows="4" maxlength="900"></textarea>

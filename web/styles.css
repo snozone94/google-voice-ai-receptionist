@@ -191,6 +191,41 @@ h2 {
   margin: 0;
 }
 
+.route-control-strip {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.85fr) minmax(110px, 0.35fr) minmax(0, 1.4fr);
+  gap: 10px;
+  align-items: end;
+  margin-top: 12px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  padding: 12px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.68)) padding-box,
+    linear-gradient(90deg, rgba(255, 62, 165, 0.32), rgba(255, 200, 61, 0.22), rgba(35, 199, 121, 0.2), rgba(22, 184, 255, 0.25), rgba(118, 87, 255, 0.26)) border-box;
+  box-shadow: 0 14px 34px rgba(37, 38, 69, 0.09);
+}
+
+.route-summary {
+  display: grid;
+  gap: 3px;
+  min-height: 44px;
+  align-content: center;
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.route-summary strong {
+  color: #a81586;
+}
+
+.route-summary span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
 .tabbar {
   position: sticky;
   top: 0;
@@ -342,6 +377,20 @@ button:hover:not(:disabled) {
   justify-content: space-between;
   gap: 14px;
   margin-bottom: 14px;
+}
+
+.section-title-row.compact-title {
+  margin-bottom: 10px;
+}
+
+.routing-card {
+  border: 1px solid transparent;
+  border-radius: 18px;
+  padding: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.72)) padding-box,
+    var(--rainbow) border-box;
+  box-shadow: 0 14px 30px rgba(37, 38, 69, 0.08), 0 0 26px rgba(255, 62, 165, 0.08);
 }
 
 .inbox-auth {
@@ -1639,6 +1688,8 @@ textarea#pricingNotesInput,
 textarea#emergencyInstructionsInput,
 textarea#emergencyQuestionsInput,
 textarea#humanHandoffRulesInput,
+textarea#humanRouteNumbersInput,
+textarea#humanRouteTriggersInput,
 textarea#callOutcomeRulesInput,
 textarea#fallbackRulesInput,
 textarea#afterHoursInstructionsInput,
@@ -1948,6 +1999,7 @@ li.missing {
   .two-column,
   .lead-capture,
   .top-actions,
+  .route-control-strip,
   .inbox-auth,
   .inbox-login-card,
   .inbox-shell,
@@ -1962,7 +2014,7 @@ li.missing {
 
   main {
     gap: 9px;
-    padding: max(8px, env(safe-area-inset-top)) 8px max(24px, env(safe-area-inset-bottom));
+    padding: max(8px, env(safe-area-inset-top)) 8px calc(92px + env(safe-area-inset-bottom));
   }
 
   .panel {
@@ -1977,33 +2029,54 @@ li.missing {
   }
 
   .tabbar {
-    position: sticky;
-    top: 4px;
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    top: auto;
+    z-index: 30;
     margin-inline: 0;
     padding: 7px;
     gap: 6px;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    overflow: visible;
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
     scroll-snap-type: none;
-    border-radius: 16px;
-    box-shadow: 0 12px 30px rgba(37, 38, 69, 0.13), 0 0 22px rgba(255, 62, 165, 0.1);
+    border-radius: 20px;
+    box-shadow: 0 18px 46px rgba(37, 38, 69, 0.24), 0 0 34px rgba(255, 62, 165, 0.18);
   }
 
   .tab-button {
-    width: 100%;
+    flex: 0 0 auto;
+    width: auto;
     min-width: 0;
-    min-height: 36px;
-    padding: 0 6px;
+    min-height: 40px;
+    padding: 0 11px;
     font-size: 0.76rem;
     scroll-snap-align: none;
     white-space: nowrap;
     box-shadow: none;
   }
 
+  .tab-button:nth-child(1).active { background: linear-gradient(135deg, #ff3ea5, #ff7a3d); }
+  .tab-button:nth-child(2).active { background: linear-gradient(135deg, #ff7a3d, #ffc83d); }
+  .tab-button:nth-child(3).active { background: linear-gradient(135deg, #ffc83d, #23c779); }
+  .tab-button:nth-child(4).active { background: linear-gradient(135deg, #23c779, #16b8ff); }
+  .tab-button:nth-child(5).active { background: linear-gradient(135deg, #16b8ff, #7657ff); }
+  .tab-button:nth-child(6).active { background: linear-gradient(135deg, #7657ff, #ff3ea5); }
+  .tab-button:nth-child(7).active { background: linear-gradient(135deg, #ff5f8f, #ff7a3d); }
+  .tab-button:nth-child(8).active { background: linear-gradient(135deg, #23c779, #7657ff); }
+  .tab-button:nth-child(9).active { background: linear-gradient(135deg, #ffc83d, #ff3ea5); }
+  .tab-button:nth-child(10).active { background: linear-gradient(135deg, #16b8ff, #ff3ea5); }
+
   .top-actions {
     align-items: stretch;
     gap: 9px;
+  }
+
+  .route-control-strip {
+    gap: 8px;
+    padding: 10px;
   }
 
   .top-actions button,
@@ -2019,7 +2092,7 @@ li.missing {
   .brand-header {
     align-items: flex-start;
     gap: 12px;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
   }
 
   .brand-logo {
@@ -2042,6 +2115,7 @@ li.missing {
   }
 
   .summary {
+    display: none;
     margin-bottom: 6px;
     font-size: 0.86rem;
     line-height: 1.42;

@@ -32,6 +32,14 @@ const setupList = document.querySelector("#setupList");
 const webhookUrl = document.querySelector("#webhookUrl");
 const adminPinInput = document.querySelector("#adminPinInput");
 const enabledToggle = document.querySelector("#enabledToggle");
+const humanRouteModeSelect = document.querySelector("#humanRouteModeSelect");
+const humanRouteTimeoutInput = document.querySelector("#humanRouteTimeoutInput");
+const humanRouteSummary = document.querySelector("#humanRouteSummary");
+const humanRouteCount = document.querySelector("#humanRouteCount");
+const humanRouteNumbersInput = document.querySelector("#humanRouteNumbersInput");
+const humanRouteTriggersInput = document.querySelector("#humanRouteTriggersInput");
+const humanRouteCallerMessageInput = document.querySelector("#humanRouteCallerMessageInput");
+const humanRouteFallbackMessageInput = document.querySelector("#humanRouteFallbackMessageInput");
 const voiceSelect = document.querySelector("#voiceSelect");
 const voiceSpeedInput = document.querySelector("#voiceSpeedInput");
 const voiceSpeedOutput = document.querySelector("#voiceSpeedOutput");
@@ -183,6 +191,7 @@ fetch("/api/setup-status")
       webhookSecret: "OpenAI webhook secret",
       googleVoiceNumber: "Google Voice number",
       aiForwardingNumber: "AI forwarding number",
+      humanRouting: "Human route numbers",
       persistentStorage: "Persistent storage",
       smsDelivery: "SMS delivery"
     };
@@ -229,6 +238,15 @@ function applySettings(settings) {
     voiceSelect.append(option);
   }
   enabledToggle.checked = settings.enabled !== false;
+  humanRouteModeSelect.value = settings.humanRouting?.mode || "ai_then_humans";
+  humanRouteTimeoutInput.value = settings.humanRouting?.timeoutSeconds || 22;
+  humanRouteNumbersInput.value = formatHumanRouteNumbers(settings.humanRouting?.numbers || []);
+  humanRouteTriggersInput.value = (settings.humanRouting?.transferTriggers || []).join("\n");
+  humanRouteCallerMessageInput.value = settings.humanRouting?.callerMessage || "Please hold while I connect you with DDD.";
+  humanRouteFallbackMessageInput.value =
+    settings.humanRouting?.fallbackMessage ||
+    "DDD could not reach the team live, but your call was logged. Please leave a message or text DDD and the team will follow up.";
+  updateHumanRouteSummary(settings.humanRouting);
   voiceSelect.value = settings.voice || "marin";
   voiceSpeedInput.value = settings.voiceSpeed || 1;
   voiceSpeedOutput.value = `${Number(voiceSpeedInput.value).toFixed(2)}x`;
@@ -325,6 +343,14 @@ async function saveSettings(reason = "auto") {
       headers: { "Content-Type": "application/json", ...adminHeaders() },
       body: JSON.stringify({
         enabled: enabledToggle.checked,
+        humanRouting: {
+          mode: humanRouteModeSelect.value,
+          timeoutSeconds: humanRouteTimeoutInput.value,
+          numbers: parseHumanRouteNumbersInput(humanRouteNumbersInput.value),
+          callerMessage: humanRouteCallerMessageInput.value,
+          fallbackMessage: humanRouteFallbackMessageInput.value,
+          transferTriggers: humanRouteTriggersInput.value
+        },
         voice: voiceSelect.value,
         voiceSpeed: voiceSpeedInput.value,
         voiceDirection: voiceDirectionInput.value,
@@ -455,6 +481,12 @@ previewVoiceButton.addEventListener("click", async () => {
 
 for (const input of [
   enabledToggle,
+  humanRouteModeSelect,
+  humanRouteTimeoutInput,
+  humanRouteNumbersInput,
+  humanRouteTriggersInput,
+  humanRouteCallerMessageInput,
+  humanRouteFallbackMessageInput,
   voiceSelect,
   voiceSpeedInput,
   voiceDirectionInput,
@@ -519,6 +551,7 @@ voiceSpeedInput.addEventListener("input", () => {
 });
 
 function handleSettingsChange() {
+  updateHumanRouteSummary();
   updateScriptPreview();
   if (!editMode || isLoadingSettings) return;
   hasUnsavedSettings = true;
@@ -534,6 +567,12 @@ function setEditMode(nextEditMode) {
   editSettingsButton.textContent = editMode ? "Lock settings" : "Edit settings";
   for (const input of [
     enabledToggle,
+    humanRouteModeSelect,
+    humanRouteTimeoutInput,
+    humanRouteNumbersInput,
+    humanRouteTriggersInput,
+    humanRouteCallerMessageInput,
+    humanRouteFallbackMessageInput,
     voiceSelect,
     voiceSpeedInput,
     voiceDirectionInput,
@@ -675,6 +714,9 @@ function updateScriptPreview() {
     `Speed: ${Number(voiceSpeedInput.value || 1).toFixed(2)}x`,
     `Voice direction: ${voiceDirectionInput.value || "Warm, confident, friendly receptionist."}`,
     `Greeting: ${greetingInput.value || "Thank you for calling Triple D Roadside, this is the receptionist. How can I help today?"}`,
+    `Call route mode: ${humanRouteModeSelect.selectedOptions[0]?.textContent || humanRouteModeSelect.value}. Timeout ${humanRouteTimeoutInput.value || 22}s.`,
+    `Human route numbers: ${parseHumanRouteNumbersInput(humanRouteNumbersInput.value).map((entry) => `${entry.label} ${entry.phone}`).join(", ") || "none set"}`,
+    `Human route triggers: ${humanRouteTriggersInput.value || "Caller asks for a person, urgent incomplete call, AI cannot hear, complaint/escalation, or AI paused."}`,
     "",
     "Business knowledge:",
     businessKnowledgeInput.value || "Add DDD services, prices, service areas, hours, policies, and answers here.",
@@ -971,6 +1013,50 @@ function formatBookingDestinations(destinations) {
   return destinations
     .map((destination) => `${destination.label || ""} | ${destination.url || ""} | ${destination.useWhen || ""}`)
     .join("\n");
+}
+
+function formatHumanRouteNumbers(numbers = []) {
+  return numbers.map((entry) => `${entry.label || "Route"} | ${entry.phone || ""}`).join("\n");
+}
+
+function parseHumanRouteNumbersInput(value) {
+  return String(value || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const [label, ...phoneParts] = line.includes("|") ? line.split("|") : [`Route ${index + 1}`, line];
+      return {
+        label: label.trim() || `Route ${index + 1}`,
+        phone: normalizePhoneForRoute(phoneParts.join("|"))
+      };
+    })
+    .filter((entry) => entry.phone)
+    .slice(0, 8);
+}
+
+function normalizePhoneForRoute(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return "";
+}
+
+function updateHumanRouteSummary(route = {}) {
+  const mode = route?.mode || humanRouteModeSelect?.value || "ai_then_humans";
+  const numbers = route?.numbers || parseHumanRouteNumbersInput(humanRouteNumbersInput?.value || "");
+  const count = numbers.length;
+  const labels = {
+    ai_then_humans: "AI first, humans if needed",
+    ai: "AI only",
+    humans: "Ring humans only"
+  };
+  if (humanRouteSummary) {
+    humanRouteSummary.textContent = `${labels[mode] || labels.ai_then_humans} - ${count} route number${count === 1 ? "" : "s"}`;
+  }
+  if (humanRouteCount) {
+    humanRouteCount.textContent = `${count} number${count === 1 ? "" : "s"}`;
+  }
 }
 
 function parseBookingDestinations(value) {
