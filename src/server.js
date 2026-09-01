@@ -325,6 +325,26 @@ app.post("/api/settings", express.json(), async (req, res, next) => {
   }
 });
 
+app.get("/api/access-check", async (req, res, next) => {
+  try {
+    if (hasAppReviewAccess(req) && !hasAdminAccess(req)) {
+      res.json({ ok: true, name: appReviewStaff.name, role: appReviewStaff.role, demo: true });
+      return;
+    }
+    const staff = await getStaffAccess(req);
+    if (!staff.ok) {
+      res.status(403).json({
+        ok: false,
+        error: "Code not recognized. Use the real admin code or add this tech code in Team."
+      });
+      return;
+    }
+    res.json(staff);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/twilio/sms", express.urlencoded({ extended: false }), async (req, res, next) => {
   try {
     if (!hasTwilioSmsAccess(req)) {

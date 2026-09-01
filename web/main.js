@@ -159,6 +159,7 @@ let selectedCallId = "";
 let teamDirectory = [];
 let activePresence = [];
 let teamSource = "";
+let signedInStaff = null;
 
 const savedAccessCode = localStorage.getItem("dddAccessCode") || localStorage.getItem("dddAdminPin") || localStorage.getItem("dddStaffCode") || localStorage.getItem("dddStaffPin") || "";
 adminPinInput.value = savedAccessCode;
@@ -1286,16 +1287,41 @@ function updateTeamCurrentCard() {
     const code = accessCodeValue();
     if (!code) {
       teamCurrentCodeStatus.textContent = "No access code entered yet";
+    } else if (signedInStaff?.ok) {
+      teamCurrentCodeStatus.textContent = `Signed in as ${signedInStaff.name || "DDD team"} (${signedInStaff.role || "staff"})`;
     } else if (code === "4444" || code === "0000") {
       teamCurrentCodeStatus.textContent = "Demo code saved on this device";
     } else {
-      teamCurrentCodeStatus.textContent = "Access code saved on this device for login";
+      teamCurrentCodeStatus.textContent = "Code saved here; tap Open inbox to verify it";
     }
   }
   if (teamCurrentStatus) {
     const name = staffNameInput.value.trim() || "This device";
     teamCurrentStatus.textContent = `${name}: ${formatPresenceStatus(staffStatusSelect.value)}`;
   }
+}
+
+async function verifyAccessCode() {
+  const code = accessCodeValue();
+  signedInStaff = null;
+  updateTeamCurrentCard();
+  if (!code) {
+    setInboxStatus("Enter the admin or tech access code at the top.");
+    return null;
+  }
+  const response = await fetch("/api/access-check", { headers: pushAuthHeaders() });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.ok) {
+    setInboxStatus(payload.error || "Code not recognized. Use the real admin code or add this tech code in Team.");
+    updateTeamCurrentCard();
+    return null;
+  }
+  signedInStaff = payload;
+  localStorage.setItem("dddStaffName", payload.name || staffNameInput.value.trim() || "DDD team");
+  if (!staffNameInput.value.trim() && payload.name) staffNameInput.value = payload.name;
+  updateTeamCurrentCard();
+  setInboxStatus(`Signed in as ${payload.name || "DDD team"} (${payload.role || "staff"}).`);
+  return payload;
 }
 
 function urlBase64ToUint8Array(value) {
@@ -1689,7 +1715,9 @@ async function refreshInbox() {
   setInboxStatus("Opening inbox...");
   const response = await fetch("/api/conversations", { headers: staffHeaders() });
   if (response.status === 403) {
-    setInboxStatus("That code did not work. Check the access code or update it in admin.");
+    signedInStaff = null;
+    updateTeamCurrentCard();
+    setInboxStatus("Code not recognized. Use the real admin code, demo code 4444, or add this tech code in Team while signed in as admin.");
     conversations = [];
     renderConversations();
     return;
@@ -1697,6 +1725,7 @@ async function refreshInbox() {
   if (!response.ok) throw new Error("Could not load text inbox.");
   const payload = await response.json();
   if (payload.staff?.name) {
+    signedInStaff = payload.staff;
     staffNameInput.value = payload.staff.name;
     localStorage.setItem("dddStaffName", payload.staff.name);
   }
@@ -1706,6 +1735,7 @@ async function refreshInbox() {
   conversations = payload.conversations || [];
   renderConversations();
   renderTeamPresence();
+  updateTeamCurrentCard();
   setInboxStatus(conversations.length ? `Signed in as ${payload.staff?.name || "DDD team"}. Inbox is up to date.` : "Signed in. No texts yet.");
 }
 
@@ -1758,8 +1788,10 @@ refreshInboxButton.addEventListener("click", () => {
   });
 });
 
-inboxLoginButton?.addEventListener("click", () => {
+inboxLoginButton?.addEventListener("click", async () => {
   setActiveTab("inbox");
+  const staff = await verifyAccessCode();
+  if (!staff) return;
   refreshInbox().catch((error) => setInboxStatus(error.message));
   sendPresence().catch(() => {});
 });
