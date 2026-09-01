@@ -873,21 +873,36 @@ export async function listSms(limit = 50) {
 
 export async function savePushToken(subscription = {}) {
   const token = cleanText(subscription.token, "", 180);
-  if (!token || !/^Expo(nent)?PushToken\[[^\]]+\]$/.test(token)) {
-    throw new Error("Enter a valid Expo push token.");
+  const webSubscription = subscription.subscription && typeof subscription.subscription === "object" ? subscription.subscription : null;
+  const endpoint = cleanLongText(webSubscription?.endpoint || "", "", 900);
+  const isExpoToken = /^Expo(nent)?PushToken\[[^\]]+\]$/.test(token);
+  const isWebPush = endpoint && webSubscription?.keys?.p256dh && webSubscription?.keys?.auth;
+  if (!isExpoToken && !isWebPush) {
+    throw new Error("Enter a valid push token or browser notification subscription.");
   }
 
   const existing = await listPushTokens(1000);
   const record = {
     createdAt: new Date().toISOString(),
-    token,
+    token: isExpoToken ? token : "",
+    subscription: isWebPush
+      ? {
+          endpoint,
+          expirationTime: webSubscription.expirationTime || null,
+          keys: {
+            p256dh: cleanLongText(webSubscription.keys.p256dh, "", 400),
+            auth: cleanLongText(webSubscription.keys.auth, "", 200)
+          }
+        }
+      : null,
     platform: cleanText(subscription.platform, "", 40),
     staffName: cleanText(subscription.staffName, "DDD team", 80),
     staffRole: cleanText(subscription.staffRole, "staff", 40),
     staffPhone: normalizeE164(subscription.staffPhone || ""),
     enabled: subscription.enabled !== false
   };
-  const withoutToken = existing.filter((item) => item.token !== token);
+  const identity = record.token || record.subscription?.endpoint || "";
+  const withoutToken = existing.filter((item) => (item.token || item.subscription?.endpoint || "") !== identity);
   await ensureDataDir();
   await fs.writeFile(pushTokensPath, `${[record, ...withoutToken].map((item) => JSON.stringify(item)).join("\n")}\n`);
   return record;
@@ -895,7 +910,7 @@ export async function savePushToken(subscription = {}) {
 
 export async function listPushTokens(limit = 100) {
   const records = await listRecords(pushTokensPath, limit);
-  return records.filter((record) => record.enabled !== false && record.token);
+  return records.filter((record) => record.enabled !== false && (record.token || record.subscription?.endpoint));
 }
 
 export async function listConversations(limit = 200) {

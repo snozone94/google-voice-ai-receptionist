@@ -1506,6 +1506,48 @@ button:hover:not(:disabled) {
   background: linear-gradient(135deg, rgba(255, 62, 165, 0.08), rgba(255, 200, 61, 0.08), rgba(35, 199, 121, 0.08), rgba(22, 184, 255, 0.08));
 }
 
+.web-push-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 8px;
+  padding: 12px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.72)) padding-box,
+    linear-gradient(135deg, #7657ff, #ff3ea5, #ff7a3d, #23c779, #16b8ff) border-box;
+  border-color: transparent;
+  box-shadow: 0 14px 28px rgba(118, 87, 255, 0.12);
+}
+
+.web-push-panel strong {
+  display: block;
+  color: #17172f;
+  font-size: 0.96rem;
+}
+
+.web-push-panel p {
+  margin: 3px 0 0;
+  color: #55576d;
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.web-push-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.web-push-actions button {
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
 .qa-list {
   display: grid;
   gap: 8px;
@@ -2302,6 +2344,15 @@ li.missing {
   .insight-learning-box,
   .notification-box {
     padding: 12px;
+  }
+
+  .web-push-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .web-push-actions,
+  .web-push-actions button {
+    width: 100%;
   }
 
   .activity-filter {

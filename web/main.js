@@ -89,6 +89,9 @@ const notifyQaIssuesToggle = document.querySelector("#notifyQaIssuesToggle");
 const notifyDailySummaryToggle = document.querySelector("#notifyDailySummaryToggle");
 const notifyWeeklySummaryToggle = document.querySelector("#notifyWeeklySummaryToggle");
 const notifyMonthlySummaryToggle = document.querySelector("#notifyMonthlySummaryToggle");
+const enableWebPushButton = document.querySelector("#enableWebPushButton");
+const testWebPushButton = document.querySelector("#testWebPushButton");
+const webPushStatus = document.querySelector("#webPushStatus");
 const activityOverview = document.querySelector("#activityOverview");
 const activityTimeline = document.querySelector("#activityTimeline");
 const activityFilterButtons = document.querySelectorAll("[data-activity-filter]");
@@ -1123,6 +1126,92 @@ function staffHeaders() {
   return code ? { "x-staff-code": code } : {};
 }
 
+function urlBase64ToUint8Array(value) {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const base64 = `${value}${padding}`.replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(base64);
+  return Uint8Array.from([...raw].map((character) => character.charCodeAt(0)));
+}
+
+function setWebPushStatus(message) {
+  if (webPushStatus) webPushStatus.textContent = message;
+}
+
+async function enableWebPushNotifications() {
+  try {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      setWebPushStatus("This browser does not support web push alerts.");
+      return;
+    }
+    if (!staffPinInput.value.trim() && !adminPinInput.value.trim()) {
+      setWebPushStatus("Enter your admin PIN or staff code first.");
+      return;
+    }
+
+    setWebPushStatus("Asking this browser for notification permission...");
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      setWebPushStatus("Notifications were not allowed on this browser.");
+      return;
+    }
+
+    const keyResponse = await fetch("/api/web-push/public-key");
+    const keyPayload = await keyResponse.json();
+    if (!keyResponse.ok || !keyPayload.publicKey) {
+      throw new Error(keyPayload.error || "Browser push is not ready yet.");
+    }
+
+    const registration = await navigator.serviceWorker.register("/sw.js");
+    const existingSubscription = await registration.pushManager.getSubscription();
+    const subscription =
+      existingSubscription ||
+      (await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(keyPayload.publicKey)
+      }));
+
+    const response = await fetch("/api/push/register", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...staffHeaders()
+      },
+      body: JSON.stringify({
+        platform: "web",
+        subscription
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Could not save this browser for alerts.");
+    setWebPushStatus("Browser alerts are connected here.");
+  } catch (error) {
+    setWebPushStatus(error.message);
+  }
+}
+
+async function sendWebPushTest() {
+  try {
+    if (!staffPinInput.value.trim() && !adminPinInput.value.trim()) {
+      setWebPushStatus("Enter your admin PIN or staff code first.");
+      return;
+    }
+    setWebPushStatus("Sending test alert...");
+    const response = await fetch("/api/push/test", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...staffHeaders()
+      },
+      body: JSON.stringify({})
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Could not send test alert.");
+    setWebPushStatus(payload.sent ? `Test alert sent to ${payload.sent} device${payload.sent === 1 ? "" : "s"}.` : "No devices are registered yet.");
+  } catch (error) {
+    setWebPushStatus(error.message);
+  }
+}
+
 function formatPhone(phone) {
   const raw = String(phone || "");
   const sipPhone = raw.match(/\+?1?\d{10,11}/)?.[0] || "";
@@ -1934,6 +2023,9 @@ refreshInsightsButton?.addEventListener("click", () => {
     insightsStatus.textContent = error.message;
   });
 });
+
+enableWebPushButton?.addEventListener("click", enableWebPushNotifications);
+testWebPushButton?.addEventListener("click", sendWebPushTest);
 
 callButton.addEventListener("click", async () => {
   callButton.disabled = true;

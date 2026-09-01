@@ -1,6 +1,9 @@
 import "dotenv/config";
 import express from "express";
+import fs from "node:fs/promises";
+import path from "node:path";
 import OpenAI from "openai";
+import webPush from "web-push";
 import {
   callAcceptPayload,
   listCalls,
@@ -35,6 +38,9 @@ import { monitorRealtimeCall } from "./realtime-tools.js";
 
 const app = express();
 const port = Number(process.env.PORT || 8787);
+const root = path.resolve(import.meta.dirname, "..");
+const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, "data");
+const vapidKeysPath = path.join(dataDir, "web-push-vapid.json");
 const presence = new Map();
 const appReviewPin = String(process.env.APP_REVIEW_PIN || process.env.REVIEWER_PIN || "").trim();
 const appReviewStaff = { ok: true, name: "App Review", role: "reviewer" };
@@ -502,6 +508,7 @@ app.post("/api/push/register", express.json(), async (req, res, next) => {
 
     const subscription = await savePushToken({
       token: req.body?.token,
+      subscription: req.body?.subscription,
       platform: req.body?.platform,
       staffName: staff.name,
       staffRole: staff.role,
@@ -510,6 +517,15 @@ app.post("/api/push/register", express.json(), async (req, res, next) => {
     res.status(201).json({ ok: true, staff, subscription: maskPushSubscription(subscription) });
   } catch (error) {
     res.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+app.get("/api/web-push/public-key", async (req, res, next) => {
+  try {
+    const vapid = await getWebPushVapidKeys();
+    res.json({ ok: true, publicKey: vapid.publicKey, generated: vapid.generated });
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -1548,6 +1564,36 @@ async function startTwilioBridgeCall(staffPhone, customerPhone) {
   };
 }
 
+async function getWebPushVapidKeys() {
+  const envPublicKey = String(process.env.WEB_PUSH_PUBLIC_KEY || "").trim();
+  const envPrivateKey = String(process.env.WEB_PUSH_PRIVATE_KEY || "").trim();
+  if (envPublicKey && envPrivateKey) {
+    configureWebPush(envPublicKey, envPrivateKey);
+    return { publicKey: envPublicKey, privateKey: envPrivateKey, generated: false };
+  }
+
+  try {
+    const stored = JSON.parse(await fs.readFile(vapidKeysPath, "utf8"));
+    if (stored.publicKey && stored.privateKey) {
+      configureWebPush(stored.publicKey, stored.privateKey);
+      return { publicKey: stored.publicKey, privateKey: stored.privateKey, generated: true };
+    }
+  } catch {
+    // First browser push setup on this deploy.
+  }
+
+  const keys = webPush.generateVAPIDKeys();
+  await fs.mkdir(dataDir, { recursive: true });
+  await fs.writeFile(vapidKeysPath, `${JSON.stringify(keys, null, 2)}\n`);
+  configureWebPush(keys.publicKey, keys.privateKey);
+  return { ...keys, generated: true };
+}
+
+function configureWebPush(publicKey, privateKey) {
+  const subject = String(process.env.WEB_PUSH_SUBJECT || "mailto:support@dddcincy.com").trim();
+  webPush.setVapidDetails(subject, publicKey, privateKey);
+}
+
 async function notifyTeam({ title, body, data = {} }) {
   let tokens = [];
   try {
@@ -1557,7 +1603,7 @@ async function notifyTeam({ title, body, data = {} }) {
     return { ok: false, sent: 0, skipped: true, errors: [error.message] };
   }
 
-  const messages = tokens
+  const expoMessages = tokens
     .filter((subscription) => /^Expo(nent)?PushToken\[[^\]]+\]$/.test(subscription.token || ""))
     .map((subscription) => ({
       to: subscription.token,
@@ -1569,29 +1615,61 @@ async function notifyTeam({ title, body, data = {} }) {
         ...data
       }
     }));
+  const webSubscriptions = tokens.filter((subscription) => subscription.subscription?.endpoint);
 
-  if (!messages.length) return { ok: true, sent: 0, skipped: true, errors: [] };
+  if (!expoMessages.length && !webSubscriptions.length) return { ok: true, sent: 0, skipped: true, errors: [] };
 
+  let sent = 0;
+  const errors = [];
   try {
-    const response = await fetch("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Accept-Encoding": "gzip, deflate",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(messages.length === 1 ? messages[0] : messages)
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const message = payload?.errors?.[0]?.message || payload?.message || `Expo push failed with ${response.status}`;
-      console.warn(message);
-      return { ok: false, sent: 0, skipped: false, errors: [message] };
+    if (expoMessages.length) {
+      const response = await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Accept-Encoding": "gzip, deflate",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(expoMessages.length === 1 ? expoMessages[0] : expoMessages)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = payload?.errors?.[0]?.message || payload?.message || `Expo push failed with ${response.status}`;
+        console.warn(message);
+        errors.push(message);
+      } else {
+        sent += expoMessages.length;
+      }
     }
-    return { ok: true, sent: messages.length, skipped: false, errors: [] };
+
+    if (webSubscriptions.length) {
+      await getWebPushVapidKeys();
+      const webPayload = JSON.stringify({
+        title,
+        body,
+        data: {
+          app: "ddd-ai-dispatch",
+          url: "/",
+          ...data
+        }
+      });
+      const deliveries = await Promise.allSettled(
+        webSubscriptions.map((subscription) => webPush.sendNotification(subscription.subscription, webPayload))
+      );
+      for (const delivery of deliveries) {
+        if (delivery.status === "fulfilled") {
+          sent += 1;
+        } else {
+          const message = delivery.reason?.message || "Browser push failed.";
+          console.warn(message);
+          errors.push(message);
+        }
+      }
+    }
+    return { ok: errors.length === 0, sent, skipped: false, errors };
   } catch (error) {
-    console.warn(`Expo push failed: ${error.message}`);
-    return { ok: false, sent: 0, skipped: false, errors: [error.message] };
+    console.warn(`Push failed: ${error.message}`);
+    return { ok: false, sent, skipped: false, errors: [error.message, ...errors] };
   }
 }
 
@@ -1599,7 +1677,10 @@ function maskPushSubscription(subscription = {}) {
   const token = String(subscription.token || "");
   return {
     ...subscription,
-    token: token ? `${token.slice(0, 18)}...${token.slice(-8)}` : ""
+    token: token ? `${token.slice(0, 18)}...${token.slice(-8)}` : "",
+    subscription: subscription.subscription?.endpoint
+      ? { endpoint: `${subscription.subscription.endpoint.slice(0, 32)}...`, keys: { p256dh: "...", auth: "..." } }
+      : null
   };
 }
 
