@@ -30,9 +30,10 @@ const tabs = [
   { name: "Voice", color: "#ff3ea5" },
   { name: "Script", color: "#ff7a3d" },
   { name: "Flows", color: "#ffc83d" },
-  { name: "Inbox", color: "#23c779" },
-  { name: "Calls", color: "#16b8ff" },
-  { name: "Insights", color: "#7657ff" }
+  { name: "Team", color: "#23c779" },
+  { name: "Inbox", color: "#16b8ff" },
+  { name: "Calls", color: "#7657ff" },
+  { name: "Insights", color: "#ff3ea5" }
 ];
 const rainbowColors = ["#7657ff", "#ff3ea5", "#ff7a3d", "#ffc83d", "#23c779", "#16b8ff", "#7657ff"];
 const softRainbowColors = ["rgba(255, 62, 165, 0.16)", "rgba(255, 200, 61, 0.12)", "rgba(35, 199, 121, 0.12)", "rgba(22, 184, 255, 0.16)", "rgba(118, 87, 255, 0.14)"];
@@ -98,6 +99,7 @@ const blankSettings = {
     ambientSound: "none",
     thinkingSound: true
   },
+  staffAccessCodes: [],
   voiceOptions: []
 };
 
@@ -121,6 +123,7 @@ export default function App() {
   const [business, setBusiness] = useState(null);
   const [activity, setActivity] = useState({ calls: [], leads: [], bookings: [], conversations: [], insights: null });
   const [settings, setSettings] = useState(blankSettings);
+  const [signedInStaff, setSignedInStaff] = useState(null);
   const currentSoundRef = useRef(null);
   const autosaveTimerRef = useRef(null);
   const lastSavedSettingsRef = useRef("");
@@ -133,7 +136,7 @@ export default function App() {
     try {
       const [settingsResponse, setupResponse, businessResponse, callsResponse, leadsResponse, bookingsResponse, conversationsResponse, insightsResponse] =
         await Promise.all([
-          apiGet(targetBaseUrl, "/api/settings"),
+          apiGet(targetBaseUrl, "/api/settings", accessPin),
           apiGet(targetBaseUrl, "/api/setup-status"),
           apiGet(targetBaseUrl, "/api/business"),
           apiGet(targetBaseUrl, "/api/call-log", accessPin).catch(() => ({ calls: [] })),
@@ -155,7 +158,14 @@ export default function App() {
         conversations: conversationsResponse.conversations || [],
         insights: insightsResponse || null
       });
-      setStatus(conversationsResponse.locked ? "Connected. Enter admin PIN to load inbox." : "Connected to DDD AI Dispatch.");
+      if (accessPin) {
+        const access = await apiGet(targetBaseUrl, "/api/access-check", accessPin).catch(() => null);
+        setSignedInStaff(access?.ok ? access : null);
+        setStatus(access?.ok ? `Signed in as ${access.name || "DDD team"} (${access.role || "staff"}).` : "Connected. Code not recognized yet.");
+      } else {
+        setSignedInStaff(null);
+        setStatus(conversationsResponse.locked ? "Connected. Enter admin or tech code to load inbox." : "Connected to DDD AI Dispatch.");
+      }
     } catch (error) {
       setStatus(error.message);
     } finally {
@@ -204,6 +214,10 @@ export default function App() {
   }
 
   async function saveSettings(reason = "manual") {
+    if (hasIncompleteStaffCodes(settings.staffAccessCodes)) {
+      setStatus("Finish each tech name and code before saving Team changes.");
+      return;
+    }
     setSaving(true);
     try {
       const saved = await apiPost(cleanBaseUrl, "/api/settings", fromFormSettings(settings), adminPin);
@@ -215,7 +229,7 @@ export default function App() {
         : `${reason === "auto" ? "Autosaved" : "Saved"}. AI answering is paused.`
       );
     } catch (error) {
-      setStatus(error.message.includes("Forbidden") ? "Enter the admin PIN before saving settings." : error.message);
+      setStatus(error.message.includes("Forbidden") ? "Enter the real admin code before saving settings." : error.message);
     } finally {
       setSaving(false);
     }
@@ -334,7 +348,7 @@ export default function App() {
         const result = await apiPost(cleanBaseUrl, "/api/push/test", {}, adminPin);
         setPushStatus(result.sent ? `Test push sent to ${result.sent} phone${result.sent === 1 ? "" : "s"}.` : "No registered phones yet. Enable push in the iPhone app first.");
       } else {
-        setPushStatus("Local test shown. Enter admin PIN to send a server test.");
+        setPushStatus("Local test shown. Enter the real admin code to send a server test.");
       }
     } catch (error) {
       setPushStatus(error.message);
@@ -364,6 +378,7 @@ export default function App() {
               setEditMode={setEditMode}
               setStaffPhone={setStaffPhone}
               setSettings={setSettings}
+              signedInStaff={signedInStaff}
               staffPhone={staffPhone}
               pushStatus={pushStatus}
               pushToken={pushToken}
@@ -394,6 +409,18 @@ export default function App() {
           ) : null}
 
           {activeTab === "Flows" ? <FlowsTab editMode={editMode} settings={settings} setSettings={setSettings} /> : null}
+          {activeTab === "Team" ? (
+            <TeamTab
+              adminPin={adminPin}
+              editMode={editMode}
+              saving={saving}
+              settings={settings}
+              setEditMode={setEditMode}
+              setSettings={setSettings}
+              signedInStaff={signedInStaff}
+              onSaveSettings={() => saveSettings("manual")}
+            />
+          ) : null}
           {activeTab === "Inbox" ? (
             <InboxTab
               adminPin={adminPin}
@@ -479,6 +506,7 @@ function HomeTab({
   setEditMode,
   setStaffPhone,
   setSettings,
+  signedInStaff,
   staffPhone,
   pushStatus,
   pushToken,
@@ -493,26 +521,29 @@ function HomeTab({
   const todayCalls = activeDay.calls ?? activity?.calls?.length ?? 0;
   const weeklyBookings = activity?.insights?.sections?.weekly?.bookings ?? 0;
   const hasAdminPin = Boolean(String(adminPin || "").trim());
+  const isSignedIn = Boolean(signedInStaff?.ok);
   return (
     <>
       <Card title="Admin login">
         <View style={styles.accessBanner}>
           <View style={styles.flexText}>
-            <Text style={styles.accessTitle}>{hasAdminPin ? "Ready for admin tabs" : "Locked"}</Text>
+            <Text style={styles.accessTitle}>{isSignedIn ? `Signed in as ${signedInStaff.name || "DDD team"}` : hasAdminPin ? "Code saved" : "Locked"}</Text>
             <Text style={styles.muted}>
-              {hasAdminPin
-                ? "Tap Unlock admin to refresh protected inbox, calls, and insights."
-                : "Enter the tester/admin PIN, then unlock to load protected areas."}
+              {isSignedIn
+                ? `${signedInStaff.role || "staff"} access is active on this phone.`
+                : hasAdminPin
+                  ? "Tap Unlock to verify this admin or tech code."
+                  : "Enter the admin or tech code, then unlock to load protected areas."}
             </Text>
           </View>
           <Text style={[styles.accessPill, hasAdminPin ? styles.accessPillReady : styles.accessPillLocked]}>
-            {hasAdminPin ? "PIN saved" : "Need PIN"}
+            {isSignedIn ? "Verified" : hasAdminPin ? "Saved" : "Need code"}
           </Text>
         </View>
         <View style={styles.pinLoginRow}>
           <View style={styles.pinFieldWrap}>
             <Field
-              label="Admin PIN"
+              label="Access code"
               onChangeText={(value) => {
                 setAdminPin(value);
                 AsyncStorage.setItem(adminPinStorageKey, value).catch(() => {});
@@ -522,10 +553,10 @@ function HomeTab({
             />
           </View>
           <View style={styles.pinButtonWrap}>
-            <ActionButton disabled={loading || !hasAdminPin} label={loading ? "Checking..." : "Unlock admin"} onPress={onUnlockAdmin} />
+            <ActionButton disabled={loading || !hasAdminPin} label={loading ? "Checking..." : "Unlock"} onPress={onUnlockAdmin} />
           </View>
         </View>
-        <Text style={styles.muted}>Use your assigned DDD admin or staff PIN. The PIN is saved only on this phone.</Text>
+        <Text style={styles.muted}>Use the real admin code for settings and Team edits. Tech codes can open inbox, replies, callback bridge, and status after admin saves them in Team.</Text>
         <Field
           keyboardType="phone-pad"
           label="Your call-back phone"
@@ -730,6 +761,89 @@ function FlowsTab({ editMode, settings, setSettings }) {
   );
 }
 
+function TeamTab({ adminPin, editMode, saving, settings, setEditMode, setSettings, signedInStaff, onSaveSettings }) {
+  const codes = settings.staffAccessCodes?.length ? settings.staffAccessCodes : [{ name: "", code: "" }];
+  const incomplete = hasIncompleteStaffCodes(codes);
+  const canEdit = editMode && signedInStaff?.role === "admin";
+
+  function updateCode(index, patch) {
+    setSettings((current) => {
+      const nextCodes = [...(current.staffAccessCodes?.length ? current.staffAccessCodes : [{ name: "", code: "" }])];
+      nextCodes[index] = { ...nextCodes[index], ...patch };
+      return { ...current, staffAccessCodes: nextCodes };
+    });
+  }
+
+  function addTech() {
+    setSettings((current) => ({
+      ...current,
+      staffAccessCodes: [...(current.staffAccessCodes || []), { name: "", code: "" }]
+    }));
+  }
+
+  function removeTech(index) {
+    setSettings((current) => {
+      const nextCodes = (current.staffAccessCodes || []).filter((_, itemIndex) => itemIndex !== index);
+      return { ...current, staffAccessCodes: nextCodes.length ? nextCodes : [{ name: "", code: "" }] };
+    });
+  }
+
+  return (
+    <>
+      <Card title="Team access">
+        <View style={styles.accessBanner}>
+          <View style={styles.flexText}>
+            <Text style={styles.accessTitle}>{signedInStaff?.ok ? `${signedInStaff.name || "DDD team"} is signed in` : "Code not verified"}</Text>
+            <Text style={styles.muted}>
+              {signedInStaff?.role === "admin"
+                ? "Admin can edit global tech codes saved on the backend."
+                : "Tech codes can use inbox, replies, callback bridge, and live status after admin saves them."}
+            </Text>
+          </View>
+          <Text style={[styles.accessPill, signedInStaff?.ok ? styles.accessPillReady : styles.accessPillLocked]}>
+            {signedInStaff?.role || (adminPin ? "Check code" : "Locked")}
+          </Text>
+        </View>
+        <Text style={styles.muted}>Master admin code is kept in Render's ADMIN_PIN secret. This tab edits tech codes only, so you cannot lock yourself out from the app.</Text>
+        <View style={styles.buttonRow}>
+          <ActionButton label={editMode ? "Lock settings" : "Edit settings"} onPress={() => setEditMode((current) => !current)} />
+          <ActionButton disabled={saving || !canEdit || incomplete} label={saving ? "Saving..." : "Save team"} onPress={onSaveSettings} variant="light" />
+        </View>
+        {signedInStaff?.role !== "admin" ? <Text style={styles.warningText}>Sign in with the real admin code on Home to edit team codes.</Text> : null}
+        {incomplete ? <Text style={styles.warningText}>Finish each tech name and code before saving.</Text> : null}
+      </Card>
+
+      <Card title="Editable tech logins">
+        {codes.map((entry, index) => (
+          <LinearGradient key={`staff-code-${index}`} colors={["#fffaff", "#f7fffb"]} style={styles.teamCodeCard}>
+            <View style={styles.listHeader}>
+              <Text style={styles.linkLabel}>Tech {index + 1}</Text>
+              <Pressable disabled={!canEdit} onPress={() => removeTech(index)} style={[styles.removeButton, !canEdit && styles.disabledButton]}>
+                <Text style={styles.removeButtonText}>Remove</Text>
+              </Pressable>
+            </View>
+            <Field
+              editable={canEdit}
+              label="Name"
+              onChangeText={(name) => updateCode(index, { name })}
+              value={entry.name || ""}
+            />
+            <Field
+              editable={canEdit}
+              keyboardType="number-pad"
+              label="Code"
+              onChangeText={(code) => updateCode(index, { code: String(code || "").replace(/\s+/g, "") })}
+              value={entry.code || ""}
+            />
+          </LinearGradient>
+        ))}
+        <ActionButton disabled={!canEdit} label="Add tech" onPress={addTech} />
+        <Text style={styles.muted}>After saving, each tech enters their own code on Home. Their inbox and replies use DDD's Twilio number, not their personal number.</Text>
+      </Card>
+    </>
+  );
+}
+
 function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setStatus, staffPhone }) {
   const [drafts, setDrafts] = useState({});
   const [selectedPhone, setSelectedPhone] = useState("");
@@ -789,7 +903,7 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
   return (
     <>
       <Card title="Shared inbox">
-        {!hasPin ? <Text style={styles.warningText}>Enter your admin PIN on Home, then tap Refresh to load protected inbox messages.</Text> : null}
+        {!hasPin ? <Text style={styles.warningText}>Enter your admin or tech access code on Home, then tap Refresh to load protected inbox messages.</Text> : null}
         {!normalizeE164(staffPhone) ? <Text style={styles.warningText}>Add your call-back phone on Home before using Call Customer.</Text> : null}
         <View style={styles.summaryGrid}>
           <SummaryTile label="Threads" value={activeConversations.length} />
@@ -1205,6 +1319,7 @@ function toFormSettings(settings) {
       ...blankSettings.reviewFollowUp,
       ...(settings.reviewFollowUp || {})
     },
+    staffAccessCodes: Array.isArray(settings.staffAccessCodes) ? settings.staffAccessCodes : [],
     voiceOptions: settings.voiceOptions || []
   };
 }
@@ -1235,8 +1350,26 @@ function fromFormSettings(settings) {
     },
     smsFollowUp: settings.smsFollowUp,
     reviewFollowUp: settings.reviewFollowUp,
+    staffAccessCodes: normalizeStaffAccessCodes(settings.staffAccessCodes),
     bookingDestinations: parseBookingDestinations(settings.bookingDestinationsText)
   };
+}
+
+function normalizeStaffAccessCodes(codes = []) {
+  return (Array.isArray(codes) ? codes : [])
+    .map((entry) => ({
+      name: String(entry.name || "").trim(),
+      code: String(entry.code || "").replace(/\s+/g, "")
+    }))
+    .filter((entry) => entry.name && entry.code);
+}
+
+function hasIncompleteStaffCodes(codes = []) {
+  return (Array.isArray(codes) ? codes : []).some((entry) => {
+    const name = String(entry.name || "").trim();
+    const code = String(entry.code || "").replace(/\s+/g, "");
+    return Boolean(name || code) && !(name && code);
+  });
 }
 
 function formatBookingDestinations(destinations) {
@@ -1660,6 +1793,23 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.72)",
     padding: 10
   },
+  teamCodeCard: {
+    gap: 10,
+    borderColor: "rgba(118, 87, 255, 0.16)",
+    borderRadius: 18,
+    borderWidth: 1,
+    backgroundColor: "#fffaff",
+    padding: 12
+  },
+  removeButton: {
+    borderColor: "rgba(178, 31, 98, 0.16)",
+    borderRadius: 999,
+    borderWidth: 1,
+    backgroundColor: "#fff0fa",
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  removeButtonText: { color: "#b21f62", fontSize: 12, fontWeight: "900" },
   messagePreviewStack: { gap: 7 },
   textBubble: {
     alignSelf: "flex-start",

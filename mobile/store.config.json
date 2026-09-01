@@ -25,7 +25,7 @@
           "DDD",
           "service"
         ],
-        "releaseNotes": "Initial DDD AI Dispatch release with mobile admin login, AI answering controls, shared inbox, call log, insights, voice settings, and push notification setup.",
+        "releaseNotes": "Initial DDD AI Dispatch release with mobile access-code login, Team tech-code management, AI answering controls, shared inbox, call log, insights, voice settings, and push notification setup.",
         "promoText": "Mobile admin tools for DDD's AI receptionist, customer texts, calls, bookings, and service insights.",
         "marketingUrl": "https://google-voice-ai-receptionist.onrender.com",
         "supportUrl": "https://google-voice-ai-receptionist.onrender.com/support",
@@ -82,10 +82,10 @@
       "lastName": "Duhart",
       "email": "support@dddcincy.com",
       "phone": "+15134091342",
-      "demoUsername": "Admin PIN",
+      "demoUsername": "Access code",
       "demoPassword": "4444",
       "demoRequired": true,
-      "notes": "This is the DDD AI Dispatch admin app for DDD Roadside Assistance staff. To review protected read-only features, open the app, enter review PIN 4444, and tap Unlock admin. The review PIN loads synthetic demo inbox, call log, and insights data only. It cannot send texts, place outbound calls, or save live DDD settings. The app connects to the live DDD AI Dispatch backend at https://google-voice-ai-receptionist.onrender.com. Production phone/SMS/calling features depend on the connected DDD Twilio account and live service data."
+      "notes": "This is the DDD AI Dispatch admin app for DDD Roadside Assistance staff. To review protected read-only features, open the app, enter demo access code 4444, and tap Unlock. The demo code loads synthetic demo inbox, call log, and insights data only. It cannot send texts, place outbound calls, edit Team tech codes, or save live DDD settings. The app connects to the live DDD AI Dispatch backend at https://google-voice-ai-receptionist.onrender.com. Production phone/SMS/calling features depend on the connected DDD Twilio account and live service data."
     }
   }
 }

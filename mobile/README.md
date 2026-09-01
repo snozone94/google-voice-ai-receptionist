@@ -6,7 +6,8 @@ Expo admin app for controlling the live DDD AI Dispatch system from iPhone.
 
 - Rainbow DDD-branded tabbed admin shell
 - AI answering on/off
-- Admin PIN and live backend URL
+- Access-code login and live backend URL
+- Team tab for editing saved tech names/codes
 - Run-cost links for Twilio, OpenAI, and Render
 - Voice selection
 - Speaking speed
