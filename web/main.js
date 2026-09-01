@@ -109,6 +109,7 @@ const editSettingsButton = document.querySelector("#editSettingsButton");
 const settingsStatus = document.querySelector("#settingsStatus");
 const refreshInboxButton = document.querySelector("#refreshInboxButton");
 const inboxLoginButton = document.querySelector("#inboxLoginButton");
+const refreshInboxPanelButton = document.querySelector("#refreshInboxPanelButton");
 const staffPinInput = document.querySelector("#staffPinInput");
 const staffNameInput = document.querySelector("#staffNameInput");
 const staffStatusSelect = document.querySelector("#staffStatusSelect");
@@ -154,10 +155,12 @@ let teamDirectory = [];
 let activePresence = [];
 let teamSource = "";
 
-adminPinInput.value = localStorage.getItem("dddAdminPin") || localStorage.getItem("dddStaffPin") || "";
-staffPinInput.value = localStorage.getItem("dddStaffCode") || "";
+const savedAccessCode = localStorage.getItem("dddAccessCode") || localStorage.getItem("dddAdminPin") || localStorage.getItem("dddStaffCode") || localStorage.getItem("dddStaffPin") || "";
+adminPinInput.value = savedAccessCode;
+staffPinInput.value = "";
 staffNameInput.value = localStorage.getItem("dddStaffName") || "";
 staffStatusSelect.value = normalizeStaffStatus(localStorage.getItem("dddStaffStatus"));
+updateWebPushAvailabilityStatus();
 
 for (const button of tabButtons) {
   button.addEventListener("click", () => setActiveTab(button.dataset.tabTarget));
@@ -172,6 +175,19 @@ function setActiveTab(tabName) {
   }
   for (const panel of tabPanels) {
     panel.classList.toggle("active", panel.dataset.tabPanel === tabName);
+  }
+  if (tabName === "inbox" && accessCodeValue()) {
+    refreshInbox().catch((error) => setInboxStatus(error.message));
+  }
+  if (tabName === "calls" && adminPinInput.value.trim()) {
+    refreshCallLog().catch((error) => {
+      callLogStatus.textContent = error.message;
+    });
+  }
+  if (tabName === "insights" && adminPinInput.value.trim()) {
+    refreshInsights().catch((error) => {
+      insightsStatus.textContent = error.message;
+    });
   }
 }
 
@@ -213,6 +229,11 @@ fetch("/api/setup-status")
     webhookUrl.textContent = status.webhookUrl ? `Webhook URL: ${status.webhookUrl}` : "Webhook URL appears after PUBLIC_BASE_URL is set.";
   })
   .catch(() => {});
+
+if (accessCodeValue()) {
+  refreshInbox().catch((error) => setInboxStatus(error.message));
+  refreshPresence().catch(() => {});
+}
 
 function setStatus(message) {
   statusEl.textContent = message;
@@ -443,7 +464,7 @@ async function saveSettings(reason = "auto") {
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(response.status === 403 ? "Enter the admin PIN before saving settings." : error.error || "Could not save receptionist settings.");
+      throw new Error(response.status === 403 ? "Enter the real admin access code before saving settings." : error.error || "Could not save receptionist settings.");
     }
     const savedSettings = await response.json();
     isLoadingSettings = true;
@@ -793,9 +814,9 @@ async function refreshQaDashboard() {
   qaStatus.textContent = "Loading QA...";
   const response = await fetch("/api/qa-dashboard", { headers: adminHeaders() });
   if (response.status === 403) {
-    qaChecksList.innerHTML = `<p class="empty-state">Enter the admin PIN to load checks.</p>`;
-    qaIssuesList.innerHTML = `<p class="empty-state">Enter the admin PIN to load issues.</p>`;
-    qaStatus.textContent = "Enter the admin PIN to load QA.";
+    qaChecksList.innerHTML = `<p class="empty-state">Enter the real admin access code at the top to load checks.</p>`;
+    qaIssuesList.innerHTML = `<p class="empty-state">Enter the real admin access code at the top to load issues.</p>`;
+    qaStatus.textContent = "Admin access is needed for QA.";
     return;
   }
   if (!response.ok) throw new Error("Could not load QA dashboard.");
@@ -836,11 +857,11 @@ async function refreshInsights() {
     insightHighlights.innerHTML = "";
     if (insightFocusStrip) insightFocusStrip.innerHTML = "";
     if (learningPreview) learningPreview.innerHTML = "";
-    insightSuggestionsList.innerHTML = `<p class="empty-state">Enter the admin PIN to load daily, weekly, and monthly insights.</p>`;
+    insightSuggestionsList.innerHTML = `<p class="empty-state">Enter the real admin access code at the top to load daily, weekly, and monthly insights.</p>`;
     for (const card of Object.values(insightCards)) {
       if (card) card.innerHTML = "";
     }
-    insightsStatus.textContent = "Enter the admin PIN to load insights.";
+    insightsStatus.textContent = "Admin access is needed for insights.";
     return;
   }
   if (!response.ok) throw new Error("Could not load insights.");
@@ -1139,13 +1160,24 @@ function renderList(element, records, emptyMessage, formatter) {
 }
 
 function adminHeaders() {
-  const pin = adminPinInput.value.trim();
+  const pin = accessCodeValue();
   return pin ? { "x-admin-pin": pin } : {};
 }
 
 function staffHeaders() {
-  const code = staffPinInput.value.trim() || adminPinInput.value.trim();
+  const code = accessCodeValue();
   return code ? { "x-staff-code": code } : {};
+}
+
+function accessCodeValue() {
+  return (adminPinInput.value || staffPinInput.value || "").trim();
+}
+
+function saveAccessCode() {
+  const code = accessCodeValue();
+  localStorage.setItem("dddAccessCode", code);
+  localStorage.setItem("dddAdminPin", code);
+  localStorage.setItem("dddStaffCode", code);
 }
 
 function pushAuthHeaders() {
@@ -1166,14 +1198,43 @@ function setWebPushStatus(message) {
   if (webPushStatus) webPushStatus.textContent = message;
 }
 
+function isIosBrowser() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function isStandaloneWebApp() {
+  return window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true;
+}
+
+function updateWebPushAvailabilityStatus() {
+  if (!webPushStatus) return;
+  if (!("Notification" in window)) {
+    setWebPushStatus("This browser does not support notifications. Use the iPhone app for native push.");
+    return;
+  }
+  if (isIosBrowser() && !isStandaloneWebApp()) {
+    setWebPushStatus("On iPhone browser, add this site to Home Screen first. The iOS app uses native push.");
+    return;
+  }
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    setWebPushStatus("This browser cannot receive web push alerts. Use the iOS app for native push.");
+    return;
+  }
+  setWebPushStatus(Notification.permission === "granted" ? "Browser permission is on. Tap Send test alert." : "Tap Enable browser alerts, then allow notifications.");
+}
+
 async function enableWebPushNotifications() {
   try {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
-      setWebPushStatus("This browser does not support web push alerts.");
+      updateWebPushAvailabilityStatus();
       return;
     }
-    if (!staffPinInput.value.trim() && !adminPinInput.value.trim()) {
-      setWebPushStatus("Enter your admin PIN or staff code first.");
+    if (isIosBrowser() && !isStandaloneWebApp()) {
+      setWebPushStatus("On iPhone: share button, Add to Home Screen, open that icon, then enable alerts. The iOS app uses native push.");
+      return;
+    }
+    if (!accessCodeValue()) {
+      setWebPushStatus("Enter your access code at the top first.");
       return;
     }
 
@@ -1212,7 +1273,7 @@ async function enableWebPushNotifications() {
     });
     const payload = await response.json();
     if (!response.ok) {
-      throw new Error(response.status === 403 ? "Use your real admin PIN or staff code. Demo code cannot enable live alerts." : payload.error || "Could not save this browser for alerts.");
+      throw new Error(response.status === 403 ? "Use your real admin or tech access code. Demo code cannot enable live alerts." : payload.error || "Could not save this browser for alerts.");
     }
     setWebPushStatus("Browser alerts are connected here.");
   } catch (error) {
@@ -1222,8 +1283,8 @@ async function enableWebPushNotifications() {
 
 async function sendWebPushTest() {
   try {
-    if (!staffPinInput.value.trim() && !adminPinInput.value.trim()) {
-      setWebPushStatus("Enter your admin PIN or staff code first.");
+    if (!accessCodeValue()) {
+      setWebPushStatus("Enter your access code at the top first.");
       return;
     }
     setWebPushStatus("Sending test alert...");
@@ -1237,7 +1298,7 @@ async function sendWebPushTest() {
     });
     const payload = await response.json();
     if (!response.ok) {
-      throw new Error(response.status === 403 ? "Use your real admin PIN or staff code. Demo code cannot send live alerts." : payload.error || "Could not send test alert.");
+      throw new Error(response.status === 403 ? "Use your real admin or tech access code. Demo code cannot send live alerts." : payload.error || "Could not send test alert.");
     }
     setWebPushStatus(payload.sent ? `Test alert sent to ${payload.sent} device${payload.sent === 1 ? "" : "s"}.` : "No devices are registered yet.");
   } catch (error) {
@@ -1289,7 +1350,7 @@ function renderTeamPresence() {
   if (!team.length) {
     const empty = document.createElement("span");
     empty.className = "presence-pill muted";
-    empty.textContent = "Enter staff code to see team";
+    empty.textContent = "Enter access code to see team";
     teamPresenceList.append(empty);
     return;
   }
@@ -1504,12 +1565,12 @@ function escapeHtml(value) {
 }
 
 async function refreshInbox() {
-  localStorage.setItem("dddStaffCode", staffPinInput.value.trim());
+  saveAccessCode();
   localStorage.setItem("dddStaffName", staffNameInput.value.trim());
   staffStatusSelect.value = normalizeStaffStatus(staffStatusSelect.value);
   localStorage.setItem("dddStaffStatus", staffStatusSelect.value);
-  if (!staffPinInput.value.trim() && !adminPinInput.value.trim()) {
-    setInboxStatus("Enter your staff code, then tap Open inbox.");
+  if (!accessCodeValue()) {
+    setInboxStatus("Enter your access code at the top, then tap Open inbox.");
     conversations = [];
     renderConversations();
     return;
@@ -1517,7 +1578,7 @@ async function refreshInbox() {
   setInboxStatus("Opening inbox...");
   const response = await fetch("/api/conversations", { headers: staffHeaders() });
   if (response.status === 403) {
-    setInboxStatus("That code did not work. Check the staff code or ask admin to update it.");
+    setInboxStatus("That code did not work. Check the access code or update it in admin.");
     conversations = [];
     renderConversations();
     return;
@@ -1556,7 +1617,7 @@ async function refreshPresence() {
 }
 
 async function sendPresence() {
-  const code = staffPinInput.value.trim() || adminPinInput.value.trim();
+  const code = accessCodeValue();
   if (!code) return;
   const typingTo = replyMessageInput.value.trim() ? selectedConversationPhone : "";
   const response = await fetch("/api/presence", {
@@ -1592,20 +1653,21 @@ inboxLoginButton?.addEventListener("click", () => {
   sendPresence().catch(() => {});
 });
 
+refreshInboxPanelButton?.addEventListener("click", () => {
+  refreshInbox().catch((error) => setInboxStatus(error.message));
+  sendPresence().catch(() => {});
+});
+
 adminPinInput.addEventListener("change", () => {
-  const pin = adminPinInput.value.trim();
-  localStorage.setItem("dddAdminPin", pin);
+  saveAccessCode();
   loadSettings().catch(() => {
     settingsStatus.textContent = "Could not reload admin-only settings.";
   });
   refreshInbox().catch((error) => setInboxStatus(error.message));
 });
 
-staffPinInput.addEventListener("change", () => {
-  queueStaffRefresh();
-});
-
-staffPinInput.addEventListener("input", () => {
+adminPinInput.addEventListener("input", () => {
+  saveAccessCode();
   queueStaffRefresh();
 });
 
@@ -1628,10 +1690,10 @@ replyMessageInput.addEventListener("input", () => {
 });
 
 function queueStaffRefresh() {
-  localStorage.setItem("dddStaffCode", staffPinInput.value.trim());
+  saveAccessCode();
   localStorage.setItem("dddStaffName", staffNameInput.value.trim());
   clearTimeout(staffRefreshTimer);
-  setInboxStatus(staffPinInput.value.trim() || adminPinInput.value.trim() ? "Checking staff access..." : "Enter your staff code to load texts.");
+  setInboxStatus(accessCodeValue() ? "Checking inbox access..." : "Enter your access code at the top to load texts.");
   staffRefreshTimer = setTimeout(() => {
     refreshInbox().catch((error) => setInboxStatus(error.message));
     sendPresence().catch(() => {});
@@ -1779,7 +1841,7 @@ async function refreshCallLog() {
     callLog = [];
     selectedCallId = "";
     renderCallLog();
-    callLogStatus.textContent = "Enter the admin PIN to load call details.";
+    callLogStatus.textContent = "Admin access is needed for call details.";
     return;
   }
   if (!response.ok) throw new Error("Could not load call log.");

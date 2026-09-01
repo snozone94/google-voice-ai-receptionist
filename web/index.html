@@ -39,13 +39,28 @@
         </dl>
         <div class="top-actions">
           <label class="pin-field">
-            Admin PIN
-            <input id="adminPinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Enter PIN" />
+            Access code
+            <input id="adminPinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Enter admin or tech code" />
+          </label>
+          <input id="staffPinInput" type="hidden" />
+          <label class="staff-name-field">
+            Name
+            <input id="staffNameInput" autocomplete="name" placeholder="Brianna or tech name" />
+          </label>
+          <label class="staff-status-field">
+            Status
+            <select id="staffStatusSelect">
+              <option value="available">Available</option>
+              <option value="busy">Busy</option>
+              <option value="on-call">On-call</option>
+              <option value="active-call">Active call</option>
+            </select>
           </label>
           <label class="switch-row power-switch">
             <input id="enabledToggle" type="checkbox" />
             <span>AI answers</span>
           </label>
+          <button id="inboxLoginButton" type="button">Open inbox</button>
           <button id="editSettingsButton" type="button">Edit settings</button>
           <button id="saveSettingsButton" type="button">Save now</button>
           <button id="callButton" type="button">Start voice call</button>
@@ -454,34 +469,9 @@
             <p class="eyebrow">Shared DDD inbox</p>
             <h2>Texts</h2>
           </div>
-          <button id="inboxLoginButton" type="button">Open inbox</button>
+          <button id="refreshInboxPanelButton" type="button">Refresh</button>
         </div>
-        <div class="inbox-auth">
-          <div class="inbox-login-card">
-            <div>
-              <p class="eyebrow">Login</p>
-              <h3>Enter your staff code once</h3>
-              <p>Each tech uses their own code. Your name/status shows other team members who is online or replying.</p>
-            </div>
-            <label>
-              Staff code
-              <input id="staffPinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="9706 or tech code" />
-            </label>
-            <label>
-              Your name
-              <input id="staffNameInput" autocomplete="name" placeholder="Brianna, tech name, dispatch..." />
-            </label>
-            <label>
-              Status
-              <select id="staffStatusSelect">
-                <option value="available">Available</option>
-                <option value="busy">Busy</option>
-                <option value="on-call">On-call</option>
-                <option value="active-call">Active call</option>
-              </select>
-            </label>
-          </div>
-        </div>
+        <div class="inbox-access-note">Inbox uses the access code saved at the top. Each tech can use their own code and status.</div>
         <div class="settings-grid staff-code-editor">
           <label>
             Staff names and codes
@@ -534,7 +524,7 @@
             <p class="empty-state">Call transcript, saved intake, booking info, and recording links will appear here.</p>
           </article>
         </div>
-        <p id="callLogStatus">Enter the admin PIN to load call details.</p>
+        <p id="callLogStatus">Enter the real admin access code to load call details.</p>
       </section>
 
       <section class="panel tab-panel" data-tab-panel="insights">
@@ -585,7 +575,7 @@
           <article class="insight-card" data-insight-card="weekly"></article>
           <article class="insight-card" data-insight-card="monthly"></article>
         </div>
-        <p id="insightsStatus">Enter the admin PIN to load insights.</p>
+        <p id="insightsStatus">Enter the real admin access code to load insights.</p>
       </section>
 
       <section class="panel tab-panel" data-tab-panel="qa">
@@ -610,7 +600,7 @@
             <textarea id="qaChecklistInput" rows="6" maxlength="1400"></textarea>
           </label>
         </div>
-        <p id="qaStatus">Enter the admin PIN to load QA.</p>
+        <p id="qaStatus">Enter the real admin access code to load QA.</p>
       </section>
 
       <section class="panel tab-panel" data-tab-panel="activity">
