@@ -1176,6 +1176,61 @@ button:hover:not(:disabled) {
   font-weight: 800;
 }
 
+.call-correction-panel {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.72fr) minmax(180px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  margin: 0 0 14px;
+  border: 1px solid rgba(118, 87, 255, 0.24);
+  border-radius: 16px;
+  padding: 12px;
+  background:
+    linear-gradient(135deg, rgba(118, 87, 255, 0.1), rgba(255, 62, 165, 0.08), rgba(35, 199, 121, 0.07)),
+    rgba(255, 255, 255, 0.86);
+}
+
+.call-correction-panel label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.call-correction-panel select,
+.call-correction-panel input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(217, 211, 238, 0.95);
+  border-radius: 12px;
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 800;
+}
+
+.call-correction-panel button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 12px;
+  padding: 9px 12px;
+  background: linear-gradient(90deg, var(--violet), var(--pink), var(--orange));
+  color: #fff;
+  font-weight: 950;
+  box-shadow: 0 10px 22px rgba(230, 64, 165, 0.18);
+}
+
+.call-correction-panel p {
+  grid-column: 1 / -1;
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
 .call-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2690,6 +2745,10 @@ li.missing {
     max-height: none;
     padding: 14px;
     overflow: visible;
+  }
+
+  .call-correction-panel {
+    grid-template-columns: 1fr;
   }
 
   .call-metrics {

@@ -145,6 +145,9 @@ SMS_FOLLOWUP_WEBHOOK_URL=https://your-sms-automation-webhook.example/send
 DDD_BOOKING_WEBHOOK_URL=https://dddcincy.com/wp-json/ddd/v1/booking-job
 DDD_BOOKING_WEBHOOK_SECRET=optional-shared-secret
 CUSTOMER_LOOKUP_SECRET=shared-secret-for-ddd-mobile-backend
+DDD_PHOTO_UPLOAD_BASE_URL=https://dddcincy.com/customer-photo-upload/
+DDD_PHOTO_UPLOAD_WEBHOOK_URL=https://dddcincy.com/wp-json/ddd/v1/ai-booking-photos
+DDD_CUSTOMER_HISTORY_URL=https://dddcincy.com/wp-json/ddd/v1/customer-history
 VOIPMS_API_USERNAME=bria@dddcincy.com
 VOIPMS_API_PASSWORD=your-voip-ms-api-password
 VOIPMS_SMS_DID=5136445016
@@ -167,6 +170,10 @@ DDD_TECH_TEAM_TOKEN=private-tech-token-or-setup-code-that-can-list-the-team
 When `DDD_TECH_AUTH_URL` is set, staff can sign into AI Dispatch with the same TechAssist setup code/token. AI Dispatch sends that code to the WordPress endpoint and WordPress validates it with its existing hashed-token logic. When `DDD_TECH_TEAM_URL` and `DDD_TECH_TEAM_TOKEN` are set, AI Dispatch loads the live DDD roster, availability, profile phone, device name, and last-seen data for the Team tab.
 
 Customer photo uploads avoid MMS costs. Every booking gets a private `photoUploadUrl` based on the booking token. The follow-up SMS can include `{{photoUploadLink}}`, customers upload photos from their browser, and the admin call detail shows the upload link plus saved photo links.
+
+Use `DDD_PHOTO_UPLOAD_BASE_URL` when the customer-facing upload link should show a `dddcincy.com` page instead of the Render backend. The branded page should pass the `booking` and `token` query params through to the Render upload flow or embed that flow in an iframe. Use `DDD_PHOTO_UPLOAD_WEBHOOK_URL` when the DDD Platform exposes an endpoint that can attach uploaded photo metadata to the real booking/job record.
+
+Use `DDD_CUSTOMER_HISTORY_URL` when the DDD Platform exposes a phone lookup endpoint for prior jobs, vehicles, oil type, oil quantity, and repeat services. AI Dispatch will merge that platform history with local AI Dispatch bookings so returning customers can be recognized during intake.
 
 Manual `STAFF_ACCESS_CODES` remain only as emergency backup codes so the inbox still works if WordPress is down or team sync is temporarily unavailable.
 
@@ -220,6 +227,9 @@ DDD_TECH_AUTH_URL
 DDD_TECH_TEAM_URL
 DDD_TECH_TEAM_TOKEN
 DDD_TECH_TEAM_SECRET
+DDD_PHOTO_UPLOAD_BASE_URL
+DDD_PHOTO_UPLOAD_WEBHOOK_URL
+DDD_CUSTOMER_HISTORY_URL
 ```
 
 `ADMIN_PIN` controls settings edits. `DDD_TECH_AUTH_URL` / `DDD_TECH_TEAM_URL` connect AI Dispatch to DDD Platform/TechAssist. `STAFF_ACCESS_CODES` is a backup-only fallback for Inbox access with a comma-separated list like `Backup Owner:1111,Backup Tech:2222`.

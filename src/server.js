@@ -21,6 +21,7 @@ import {
   getStorageInfo,
   addBookingPhotos,
   getBookingStatus,
+  updateCallCorrection,
   updateBookingLocation,
   buildDryRun,
   buildBusinessInsights,
@@ -911,6 +912,22 @@ app.post("/api/test-script", express.json(), async (req, res, next) => {
   }
 });
 
+app.post("/api/test-script/score", express.json(), async (req, res, next) => {
+  try {
+    const settings = await loadSettingsWithInsights();
+    const scenario = String(req.body?.callerMessage || "").trim();
+    const dryRun = buildDryRun(settings, scenario);
+    res.json({
+      ok: true,
+      scenario,
+      dryRun,
+      score: scoreSimulatedTest(dryRun, scenario)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/qa-dashboard", async (req, res, next) => {
   try {
     if (!hasAdminAccess(req)) {
@@ -1018,6 +1035,43 @@ app.get("/api/insights", async (req, res, next) => {
 
 function qaCheck(label, ok, detail) {
   return { label, ok: Boolean(ok), detail };
+}
+
+function scoreSimulatedTest(dryRun = {}, scenario = "") {
+  const checks = [
+    {
+      label: "Reflects caller need",
+      ok: Boolean(dryRun.firstResponse) && !/what type of service|emergency or routine/i.test(dryRun.firstResponse)
+    },
+    {
+      label: "Keeps the first response short",
+      ok: String(dryRun.firstResponse || "").split(/\s+/).filter(Boolean).length <= 34
+    },
+    {
+      label: "Has clear booking or message action",
+      ok: /book|booking|save|message|apply|complaint|follow/i.test(dryRun.action || "")
+    },
+    {
+      label: "Collects vehicle color when needed",
+      ok: !/tire|flat|jump|battery|oil|brake|rotor|hub/i.test(scenario) || /color/i.test([...(dryRun.questions || []), dryRun.action || ""].join(" "))
+    },
+    {
+      label: "Avoids reading long links aloud",
+      ok: !/https?:\/\//i.test(dryRun.firstResponse || "")
+    },
+    {
+      label: "Mentions SMS/link follow-up",
+      ok: /text|sms|link/i.test([dryRun.action || "", dryRun.smsFollowUp || ""].join(" "))
+    }
+  ];
+  const passed = checks.filter((check) => check.ok).length;
+  return {
+    percent: Math.round((passed / checks.length) * 100),
+    passed,
+    total: checks.length,
+    checks,
+    verdict: passed === checks.length ? "Ready" : passed >= 4 ? "Needs small tweak" : "Needs rewrite"
+  };
 }
 
 function clampSpeechSpeed(value) {
@@ -1166,9 +1220,11 @@ app.post("/api/bookings/:bookingId/photos", express.json({ limit: "24mb" }), asy
       return;
     }
     const updated = await addBookingPhotos(req.params.bookingId, req.query.token || req.body?.token || "", uploads);
+    const sync = await syncCustomerPhotosToDddPlatform(updated || booking, uploads);
     res.status(201).json({
       ok: true,
       photoCount: updated?.photoCount || uploads.length,
+      sync,
       photos: uploads.map((photo) => ({
         id: photo.id,
         createdAt: photo.createdAt,
@@ -1226,6 +1282,22 @@ app.get("/api/call-log", async (req, res, next) => {
     res.json({ calls: await listCallLog(Number(req.query.limit || 50)) });
   } catch (error) {
     next(error);
+  }
+});
+
+app.post("/api/calls/:callId/correction", express.json(), async (req, res, next) => {
+  try {
+    if (!hasAdminAccess(req)) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+    const correction = await updateCallCorrection(req.params.callId, {
+      ...req.body,
+      updatedBy: process.env.ADMIN_STAFF_NAME || "Brianna"
+    });
+    res.json({ ok: true, correction });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
   }
 });
 
@@ -2172,6 +2244,39 @@ async function saveCustomerPhotoUploads(booking, files = []) {
     });
   }
   return uploads;
+}
+
+async function syncCustomerPhotosToDddPlatform(booking = {}, uploads = []) {
+  const url = String(process.env.DDD_PHOTO_UPLOAD_WEBHOOK_URL || process.env.DDD_PHOTO_WEBHOOK_URL || "").trim();
+  if (!url || !uploads.length) return { ok: false, skipped: true, reason: "DDD_PHOTO_UPLOAD_WEBHOOK_URL is not configured." };
+  const publicBaseUrl = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+  const headers = { "Content-Type": "application/json" };
+  if (process.env.DDD_BOOKING_WEBHOOK_SECRET) headers["x-ddd-ai-booking-secret"] = process.env.DDD_BOOKING_WEBHOOK_SECRET;
+  if (process.env.DDD_TECH_TEAM_TOKEN) headers["X-DDD-Tech-Token"] = process.env.DDD_TECH_TEAM_TOKEN;
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        source: "DDD AI Dispatch",
+        external_booking_id: booking.bookingId || "",
+        platform_job_id: booking.externalSync?.jobId || "",
+        customer_phone: booking.phone || "",
+        customer_name: booking.name || "",
+        service_type: booking.serviceType || "",
+        photos: uploads.map((photo) => ({
+          ...photo,
+          url: publicBaseUrl && photo.url?.startsWith("/") ? `${publicBaseUrl}${photo.url}` : photo.url
+        }))
+      }),
+      signal: AbortSignal.timeout(7000)
+    });
+    const body = await response.json().catch(async () => ({ raw: await response.text().catch(() => "") }));
+    if (!response.ok) return { ok: false, status: response.status, error: body.error || body.message || "Photo sync failed.", body };
+    return { ok: true, status: response.status, body };
+  } catch (error) {
+    return { ok: false, error: error.message || "Photo sync failed." };
+  }
 }
 
 function safeFileSegment(value = "") {

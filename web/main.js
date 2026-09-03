@@ -820,29 +820,34 @@ async function runFreeTest(callerMessage) {
   for (const button of testScenarioButtons) button.disabled = true;
   testScriptOutput.value = "Testing...";
   try {
-    const response = await fetch("/api/test-script", {
+    const response = await fetch("/api/test-script/score", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ callerMessage: testCallerInput.value })
     });
     if (!response.ok) throw new Error("Could not run the free test.");
     const result = await response.json();
+    const dryRun = result.dryRun || result;
+    const score = result.score;
     testScriptOutput.value = [
-      `Intent: ${result.intent}`,
-      result.bestNextLink ? `Best next link: ${result.bestNextLink}` : result.destination ? `Best next link: ${result.destination.label} - ${result.destination.url}` : "Best next link: none selected",
-      result.smsFollowUp ? `SMS follow-up: ${result.smsFollowUp}` : "",
+      score ? `Score: ${score.percent}% - ${score.verdict} (${score.passed}/${score.total})` : "",
+      score?.checks?.length ? `Checks:\n- ${score.checks.map((check) => `${check.ok ? "PASS" : "FIX"} ${check.label}`).join("\n- ")}` : "",
       "",
-      result.firstResponse ? `First response:\n${result.firstResponse}` : "",
+      `Intent: ${dryRun.intent}`,
+      dryRun.bestNextLink ? `Best next link: ${dryRun.bestNextLink}` : dryRun.destination ? `Best next link: ${dryRun.destination.label} - ${dryRun.destination.url}` : "Best next link: none selected",
+      dryRun.smsFollowUp ? `SMS follow-up: ${dryRun.smsFollowUp}` : "",
       "",
-      result.questions?.length ? `Next questions, one at a time:\n- ${result.questions.join("\n- ")}` : "",
+      dryRun.firstResponse ? `First response:\n${dryRun.firstResponse}` : "",
       "",
-      result.action ? `Action:\n${result.action}` : "",
+      dryRun.questions?.length ? `Next questions, one at a time:\n- ${dryRun.questions.join("\n- ")}` : "",
       "",
-      result.insightLearning ? `Insight learning:\n${result.insightLearning}` : "",
+      dryRun.action ? `Action:\n${dryRun.action}` : "",
       "",
-      result.qaChecklist?.length ? `QA checklist:\n- ${result.qaChecklist.join("\n- ")}` : "",
+      dryRun.insightLearning ? `Insight learning:\n${dryRun.insightLearning}` : "",
       "",
-      result.note
+      dryRun.qaChecklist?.length ? `QA checklist:\n- ${dryRun.qaChecklist.join("\n- ")}` : "",
+      "",
+      dryRun.note
     ].join("\n");
   } catch (error) {
     testScriptOutput.value = error.message;
@@ -2210,6 +2215,7 @@ function renderSelectedCall() {
     : "No recording link stored yet";
   const transcriptHtml = renderGroupedTranscript(call.transcript || []);
   const synopsis = buildCallSynopsis(call);
+  const correction = call.correction || {};
   callDetail.innerHTML = `
     <div class="call-detail-header">
       <div>
@@ -2221,6 +2227,20 @@ function renderSelectedCall() {
     <div class="call-outcome-summary">
       <strong>${escapeHtml(cleanCallText(call.outcome?.detail || "Call logged for review."))}</strong>
       <span>${escapeHtml(call.outcome?.callerStayedOn ? "Caller stayed on" : call.outcome?.hungUpEarly ? "Caller hung up early" : "Needs review")}</span>
+    </div>
+    <div class="call-correction-panel">
+      <div>
+        <label for="callOutcomeCorrection">Correct outcome</label>
+        <select id="callOutcomeCorrection">
+          ${renderCorrectionOptions(correction.outcomeTag || "")}
+        </select>
+      </div>
+      <div>
+        <label for="callCorrectionNote">Admin note</label>
+        <input id="callCorrectionNote" type="text" maxlength="500" value="${escapeAttribute(correction.note || "")}" placeholder="Optional note for this call" />
+      </div>
+      <button type="button" data-action="save-call-correction" data-call-id="${escapeAttribute(call.id)}">Save correction</button>
+      <p id="callCorrectionStatus">${correction.updatedAt ? `Last corrected ${escapeHtml(formatTime(correction.updatedAt))}` : "Corrections update this call's status and insight counts."}</p>
     </div>
     <div class="call-metrics">
       ${renderMetric("Duration", call.durationLabel || "Unknown", call.durationSeconds ? "ok" : "warn")}
@@ -2250,6 +2270,89 @@ function renderSelectedCall() {
       <div class="transcript-box">${transcriptHtml}</div>
     </div>
   `;
+  const saveCorrectionButton = callDetail.querySelector('[data-action="save-call-correction"]');
+  saveCorrectionButton?.addEventListener("click", saveSelectedCallCorrection);
+}
+
+function renderCorrectionOptions(selected = "") {
+  const options = [
+    ["", "No manual correction"],
+    ["booked", "Booked"],
+    ["lead", "Lead"],
+    ["missed", "Missed"],
+    ["incomplete", "Incomplete"],
+    ["spam", "Spam"],
+    ["sales", "Sales"],
+    ["apply", "Apply to work"],
+    ["complaint", "Complaint"],
+    ["unsupported", "Unsupported service"],
+    ["follow-up", "Needs follow-up"]
+  ];
+  return options
+    .map(([value, label]) => `<option value="${escapeAttribute(value)}"${value === selected ? " selected" : ""}>${escapeHtml(label)}</option>`)
+    .join("");
+}
+
+async function saveSelectedCallCorrection(event) {
+  const button = event.currentTarget;
+  const callId = button.dataset.callId;
+  const status = callDetail.querySelector("#callCorrectionStatus");
+  const outcomeTag = callDetail.querySelector("#callOutcomeCorrection")?.value || "";
+  const note = callDetail.querySelector("#callCorrectionNote")?.value || "";
+  if (!callId || !outcomeTag) {
+    if (status) status.textContent = "Choose an outcome before saving.";
+    return;
+  }
+  button.disabled = true;
+  if (status) status.textContent = "Saving correction...";
+  try {
+    const response = await fetch(`/api/calls/${encodeURIComponent(callId)}/correction`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...adminHeaders() },
+      body: JSON.stringify({ outcomeTag, note })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.error || "Could not save correction.");
+    }
+    const index = callLog.findIndex((call) => call.id === callId);
+    if (index >= 0) {
+      callLog[index] = {
+        ...callLog[index],
+        correction: payload.correction,
+        displayStatus: getCorrectedStatusLabel(payload.correction.outcomeTag),
+        completion: getCorrectedCompletion(payload.correction.outcomeTag, callLog[index].completion)
+      };
+    }
+    renderCallLog();
+    if (callLogStatus) callLogStatus.textContent = "Call correction saved.";
+  } catch (error) {
+    if (status) status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function getCorrectedStatusLabel(tag = "") {
+  const labels = {
+    booked: "Booked",
+    lead: "Lead captured",
+    missed: "Missed",
+    incomplete: "Incomplete",
+    spam: "Spam",
+    sales: "Sales",
+    apply: "Apply to work",
+    complaint: "Complaint",
+    unsupported: "Unsupported",
+    "follow-up": "Needs follow-up"
+  };
+  return labels[tag] || "Corrected";
+}
+
+function getCorrectedCompletion(tag = "", fallback = "needs-review") {
+  if (tag === "booked" || tag === "lead" || tag === "apply") return "complete";
+  if (tag === "missed" || tag === "incomplete") return "incomplete";
+  return fallback || "needs-review";
 }
 
 function buildCallSynopsis(call) {

@@ -9,7 +9,7 @@
 - [ ] Confirm desktop admin edits show on phone browser after reload.
 - [ ] Add Twilio voice status callback to the active number: `/api/twilio/call-status?secret=TWILIO_SMS_WEBHOOK_SECRET`.
 - [ ] Confirm Twilio recording callback is wired: `/api/twilio/recording?secret=TWILIO_SMS_WEBHOOK_SECRET`.
-- [ ] Point AI Dispatch at the live DDD Platform/TechAssist auth/team routes: `DDD_TECH_AUTH_URL=/wp-json/ddd/v1/tech-auth-test`, `DDD_TECH_TEAM_URL=/wp-json/ddd/v1/techs`, and `DDD_TECH_TEAM_TOKEN`.
+- [x] Point AI Dispatch at the live DDD Platform/TechAssist auth/team routes: `DDD_TECH_AUTH_URL=/wp-json/ddd/v1/tech-auth-test`, `DDD_TECH_TEAM_URL=/wp-json/ddd/v1/techs`, and `DDD_TECH_TEAM_TOKEN`.
 - [ ] Run a live call test from a non-linked phone and confirm call log, intake, transcript, and SMS behavior.
 
 ## Smith-Level Features
@@ -25,12 +25,18 @@
 - [x] Shared inbox can validate DDD Platform/TechAssist setup codes/tokens when configured, with local backup codes as emergency fallback.
 - [x] Cheap customer photo upload link for bookings so customers can upload pictures by secure browser link instead of paid MMS.
 - [x] QA dashboard with health checks and recent issue visibility.
-- [ ] Add a true end-to-end simulated call tester that scores the AI response against the QA checklist.
-- [ ] Add call outcome tags that staff can manually correct after a call.
+- [x] Add a simulated test-call scorer that grades the dry-run response against DDD intake rules.
+- [x] Add call outcome tags that staff can manually correct after a call.
+- [x] Add DDD-branded photo upload link support with `DDD_PHOTO_UPLOAD_BASE_URL`.
+- [x] Add optional photo-upload sync webhook support for the DDD Platform.
+- [x] Add optional customer-history pull from the DDD Platform so repeat customer vehicle/oil history can be known.
+- [ ] Publish the branded `dddcincy.com` upload page/redirect in WordPress and set `DDD_PHOTO_UPLOAD_BASE_URL` live.
+- [ ] Add/confirm the DDD Platform endpoint that accepts uploaded booking photo metadata.
+- [ ] Add/confirm the DDD Platform customer-history endpoint for vehicles, oil type, oil quantity, and repeat jobs.
 - [ ] Add missed-call automatic SMS: "Sorry we missed you, here is the best DDD link..."
 - [ ] Add optional referral/directory page for services DDD does not do, such as towing, heavy mechanical jobs, body work, glass, paint, impound, or tire sales.
 - [ ] Add optional referral/directory SMS automation once the referral URL and wording are approved.
-- [ ] Add human transfer/handoff once a live transfer number/SIP route is chosen.
+- [ ] Add human transfer/handoff once the exact live transfer numbers are approved and saved.
 - [ ] Add after-hours scheduling logic with business-hour awareness.
 - [ ] Add admin roles: owner, dispatcher, tech, read-only.
 - [ ] Add audit history for who changed settings and when.

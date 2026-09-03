@@ -13,6 +13,7 @@ const smsPath = path.join(dataDir, "sms.jsonl");
 const pushTokensPath = path.join(dataDir, "push-tokens.jsonl");
 const settingsPath = path.join(dataDir, "settings.json");
 const bundledSettingsPath = path.join(bundledDataDir, "settings.json");
+const callCorrectionsPath = path.join(dataDir, "call-corrections.json");
 const bookingStatuses = ["Requested", "Confirmed", "Technician Assigned", "Technician En Route", "Arrived", "In Progress", "Completed", "Cancelled"];
 
 export const voiceOptions = [
@@ -125,7 +126,7 @@ const defaultNoiseHandling = {
   eagerness: "low",
   interruptResponse: false,
   notes:
-    "Let the receptionist finish short statements before listening. Ignore tiny background noises, road noise, breathing, and quick filler sounds unless the caller is clearly speaking."
+    "Let the receptionist finish short statements before listening. Ignore tiny background noises, road noise, breathing, and quick filler sounds unless the caller is clearly speaking. Be patient with elderly callers, strong accents, dialect differences, speech delays, and people whose first language is not English. If a caller uses Spanish or another language, keep the call simple, ask whether English is okay, and continue in the caller's language when you can."
 };
 const defaultNotificationPreferences = {
   newCalls: true,
@@ -344,6 +345,17 @@ export async function listRecords(filePath, limit = 50) {
   }
 }
 
+async function readJsonObject(filePath, fallback = {}) {
+  try {
+    const raw = await fs.readFile(filePath, "utf8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : fallback;
+  } catch (error) {
+    if (error.code === "ENOENT") return fallback;
+    throw error;
+  }
+}
+
 export async function listLeads(limit) {
   return listRecords(leadsPath, limit);
 }
@@ -412,6 +424,7 @@ export async function listCallLog(limit = 50) {
     listRecords(bookingsPath, 1000),
     listRecords(smsPath, 1000)
   ]);
+  const corrections = await readJsonObject(callCorrectionsPath, {});
   const callsByCall = groupByCallId(calls);
   const summariesByCall = groupByCallId(summaries);
   const leadsByCall = groupByCallId(leads);
@@ -444,9 +457,11 @@ export async function listCallLog(limit = 50) {
       const durationSeconds = getCallDurationSeconds(sortedEvents, summary);
       const finalStatus = firstTruthy(latestEvent.status, firstEvent.status, summary.endedAt ? "completed" : "logged");
       const outcome = summarizeCallOutcome({ status: finalStatus, transcript, relatedLeads, relatedBookings, relatedSms, durationSeconds });
-      const displayStatus = getCallDisplayStatus(finalStatus, outcome, relatedBookings, relatedLeads);
+      const id = callId || `${firstEvent.createdAt || "call"}-${firstEvent.type || "event"}`;
+      const correction = corrections[id] || null;
+      const displayStatus = correction?.outcomeTag ? getCorrectionDisplayStatus(correction.outcomeTag) : getCallDisplayStatus(finalStatus, outcome, relatedBookings, relatedLeads);
       return {
-        id: callId || `${firstEvent.createdAt || "call"}-${firstEvent.type || "event"}`,
+        id,
         callId,
         createdAt: firstEvent.createdAt,
         startedAt: summary.startedAt || firstEvent.createdAt,
@@ -475,7 +490,8 @@ export async function listCallLog(limit = 50) {
           : "none",
         smsStatus: summarizeSmsStatus(relatedSms),
         outcome,
-        completion: outcome.completion,
+        correction,
+        completion: correction ? correctedCompletion(correction.outcomeTag, outcome.completion) : outcome.completion,
         transcript,
         transcriptText: transcript.map((item) => item.text).filter(Boolean).join("\n"),
         leads: relatedLeads,
@@ -486,6 +502,28 @@ export async function listCallLog(limit = 50) {
     })
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
     .slice(0, limit);
+}
+
+function correctedCompletion(tag, fallback = "needs-review") {
+  if (tag === "booked" || tag === "lead" || tag === "apply") return "complete";
+  if (tag === "missed" || tag === "incomplete") return "incomplete";
+  return fallback;
+}
+
+function getCorrectionDisplayStatus(tag = "") {
+  const labels = {
+    booked: "Booked",
+    lead: "Lead saved",
+    missed: "Missed",
+    incomplete: "Incomplete",
+    spam: "Spam",
+    sales: "Sales",
+    apply: "Apply to work",
+    complaint: "Complaint",
+    unsupported: "Unsupported",
+    "follow-up": "Needs follow-up"
+  };
+  return labels[tag] || "Needs follow-up";
 }
 
 function makeInsightWindow(label, key, now, days, offsetDays = 0) {
@@ -760,9 +798,16 @@ export async function listBookingsByPhone(phone, limit = 20) {
 export async function getCustomerHistory(phone, limit = 8) {
   const target = normalizeE164(phone);
   if (!target) return { phone: "", returningCustomer: false, bookings: [], knownVehicles: [], lastOilService: null };
-  const bookings = await listBookingsByPhone(target, limit);
+  const [localBookings, platformHistory] = await Promise.all([
+    listBookingsByPhone(target, limit),
+    fetchDddCustomerHistory(target, limit)
+  ]);
+  const bookings = mergeCustomerBookings(localBookings, platformHistory.bookings).slice(0, limit);
   const knownVehicles = dedupeTextValues(
-    bookings.map((booking) => [booking.vehicle, booking.vehicleColor].filter(Boolean).join(" ").trim()).filter(Boolean)
+    [
+      ...bookings.map((booking) => [booking.vehicle, booking.vehicleColor].filter(Boolean).join(" ").trim()).filter(Boolean),
+      ...platformHistory.knownVehicles
+    ]
   ).slice(0, 5);
   const lastOilService = bookings.find((booking) =>
     /oil/i.test(`${booking.serviceType || ""} ${booking.reason || ""} ${booking.notes || ""}`)
@@ -770,6 +815,7 @@ export async function getCustomerHistory(phone, limit = 8) {
   return {
     phone: target,
     returningCustomer: bookings.length > 0,
+    source: platformHistory.bookings.length ? "ddd-platform-and-ai" : "ai-dispatch",
     bookings: bookings.map((booking) => ({
       createdAt: booking.createdAt,
       name: booking.name,
@@ -798,11 +844,94 @@ export async function getCustomerHistory(phone, limit = 8) {
   };
 }
 
+async function fetchDddCustomerHistory(phone, limit) {
+  const url = String(process.env.DDD_CUSTOMER_HISTORY_URL || "").trim();
+  if (!url) return { bookings: [], knownVehicles: [] };
+  const headers = { Accept: "application/json" };
+  if (process.env.DDD_TECH_TEAM_TOKEN) headers["X-DDD-Tech-Token"] = process.env.DDD_TECH_TEAM_TOKEN;
+  if (process.env.CUSTOMER_LOOKUP_SECRET) headers["X-DDD-Customer-Lookup-Secret"] = process.env.CUSTOMER_LOOKUP_SECRET;
+  try {
+    const requestUrl = new URL(url);
+    requestUrl.searchParams.set("phone", phone);
+    requestUrl.searchParams.set("limit", String(Math.min(20, Math.max(1, Number(limit) || 8))));
+    const response = await fetch(requestUrl, { headers, signal: AbortSignal.timeout(6000) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) return { bookings: [], knownVehicles: [] };
+    const records = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload.bookings)
+        ? payload.bookings
+        : Array.isArray(payload.jobs)
+          ? payload.jobs
+          : Array.isArray(payload.data)
+            ? payload.data
+            : [];
+    return {
+      bookings: records.map(normalizeHistoryBooking).filter((booking) => booking.serviceType || booking.vehicle || booking.notes),
+      knownVehicles: dedupeTextValues([
+        ...(Array.isArray(payload.knownVehicles) ? payload.knownVehicles : []),
+        ...(Array.isArray(payload.vehicles) ? payload.vehicles : []).map((vehicle) =>
+          [vehicle.year, vehicle.make, vehicle.model, vehicle.color].filter(Boolean).join(" ")
+        )
+      ])
+    };
+  } catch {
+    return { bookings: [], knownVehicles: [] };
+  }
+}
+
+function mergeCustomerBookings(localBookings = [], platformBookings = []) {
+  const seen = new Set();
+  return [...platformBookings, ...localBookings].filter((booking) => {
+    const key = [booking.bookingId || booking.id || "", booking.createdAt || "", booking.serviceType || "", booking.vehicle || ""].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function normalizeHistoryBooking(booking = {}) {
+  return {
+    bookingId: cleanText(booking.bookingId || booking.id || booking.job_uuid || booking.job || "", "", 120),
+    createdAt: cleanText(booking.createdAt || booking.created_at || booking.submitted_at || booking.updated_at || "", "", 80),
+    name: cleanText(booking.name || booking.customer_name || booking.customerName || "", "", 160),
+    serviceType: cleanText(booking.serviceType || booking.service_type || booking.service || booking.reason || "", "", 120),
+    vehicle: cleanText(booking.vehicle || booking.vehicleInfo || [booking.vehicle_year, booking.vehicle_make, booking.vehicle_model].filter(Boolean).join(" "), "", 180),
+    vehicleColor: cleanText(booking.vehicleColor || booking.vehicle_color || booking.color || "", "", 80),
+    location: cleanLongText(booking.location || booking.service_address || booking.pickup_location || booking.address || "", "", 600),
+    preferredTime: cleanText(booking.preferredTime || booking.preferred_time || booking.eta || "", "", 120),
+    notes: cleanLongText(booking.notes || booking.customer_notes || booking.admin_notes || booking.problem_description || "", "", 1200),
+    oilType: cleanText(booking.oilType || booking.oil_type || "", "", 80),
+    oilQuantity: cleanText(booking.oilQuantity || booking.oil_capacity || booking.oil_quantity || "", "", 80),
+    partsStatus: cleanText(booking.partsStatus || booking.parts_status || "", "", 160),
+    status: cleanText(booking.status || "", "", 80),
+    source: "ddd-platform"
+  };
+}
+
 export async function getBookingStatus(bookingId, token) {
   if (!bookingId || !token) return null;
   const records = await listRecords(bookingsPath, 1000);
   const booking = records.find((item) => item.bookingId === bookingId && item.statusToken === token) || null;
   return booking ? { ...booking, confidence: booking.confidence || calculateBookingConfidence(booking) } : null;
+}
+
+export async function updateCallCorrection(callId, correction = {}) {
+  const id = cleanText(callId, "", 160);
+  if (!id) return null;
+  const allowedOutcomes = new Set(["booked", "lead", "missed", "incomplete", "spam", "sales", "apply", "complaint", "unsupported", "follow-up"]);
+  const record = {
+    callId: id,
+    updatedAt: new Date().toISOString(),
+    outcomeTag: allowedOutcomes.has(correction.outcomeTag) ? correction.outcomeTag : "follow-up",
+    note: cleanLongText(correction.note || "", "", 500),
+    updatedBy: cleanText(correction.updatedBy || "DDD admin", "DDD admin", 120)
+  };
+  await ensureDataDir();
+  const corrections = await readJsonObject(callCorrectionsPath, {});
+  corrections[id] = record;
+  await fs.writeFile(callCorrectionsPath, JSON.stringify(corrections, null, 2));
+  return record;
 }
 
 export async function updateBookingLocation(bookingId, token, locationUpdate = {}) {
@@ -1193,6 +1322,9 @@ Voice and manner:
 - Keep answers short enough for a phone call, usually one or two sentences.
 - Ask one question at a time.
 - Let the caller finish before responding, and do not over-explain.
+- Be patient with elderly callers, strong accents, dialect differences, code-switching, and people whose first language is not English.
+- If the caller seems confused, hard of hearing, or slower to answer, slow down slightly, use plain words, and confirm only the detail that matters.
+- If the caller speaks Spanish or another non-English language, ask briefly if English is okay. If not, continue in the caller's language when possible while still collecting the same DDD intake details.
 - Use natural acknowledgements like "I can help with that" or "Let me grab a few details."
 - For booking or urgent service calls, reassure the caller once: "This will be quick, and I can make the booking for you." Use this idea naturally, then do not repeat it.
 - If the caller names a specific bookable service, such as "oil change", "brakes", "battery install", "jump start", "lockout", "flat tire", or "fuel delivery", do not ask whether they need roadside, routine service, emergency help, or another category. Treat the named service as the intent and ask for the next missing booking detail.
@@ -1510,10 +1642,9 @@ export function callAcceptPayload(business, settings = {}) {
       input: {
         transcription: {
           model: "gpt-4o-mini-transcribe",
-          language: "en",
           prompt: settings.verificationMode
             ? "This is a Google Voice verification call. Listen for a six digit numeric code."
-            : "Phone call with a DDD receptionist. Transcribe caller details, names, phone numbers, service requests, locations, and appointment times."
+            : "Phone call with a DDD receptionist. Transcribe caller details, names, phone numbers, service requests, locations, appointment times, accents, dialects, and mixed-language speech. English is the default, but callers may use Spanish or another language."
         },
         turn_detection: {
           type: "semantic_vad",
@@ -1754,10 +1885,7 @@ function normalizeBookingRecord(booking = {}) {
     publicBaseUrl && !publicBaseUrl.includes("your-domain")
       ? `${publicBaseUrl.replace(/\/$/, "")}/api/bookings/${encodeURIComponent(bookingId)}/confirm-location?token=${encodeURIComponent(statusToken)}`
       : "";
-  const photoUploadUrl =
-    publicBaseUrl && !publicBaseUrl.includes("your-domain")
-      ? `${publicBaseUrl.replace(/\/$/, "")}/api/bookings/${encodeURIComponent(bookingId)}/photos?token=${encodeURIComponent(statusToken)}`
-      : "";
+  const photoUploadUrl = buildPhotoUploadUrl(bookingId, statusToken, publicBaseUrl);
 
   return {
     createdAt,
@@ -1795,6 +1923,23 @@ function normalizeBookingRecord(booking = {}) {
     photoCount: Array.isArray(booking.photos) ? booking.photos.length : 0,
     externalSync: { ok: false, skipped: true, reason: "Not attempted yet." }
   };
+}
+
+function buildPhotoUploadUrl(bookingId, statusToken, publicBaseUrl = "") {
+  const directUrl =
+    publicBaseUrl && !publicBaseUrl.includes("your-domain")
+      ? `${publicBaseUrl.replace(/\/$/, "")}/api/bookings/${encodeURIComponent(bookingId)}/photos?token=${encodeURIComponent(statusToken)}`
+      : "";
+  const brandedBase = String(process.env.DDD_PHOTO_UPLOAD_BASE_URL || "").trim();
+  if (!brandedBase || !directUrl) return directUrl;
+  try {
+    const brandedUrl = new URL(brandedBase);
+    brandedUrl.searchParams.set("booking", bookingId);
+    brandedUrl.searchParams.set("token", statusToken);
+    return brandedUrl.toString();
+  } catch {
+    return directUrl;
+  }
 }
 
 async function syncBookingRequest(record) {
