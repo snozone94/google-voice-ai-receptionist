@@ -1491,8 +1491,7 @@ async function getStaffDirectory() {
   const manualCodes = normalizeStaffAccessCodes(settings.staffAccessCodes?.length ? settings.staffAccessCodes : parseStaffAccessCodes(process.env.STAFF_ACCESS_CODES || ""))
     .map((entry) => ({ ...entry, role: "backup", active: true, source: "manual" }));
   const platformTeam = await fetchDddPlatformTeam();
-  const team = dedupeTeam([...platformTeam.team, ...manualCodes]);
-  if (platformTeam.team.length) return { source: "ddd-platform", team };
+  if (platformTeam.team.length) return { source: "ddd-platform", team: dedupeTeam(platformTeam.team) };
   if (manualCodes.length) return { source: "manual", team };
   return { source: platformTeam.configured ? "ddd-platform-empty" : "unconfigured", team };
 }
