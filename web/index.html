@@ -19,7 +19,7 @@
             <p class="summary">Control calls, voice, bookings, texts, and review follow-up from one clean rainbow console.</p>
           </div>
         </div>
-        <dl class="numbers">
+        <dl class="numbers compact-numbers">
           <div>
             <dt>Public number</dt>
             <dd id="googleVoiceNumber">Not set</dd>
@@ -37,52 +37,121 @@
             <dd id="settingsStatus">Loading...</dd>
           </div>
         </dl>
-        <div class="top-actions">
-          <label class="pin-field">
-            Access code
-            <input id="adminPinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Enter admin or tech code" />
-          </label>
-          <input id="staffPinInput" type="hidden" />
-          <label class="staff-name-field">
-            Name
-            <input id="staffNameInput" autocomplete="name" placeholder="Brianna or tech name" />
-          </label>
-          <label class="staff-status-field">
-            Status
-            <select id="staffStatusSelect">
-              <option value="available">Available</option>
-              <option value="busy">Busy</option>
-              <option value="on-call">On-call</option>
-              <option value="active-call">Active call</option>
-            </select>
-          </label>
-          <label class="switch-row power-switch">
-            <input id="enabledToggle" type="checkbox" />
-            <span>AI answers</span>
-          </label>
-          <button id="inboxLoginButton" type="button">Open inbox</button>
-          <button id="editSettingsButton" type="button">Edit settings</button>
-          <button id="saveSettingsButton" type="button">Save now</button>
-          <button id="callButton" type="button">Start voice call</button>
-          <button id="hangupButton" type="button" disabled>Hang up</button>
-        </div>
-        <div class="route-control-strip">
-          <label>
-            Call route mode
-            <select id="humanRouteModeSelect">
-              <option value="ai_then_humans">AI first, humans if needed</option>
+        <div class="quick-control-grid">
+          <section class="control-card login-card" aria-label="Access">
+            <div>
+              <p class="eyebrow">Access</p>
+              <h2>Sign in once</h2>
+              <p>Use admin code for settings, or a tech code for inbox, replies, status, and callback calls.</p>
+            </div>
+            <label class="pin-field">
+              Access code
+              <input id="adminPinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Admin or tech code" />
+            </label>
+            <input id="staffPinInput" type="hidden" />
+            <div class="mini-fields">
+              <label class="staff-name-field">
+                Name
+                <input id="staffNameInput" autocomplete="name" placeholder="Brianna or tech name" />
+              </label>
+              <label class="staff-status-field">
+                Status
+                <select id="staffStatusSelect">
+                  <option value="available">Available</option>
+                  <option value="busy">Busy</option>
+                  <option value="on-call">On-call</option>
+                  <option value="active-call">Active call</option>
+                </select>
+              </label>
+            </div>
+            <div class="compact-action-row">
+              <button id="inboxLoginButton" type="button">Open inbox</button>
+              <button id="editSettingsButton" type="button">Edit</button>
+              <button id="saveSettingsButton" type="button">Saved</button>
+            </div>
+          </section>
+
+          <section class="control-card route-card" aria-label="Call routing">
+            <div class="route-card-header">
+              <div>
+                <p class="eyebrow">Live call route</p>
+                <h2>Answering mode</h2>
+              </div>
+              <label class="switch-row power-switch">
+                <input id="enabledToggle" type="checkbox" />
+                <span>AI on</span>
+              </label>
+            </div>
+            <select id="humanRouteModeSelect" class="sr-select">
+              <option value="ai_then_humans">AI first, team backup</option>
               <option value="ai">AI only</option>
-              <option value="humans">Ring humans only</option>
+              <option value="humans">Ring team only</option>
             </select>
-          </label>
-          <label>
-            Ring timeout
-            <input id="humanRouteTimeoutInput" type="number" min="8" max="45" step="1" />
-          </label>
-          <div class="route-summary">
-            <strong id="humanRouteSummary">Routing loading...</strong>
-            <span>Use this when you want calls to reach you or techs instead of relying on AI 100%.</span>
-          </div>
+            <div class="route-mode-cards" aria-label="Choose call route">
+              <button type="button" data-route-mode="ai_then_humans">
+                <strong>AI + backup</strong>
+                <span>AI answers, team rings if needed.</span>
+              </button>
+              <button type="button" data-route-mode="ai">
+                <strong>AI only</strong>
+                <span>Lowest interruption for the team.</span>
+              </button>
+              <button type="button" data-route-mode="humans">
+                <strong>Ring team</strong>
+                <span>Skip AI to save usage.</span>
+              </button>
+            </div>
+            <div class="route-control-strip">
+              <label>
+                Ring timeout
+                <input id="humanRouteTimeoutInput" type="number" min="8" max="45" step="1" />
+              </label>
+              <div class="route-summary">
+                <strong id="humanRouteSummary">Routing loading...</strong>
+                <span>Ring-team mode uses your saved human routing numbers.</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="control-card outbound-card" aria-label="Outbound calling">
+            <div>
+              <p class="eyebrow">Call customers</p>
+              <h2>Callback bridge</h2>
+              <p>Twilio calls your phone first, then connects the customer with the selected DDD caller ID.</p>
+            </div>
+            <div class="mini-fields">
+              <label>
+                Your phone
+                <input id="outboundStaffPhoneInput" autocomplete="tel" inputmode="tel" placeholder="Your cell number" />
+              </label>
+              <label>
+                Customer phone
+                <input id="outboundCustomerPhoneInput" autocomplete="tel" inputmode="tel" placeholder="Customer number" />
+              </label>
+            </div>
+            <label>
+              Caller ID
+              <select id="outboundCallerIdSelect">
+                <option value="">DDD main number</option>
+                <option value="+15134091342">513-409-1342</option>
+                <option value="+15138223286">513-822-3286</option>
+              </select>
+            </label>
+            <button id="outboundCallButton" type="button">Call customer</button>
+            <p id="outboundCallStatus">Calls show a Twilio-owned or verified DDD number.</p>
+          </section>
+
+          <section class="control-card test-call-card" aria-label="AI test call">
+            <div>
+              <p class="eyebrow">No-quota test</p>
+              <h2>Browser AI call</h2>
+              <p>Use this to hear the receptionist without placing a phone-network call.</p>
+            </div>
+            <div class="compact-action-row">
+              <button id="callButton" type="button">Test AI call</button>
+              <button id="hangupButton" type="button" disabled>Hang up</button>
+            </div>
+          </section>
         </div>
       </section>
 

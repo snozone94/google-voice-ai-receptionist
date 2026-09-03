@@ -36,6 +36,12 @@ const humanRouteModeSelect = document.querySelector("#humanRouteModeSelect");
 const humanRouteTimeoutInput = document.querySelector("#humanRouteTimeoutInput");
 const humanRouteSummary = document.querySelector("#humanRouteSummary");
 const humanRouteCount = document.querySelector("#humanRouteCount");
+const routeModeButtons = [...document.querySelectorAll("[data-route-mode]")];
+const outboundStaffPhoneInput = document.querySelector("#outboundStaffPhoneInput");
+const outboundCustomerPhoneInput = document.querySelector("#outboundCustomerPhoneInput");
+const outboundCallerIdSelect = document.querySelector("#outboundCallerIdSelect");
+const outboundCallButton = document.querySelector("#outboundCallButton");
+const outboundCallStatus = document.querySelector("#outboundCallStatus");
 const humanRouteNumbersInput = document.querySelector("#humanRouteNumbersInput");
 const humanRouteTriggersInput = document.querySelector("#humanRouteTriggersInput");
 const humanRouteCallerMessageInput = document.querySelector("#humanRouteCallerMessageInput");
@@ -166,6 +172,8 @@ adminPinInput.value = savedAccessCode;
 staffPinInput.value = "";
 staffNameInput.value = localStorage.getItem("dddStaffName") || "";
 staffStatusSelect.value = normalizeStaffStatus(localStorage.getItem("dddStaffStatus"));
+if (outboundStaffPhoneInput) outboundStaffPhoneInput.value = localStorage.getItem("dddOutboundStaffPhone") || "";
+if (outboundCallerIdSelect) outboundCallerIdSelect.value = localStorage.getItem("dddOutboundCallerId") || "";
 updateTeamCurrentCard();
 updateWebPushAvailabilityStatus();
 
@@ -285,6 +293,7 @@ function applySettings(settings) {
     settings.humanRouting?.fallbackMessage ||
     "DDD could not reach the team live, but your call was logged. Please leave a message or text DDD and the team will follow up.";
   updateHumanRouteSummary(settings.humanRouting);
+  updateRouteModeCards();
   voiceSelect.value = settings.voice || "marin";
   voiceSpeedInput.value = settings.voiceSpeed || 1;
   voiceSpeedOutput.value = `${Number(voiceSpeedInput.value).toFixed(2)}x`;
@@ -613,6 +622,7 @@ voiceSpeedInput.addEventListener("input", () => {
 
 function handleSettingsChange() {
   updateHumanRouteSummary();
+  updateRouteModeCards();
   updateScriptPreview();
   if (!editMode || isLoadingSettings) return;
   hasUnsavedSettings = true;
@@ -714,6 +724,9 @@ function setEditMode(nextEditMode) {
     setSettingsControlLock(control, !editMode || isSavingSettings);
   }
   if (addStaffCodeButton) setSettingsControlLock(addStaffCodeButton, !editMode || isSavingSettings);
+  for (const button of routeModeButtons) {
+    button.disabled = !editMode || isSavingSettings;
+  }
   updateSaveControls();
   previewVoiceButton.disabled = false;
   document.body.classList.toggle("edit-mode", editMode);
@@ -753,6 +766,52 @@ for (const button of testScenarioButtons) {
     await runFreeTest(testCallerInput.value);
   });
 }
+
+for (const button of routeModeButtons) {
+  button.addEventListener("click", () => {
+    if (!editMode || isSavingSettings) return;
+    humanRouteModeSelect.value = button.dataset.routeMode || "ai_then_humans";
+    if (humanRouteModeSelect.value === "humans") {
+      enabledToggle.checked = false;
+    } else if (!enabledToggle.checked) {
+      enabledToggle.checked = true;
+    }
+    handleSettingsChange();
+  });
+}
+
+outboundStaffPhoneInput?.addEventListener("input", () => {
+  localStorage.setItem("dddOutboundStaffPhone", outboundStaffPhoneInput.value.trim());
+});
+
+outboundCallerIdSelect?.addEventListener("change", () => {
+  localStorage.setItem("dddOutboundCallerId", outboundCallerIdSelect.value);
+});
+
+outboundCallButton?.addEventListener("click", async () => {
+  outboundCallButton.disabled = true;
+  outboundCallStatus.textContent = "Starting callback bridge...";
+  try {
+    const response = await fetch("/api/calls/outbound", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...staffHeaders() },
+      body: JSON.stringify({
+        staffPhone: outboundStaffPhoneInput.value,
+        to: outboundCustomerPhoneInput.value,
+        callerId: outboundCallerIdSelect.value
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.error || payload.delivery?.error || "Could not start the callback call.");
+    }
+    outboundCallStatus.textContent = `Calling ${formatPhone(outboundStaffPhoneInput.value)} first, then ${formatPhone(outboundCustomerPhoneInput.value)}.`;
+  } catch (error) {
+    outboundCallStatus.textContent = error.message;
+  } finally {
+    outboundCallButton.disabled = false;
+  }
+});
 
 async function runFreeTest(callerMessage) {
   testScriptButton.disabled = true;
@@ -1138,10 +1197,21 @@ function updateHumanRouteSummary(route = {}) {
     humans: "Ring humans only"
   };
   if (humanRouteSummary) {
-    humanRouteSummary.textContent = `${labels[mode] || labels.ai_then_humans} - ${count} route number${count === 1 ? "" : "s"}`;
+    humanRouteSummary.textContent = `${labels[mode] || labels.ai_then_humans} - ${count} team number${count === 1 ? "" : "s"}`;
   }
   if (humanRouteCount) {
     humanRouteCount.textContent = `${count} number${count === 1 ? "" : "s"}`;
+  }
+}
+
+function updateRouteModeCards() {
+  const mode = humanRouteModeSelect?.value || "ai_then_humans";
+  for (const button of routeModeButtons) {
+    button.classList.toggle("active", button.dataset.routeMode === mode);
+  }
+  if (enabledToggle && humanRouteModeSelect) {
+    const aiIsOn = enabledToggle.checked && humanRouteModeSelect.value !== "humans";
+    enabledToggle.closest(".power-switch")?.classList.toggle("is-paused", !aiIsOn);
   }
 }
 
@@ -1621,6 +1691,9 @@ function renderSelectedConversation() {
   const confidence = booking?.confidence || estimateConversationConfidence(conversation);
   selectedConversationTitle.textContent = formatPhone(conversation.phone);
   selectedConversationMeta.textContent = `${conversation.messages.length} message${conversation.messages.length === 1 ? "" : "s"} · ${booking?.serviceType || "No booking yet"}`;
+  if (outboundCustomerPhoneInput && !outboundCustomerPhoneInput.value.trim()) {
+    outboundCustomerPhoneInput.value = formatPhone(conversation.phone);
+  }
   if (conversationConfidence) {
     conversationConfidence.className = `confidence-pill ${confidenceClass(confidence)}`;
     conversationConfidence.textContent = `${confidence.label} · ${confidence.score}%`;

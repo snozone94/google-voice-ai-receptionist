@@ -193,7 +193,7 @@ h2 {
 
 .route-control-strip {
   display: grid;
-  grid-template-columns: minmax(180px, 0.85fr) minmax(110px, 0.35fr) minmax(0, 1.4fr);
+  grid-template-columns: minmax(108px, 0.45fr) minmax(0, 1fr);
   gap: 10px;
   align-items: end;
   margin-top: 12px;
@@ -204,6 +204,159 @@ h2 {
     linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.68)) padding-box,
     linear-gradient(90deg, rgba(255, 62, 165, 0.32), rgba(255, 200, 61, 0.22), rgba(35, 199, 121, 0.2), rgba(22, 184, 255, 0.25), rgba(118, 87, 255, 0.26)) border-box;
   box-shadow: 0 14px 34px rgba(37, 38, 69, 0.09);
+}
+
+.quick-control-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.2fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.control-card {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 18px;
+  padding: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.74)) padding-box,
+    linear-gradient(135deg, rgba(255, 62, 165, 0.28), rgba(255, 200, 61, 0.18), rgba(35, 199, 121, 0.18), rgba(22, 184, 255, 0.24), rgba(118, 87, 255, 0.2)) border-box;
+  box-shadow: 0 16px 34px rgba(37, 38, 69, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  overflow: hidden;
+}
+
+.control-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--sheen);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-42%);
+  transition: opacity 160ms ease;
+}
+
+.control-card:hover::after {
+  opacity: 0.42;
+  animation: cardSheen 1.9s ease;
+}
+
+.control-card h2,
+.control-card p {
+  margin: 0;
+}
+
+.control-card p:not(.eyebrow),
+.outbound-card #outboundCallStatus {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.login-card,
+.outbound-card,
+.test-call-card {
+  grid-template-columns: 1fr;
+}
+
+.route-card {
+  grid-row: span 2;
+}
+
+.route-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mini-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.compact-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.compact-action-row button {
+  flex: 1 1 92px;
+  width: auto;
+  margin: 0;
+}
+
+.route-mode-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.route-mode-cards button {
+  display: grid;
+  gap: 5px;
+  min-height: 98px;
+  margin: 0;
+  border: 1px solid rgba(124, 118, 255, 0.16);
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #34364d;
+  text-align: left;
+  box-shadow: 0 10px 24px rgba(37, 38, 69, 0.06);
+}
+
+.route-mode-cards button strong {
+  color: #161827;
+  font-size: 0.94rem;
+}
+
+.route-mode-cards button span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
+.route-mode-cards button.active {
+  color: #fff;
+  border-color: transparent;
+  background: var(--rainbow);
+  background-size: 220% 100%;
+  box-shadow: 0 16px 32px rgba(230, 64, 165, 0.26), 0 0 22px rgba(22, 184, 255, 0.14);
+  animation: rainbowShift 8s linear infinite;
+}
+
+.route-mode-cards button.active strong,
+.route-mode-cards button.active span {
+  color: #fff;
+}
+
+.sr-select {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.power-switch {
+  min-height: 42px;
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(35, 199, 121, 0.12);
+  color: #087443;
+  font-weight: 900;
+}
+
+.power-switch.is-paused {
+  background: rgba(255, 122, 61, 0.12);
+  color: #b45309;
 }
 
 .route-summary {
@@ -2169,6 +2322,8 @@ li.missing {
   .two-column,
   .lead-capture,
   .top-actions,
+  .quick-control-grid,
+  .mini-fields,
   .route-control-strip,
   .team-control-grid,
   .inbox-auth,
@@ -2181,6 +2336,39 @@ li.missing {
   .call-facts,
   .reply-form {
     grid-template-columns: 1fr;
+  }
+
+  .quick-control-grid {
+    gap: 8px;
+  }
+
+  .control-card {
+    border-radius: 14px;
+    padding: 10px;
+  }
+
+  .route-card {
+    grid-row: auto;
+  }
+
+  .route-card-header {
+    align-items: flex-start;
+  }
+
+  .route-mode-cards {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+
+  .route-mode-cards button {
+    min-height: 0;
+    grid-template-columns: minmax(96px, 0.42fr) minmax(0, 1fr);
+    align-items: center;
+    padding: 10px;
+  }
+
+  .route-mode-cards button span {
+    font-size: 0.76rem;
   }
 
   .staff-code-row {
@@ -2286,7 +2474,7 @@ li.missing {
   .brand-header {
     align-items: flex-start;
     gap: 9px;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
   }
 
   .brand-logo {
@@ -2309,7 +2497,6 @@ li.missing {
   }
 
   .summary {
-    display: none;
     margin-bottom: 6px;
     font-size: 0.86rem;
     line-height: 1.42;
@@ -2394,6 +2581,11 @@ li.missing {
     scroll-snap-type: x mandatory;
   }
 
+  .inbox-shell,
+  .call-log-shell {
+    border-radius: 14px;
+  }
+
   .conversation-item {
     flex: 0 0 min(78vw, 280px);
     min-height: 72px;
@@ -2402,12 +2594,12 @@ li.missing {
 
   .conversation-panel {
     min-height: 0;
-    grid-template-rows: auto auto minmax(260px, 46vh) 20px auto auto;
+    grid-template-rows: auto auto minmax(240px, 42vh) 20px auto auto;
   }
 
   .message-list {
     min-height: 260px;
-    max-height: 46vh;
+    max-height: 42vh;
     padding: 10px;
   }
 
@@ -2521,6 +2713,16 @@ li.missing {
   }
 }
 
+@media (max-width: 980px) {
+  .quick-control-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .route-card {
+    grid-row: auto;
+  }
+}
+
 @media (max-width: 420px) {
   .brand-header {
     display: grid;
@@ -2609,6 +2811,16 @@ li.missing {
 
   to {
     transform: rotate(360deg) scale(1.04);
+  }
+}
+
+@keyframes cardSheen {
+  from {
+    transform: translateX(-62%);
+  }
+
+  to {
+    transform: translateX(62%);
   }
 }
 

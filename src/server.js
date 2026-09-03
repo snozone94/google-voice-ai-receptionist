@@ -491,6 +491,7 @@ app.post("/api/calls/outbound", express.json(), async (req, res, next) => {
 
     const customerPhone = normalizeE164(req.body?.to || req.body?.customerPhone);
     const staffPhone = normalizeE164(req.body?.staffPhone || req.body?.from);
+    const callerId = normalizeOutboundCallerId(req.body?.callerId || req.body?.fromNumber);
     if (!customerPhone) {
       res.status(400).json({ ok: false, error: "Enter a valid customer phone number." });
       return;
@@ -500,7 +501,7 @@ app.post("/api/calls/outbound", express.json(), async (req, res, next) => {
       return;
     }
 
-    const delivery = await startTwilioBridgeCall(staffPhone, customerPhone);
+    const delivery = await startTwilioBridgeCall(staffPhone, customerPhone, callerId);
     await saveCallEvent({
       type: "twilio.outbound.call",
       call_id: delivery.sid || "",
@@ -600,7 +601,9 @@ app.post("/api/twilio/outbound-bridge", express.urlencoded({ extended: false }),
   }
 
   const to = normalizeE164(req.query.to || req.body?.to);
-  const from = normalizeE164(process.env.TWILIO_VOICE_FROM || process.env.TWILIO_SMS_FROM || process.env.AI_FORWARDING_NUMBER || process.env.GOOGLE_VOICE_NUMBER);
+  const from =
+    normalizeOutboundCallerId(req.query.callerId || req.body?.callerId) ||
+    normalizeE164(process.env.TWILIO_VOICE_FROM || process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || process.env.AI_FORWARDING_NUMBER);
   if (!to || !from) {
     res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>DDD could not connect this outbound call.</Say></Response>`);
     return;
@@ -1574,10 +1577,12 @@ async function sendTwilioSms(to, message) {
   };
 }
 
-async function startTwilioBridgeCall(staffPhone, customerPhone) {
+async function startTwilioBridgeCall(staffPhone, customerPhone, requestedCallerId = "") {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const from = normalizeE164(process.env.TWILIO_VOICE_FROM || process.env.TWILIO_SMS_FROM || process.env.AI_FORWARDING_NUMBER || process.env.GOOGLE_VOICE_NUMBER);
+  const from =
+    normalizeOutboundCallerId(requestedCallerId) ||
+    normalizeE164(process.env.TWILIO_VOICE_FROM || process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || process.env.AI_FORWARDING_NUMBER);
   const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
   const secret = process.env.TWILIO_SMS_WEBHOOK_SECRET || "";
   if (!accountSid || !authToken || !from || !publicBaseUrl || !secret) {
@@ -1588,7 +1593,7 @@ async function startTwilioBridgeCall(staffPhone, customerPhone) {
     };
   }
 
-  const bridgeUrl = `${publicBaseUrl}/api/twilio/outbound-bridge?secret=${encodeURIComponent(secret)}&to=${encodeURIComponent(customerPhone)}`;
+  const bridgeUrl = `${publicBaseUrl}/api/twilio/outbound-bridge?secret=${encodeURIComponent(secret)}&to=${encodeURIComponent(customerPhone)}&callerId=${encodeURIComponent(from)}`;
   const body = new URLSearchParams({
     From: from,
     To: staffPhone,
@@ -1622,6 +1627,25 @@ async function startTwilioBridgeCall(staffPhone, customerPhone) {
     from: payload.from,
     customerPhone
   };
+}
+
+function normalizeOutboundCallerId(value) {
+  const requested = normalizeE164(value);
+  if (!requested) return "";
+  return outboundCallerIds().includes(requested) ? requested : "";
+}
+
+function outboundCallerIds() {
+  return [
+    process.env.TWILIO_VOICE_FROM,
+    process.env.TWILIO_SMS_FROM,
+    process.env.GOOGLE_VOICE_NUMBER,
+    process.env.AI_FORWARDING_NUMBER,
+    process.env.OUTBOUND_CALLER_IDS
+  ]
+    .flatMap((value) => String(value || "").split(","))
+    .map((value) => normalizeE164(value))
+    .filter(Boolean);
 }
 
 async function getWebPushVapidKeys() {
