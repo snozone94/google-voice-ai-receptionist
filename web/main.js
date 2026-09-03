@@ -160,6 +160,8 @@ let isSavingSettings = false;
 let hasUnsavedSettings = false;
 let conversations = [];
 let selectedConversationPhone = "";
+let inboxSeenMessageKeys = new Set();
+let inboxSeenInitialized = false;
 let callLog = [];
 let selectedCallId = "";
 let teamDirectory = [];
@@ -1572,6 +1574,36 @@ function setInboxStatus(message) {
   inboxStatus.textContent = message;
 }
 
+function announceNewInboxMessages(nextConversations = []) {
+  const currentKeys = new Set();
+  const newMessages = [];
+  for (const conversation of nextConversations) {
+    for (const message of conversation.messages || []) {
+      const key = message.messageSid || `${conversation.phone}:${message.createdAt}:${message.direction}:${message.body}`;
+      currentKeys.add(key);
+      if (inboxSeenInitialized && !inboxSeenMessageKeys.has(key) && message.direction === "inbound") {
+        newMessages.push({ conversation, message });
+      }
+    }
+  }
+
+  inboxSeenMessageKeys = currentKeys;
+  inboxSeenInitialized = true;
+  if (!newMessages.length) return;
+
+  const latest = newMessages[newMessages.length - 1];
+  const from = formatPhone(latest.conversation.phone);
+  const body = `${from}: ${latest.message.body || "New customer text"}`.slice(0, 140);
+  setInboxStatus(`New text from ${from}. Inbox updated.`);
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification("New DDD text", {
+      body,
+      icon: "/assets/ddd-ai-dispatch-logo.png",
+      badge: "/assets/ddd-ai-dispatch-logo.png"
+    });
+  }
+}
+
 function renderTeamPresence() {
   if (!teamPresenceList) return;
   teamPresenceList.innerHTML = "";
@@ -1814,6 +1846,8 @@ async function refreshInbox() {
   if (!accessCodeValue()) {
     setInboxStatus("Enter your access code at the top, then tap Open inbox.");
     conversations = [];
+    inboxSeenMessageKeys = new Set();
+    inboxSeenInitialized = false;
     renderConversations();
     return;
   }
@@ -1824,6 +1858,8 @@ async function refreshInbox() {
     updateTeamCurrentCard();
     setInboxStatus("Code not recognized. Use the real admin code, demo code 4444, or add this tech code in Team while signed in as admin.");
     conversations = [];
+    inboxSeenMessageKeys = new Set();
+    inboxSeenInitialized = false;
     renderConversations();
     return;
   }
@@ -1837,7 +1873,9 @@ async function refreshInbox() {
   teamDirectory = payload.team || [];
   teamSource = payload.teamSource || "";
   activePresence = payload.presence || [];
-  conversations = payload.conversations || [];
+  const nextConversations = payload.conversations || [];
+  announceNewInboxMessages(nextConversations);
+  conversations = nextConversations;
   renderConversations();
   renderTeamPresence();
   updateTeamCurrentCard();
@@ -2333,7 +2371,7 @@ function inferServiceFromText(text = "") {
 refreshActivity().catch(() => {});
 setInterval(() => refreshActivity().catch(() => {}), 15000);
 refreshInbox().catch((error) => setInboxStatus(error.message));
-setInterval(() => refreshInbox().catch(() => {}), 15000);
+setInterval(() => refreshInbox().catch(() => {}), 5000);
 refreshCallLog().catch((error) => {
   callLogStatus.textContent = error.message;
 });
