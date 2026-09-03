@@ -1518,6 +1518,8 @@ async function fetchDddPlatformTeam() {
       ? payload
       : Array.isArray(payload.technicians)
         ? payload.technicians
+        : Array.isArray(payload.techs)
+          ? payload.techs
         : Array.isArray(payload.team)
           ? payload.team
           : Array.isArray(payload.data)
