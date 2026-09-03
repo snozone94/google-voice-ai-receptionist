@@ -1,4 +1,5 @@
 import "dotenv/config";
+import crypto from "node:crypto";
 import express from "express";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -1290,8 +1291,47 @@ function isGoogleVoiceVerificationCall(event) {
 
 function hasTwilioSmsAccess(req) {
   const secret = process.env.TWILIO_SMS_WEBHOOK_SECRET;
-  if (!secret) return false;
-  return req.query.secret === secret || req.get("x-twilio-sms-secret") === secret;
+  if (secret && (req.query.secret === secret || req.get("x-twilio-sms-secret") === secret)) {
+    return true;
+  }
+  return hasValidTwilioSignature(req);
+}
+
+function hasValidTwilioSignature(req) {
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const signature = req.get("x-twilio-signature");
+  if (!authToken || !signature) return false;
+
+  const candidateUrls = buildTwilioSignatureUrls(req);
+  return candidateUrls.some((url) => verifyTwilioSignature(authToken, signature, url, req.body || {}));
+}
+
+function buildTwilioSignatureUrls(req) {
+  const host = req.get("x-forwarded-host") || req.get("host") || "";
+  const proto = req.get("x-forwarded-proto") || req.protocol || "https";
+  const urls = new Set();
+  if (host) {
+    urls.add(`${proto}://${host}${req.originalUrl}`);
+    urls.add(`https://${host}${req.originalUrl}`);
+  }
+  if (process.env.PUBLIC_BASE_URL) {
+    urls.add(`${process.env.PUBLIC_BASE_URL.replace(/\/+$/, "")}${req.originalUrl}`);
+  }
+  return [...urls];
+}
+
+function verifyTwilioSignature(authToken, signature, url, params) {
+  const data = Object.keys(params)
+    .sort()
+    .reduce((acc, key) => `${acc}${key}${Array.isArray(params[key]) ? params[key].join("") : params[key]}`, url);
+  const expected = crypto.createHmac("sha1", authToken).update(data).digest("base64");
+  return safeCompare(signature, expected);
+}
+
+function safeCompare(left, right) {
+  const leftBuffer = Buffer.from(String(left));
+  const rightBuffer = Buffer.from(String(right));
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
 }
 
 function normalizeSipUri(value) {

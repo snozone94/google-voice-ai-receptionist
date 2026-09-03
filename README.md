@@ -227,10 +227,18 @@ Outbound calls from the mobile app use Twilio to call the staff member first, th
 
 Native app push alerts use Expo push tokens. The mobile app registers a phone through `POST /api/push/register`; the backend sends alerts for new calls, missed/busy calls, incoming texts, and manual test alerts. Real remote push notifications need an installed Expo development/App Store build so iOS can issue a usable push token.
 
+Twilio incoming SMS webhook:
+
+```text
+https://google-voice-ai-receptionist.onrender.com/api/twilio/sms
+```
+
+Twilio signs webhook requests, so the backend can accept this clean URL when `TWILIO_AUTH_TOKEN` is set. The older `?secret=TWILIO_SMS_WEBHOOK_SECRET` URL also still works as a fallback.
+
 Twilio voice webhook:
 
 ```text
-https://google-voice-ai-receptionist.onrender.com/api/twilio/voice?secret=TWILIO_SMS_WEBHOOK_SECRET
+https://google-voice-ai-receptionist.onrender.com/api/twilio/voice
 ```
 
 Set `TRANSFER_SIP_URI` or `OPENAI_SIP_URI` to the OpenAI SIP destination. The Twilio webhook logs the incoming call, dials the SIP destination, and sends call status/recording callbacks back into the admin dashboard.
