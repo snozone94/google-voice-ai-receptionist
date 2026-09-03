@@ -2343,8 +2343,40 @@ li.missing {
   }
 
   .control-card {
+    gap: 8px;
     border-radius: 14px;
     padding: 10px;
+  }
+
+  .control-card p:not(.eyebrow),
+  .outbound-card #outboundCallStatus {
+    font-size: 0.78rem;
+    line-height: 1.28;
+  }
+
+  .login-card,
+  .outbound-card,
+  .test-call-card {
+    align-content: stretch;
+  }
+
+  .login-card .mini-fields,
+  .outbound-card .mini-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .login-card .compact-action-row,
+  .test-call-card .compact-action-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .login-card .compact-action-row button:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .compact-action-row button {
+    min-height: 34px;
   }
 
   .route-card {
@@ -2362,9 +2394,9 @@ li.missing {
 
   .route-mode-cards button {
     min-height: 0;
-    grid-template-columns: minmax(96px, 0.42fr) minmax(0, 1fr);
+    grid-template-columns: minmax(82px, 0.38fr) minmax(0, 1fr);
     align-items: center;
-    padding: 10px;
+    padding: 8px;
   }
 
   .route-mode-cards button span {
@@ -2489,7 +2521,8 @@ li.missing {
   }
 
   h2 {
-    font-size: 1.18rem;
+    font-size: 1.05rem;
+    margin-bottom: 4px;
   }
 
   h3 {
@@ -2498,7 +2531,7 @@ li.missing {
 
   .summary {
     margin-bottom: 6px;
-    font-size: 0.86rem;
+    font-size: 0.78rem;
     line-height: 1.42;
   }
 
@@ -2526,7 +2559,7 @@ li.missing {
   }
 
   button {
-    min-height: 38px;
+    min-height: 36px;
     padding: 0 10px;
     width: 100%;
     margin-right: 0;

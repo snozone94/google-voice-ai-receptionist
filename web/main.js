@@ -1197,7 +1197,11 @@ function updateHumanRouteSummary(route = {}) {
     humans: "Ring humans only"
   };
   if (humanRouteSummary) {
-    humanRouteSummary.textContent = `${labels[mode] || labels.ai_then_humans} - ${count} team number${count === 1 ? "" : "s"}`;
+    const routeText =
+      count > 0
+        ? `${count} team number${count === 1 ? "" : "s"} ready`
+        : "add team numbers in Call Handling first";
+    humanRouteSummary.textContent = `${labels[mode] || labels.ai_then_humans} - ${routeText}`;
   }
   if (humanRouteCount) {
     humanRouteCount.textContent = `${count} number${count === 1 ? "" : "s"}`;
