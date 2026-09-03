@@ -280,7 +280,9 @@ app.get("/api/setup-status", async (_req, res, next) => {
       )
     };
     const recommended = {
-      humanRouting: Boolean(settings.humanRouting?.numbers?.length)
+      humanRouting: Boolean(settings.humanRouting?.numbers?.length),
+      callRecording: Boolean(process.env.PUBLIC_BASE_URL && (process.env.TWILIO_AUTH_TOKEN || process.env.TWILIO_SMS_WEBHOOK_SECRET)),
+      wideLanguageListening: true
     };
 
     res.json({
@@ -292,6 +294,14 @@ app.get("/api/setup-status", async (_req, res, next) => {
       webhookUrl:
         process.env.PUBLIC_BASE_URL && !process.env.PUBLIC_BASE_URL.includes("your-domain")
           ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/openai/sip-webhook`
+          : "",
+      twilioVoiceUrl:
+        process.env.PUBLIC_BASE_URL && !process.env.PUBLIC_BASE_URL.includes("your-domain")
+          ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/twilio/voice`
+          : "",
+      recordingCallbackUrl:
+        process.env.PUBLIC_BASE_URL && !process.env.PUBLIC_BASE_URL.includes("your-domain")
+          ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/twilio/recording`
           : ""
     });
   } catch (error) {
