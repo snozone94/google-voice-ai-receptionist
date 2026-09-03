@@ -42,11 +42,11 @@
             <div>
               <p class="eyebrow">Access</p>
               <h2>Sign in once</h2>
-              <p>Use admin code for settings, or a tech code for inbox, replies, status, and callback calls.</p>
+              <p>Use the admin code for settings, or a DDD TechAssist setup code/token for inbox, replies, status, and callback calls.</p>
             </div>
             <label class="pin-field">
               Access code
-              <input id="adminPinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Admin or tech code" />
+              <input id="adminPinInput" type="password" autocomplete="current-password" placeholder="Admin code or TechAssist code" />
             </label>
             <input id="staffPinInput" type="hidden" />
             <div class="mini-fields">
@@ -537,7 +537,7 @@
         <div class="section-title-row">
           <div>
             <p class="eyebrow">Team access</p>
-            <h2>Tech Codes</h2>
+            <h2>Team Access</h2>
           </div>
           <button id="refreshTeamButton" type="button">Refresh team</button>
         </div>
@@ -545,7 +545,7 @@
           <div class="team-current-card">
             <p class="eyebrow">Signed-in user</p>
             <h3>Your access</h3>
-            <p>The code entered at the top unlocks the right view. Admin can edit global tech codes; techs can use their own code for inbox, replies, callback bridge, and live status.</p>
+            <p>The code entered at the top unlocks the right view. TechAssist codes should come from the DDD platform. Backup codes below are only for emergency access if the platform sync is offline.</p>
             <div class="team-current-details">
               <span id="teamCurrentCodeStatus">No access code entered yet</span>
               <span id="teamCurrentStatus">Available</span>
@@ -562,14 +562,14 @@
           <div class="team-code-editor staff-code-editor">
             <div class="section-title-row compact-row">
               <div>
-                <p class="eyebrow">Global saved codes</p>
-                <h3>Editable Tech Logins</h3>
+                <p class="eyebrow">Emergency fallback</p>
+                <h3>Backup Codes</h3>
               </div>
-              <button id="addStaffCodeButton" type="button">Add tech</button>
+              <button id="addStaffCodeButton" type="button">Add backup</button>
             </div>
             <div id="staffCodeRows" class="staff-code-rows"></div>
             <textarea id="staffAccessCodesInput" rows="6" hidden aria-hidden="true"></textarea>
-            <p class="editor-note">These tech codes save to the DDD AI backend, not just this phone or computer. Use the real admin code, tap Edit settings, change names/codes, then Save changes. The master admin code is changed in Render's ADMIN_PIN secret.</p>
+            <p class="editor-note">Best setup: manage real tech access in DDD Platform/TechAssist. These backup codes save to the DDD AI backend for emergency use only. The master admin code is changed in Render's ADMIN_PIN secret.</p>
           </div>
         </div>
       </section>

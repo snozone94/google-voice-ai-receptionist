@@ -154,22 +154,19 @@ Cheapest SMS option: use the same VoIP.ms account. Outbound follow-up texts use 
 
 ## Tech Team Sync
 
-The shared inbox can pull the real tech roster from the DDD platform/Tech Assist instead of using a separate fake staff list.
+The shared inbox should use DDD Platform/TechAssist as the source of truth for real tech access. The WordPress platform already stores TechAssist admin access and technician setup codes/tokens hashed, so AI Dispatch should validate against those routes instead of copying raw codes.
 
 Configure AI Dispatch with:
 
 ```text
-DDD_TECH_TEAM_URL=https://ddd-auto-hub-you-are-an.vercel.app/api/technicians
-DDD_TECH_TEAM_SECRET=shared-secret
+DDD_TECH_AUTH_URL=https://dddcincy.com/wp-json/ddd/v1/tech-auth-test
+DDD_TECH_TEAM_URL=https://dddcincy.com/wp-json/ddd/v1/techs
+DDD_TECH_TEAM_TOKEN=private-tech-token-or-setup-code-that-can-list-the-team
 ```
 
-Configure the DDD platform/Tech Assist API with the matching:
+When `DDD_TECH_AUTH_URL` is set, staff can sign into AI Dispatch with the same TechAssist setup code/token. AI Dispatch sends that code to the WordPress endpoint and WordPress validates it with its existing hashed-token logic. When `DDD_TECH_TEAM_URL` and `DDD_TECH_TEAM_TOKEN` are set, AI Dispatch loads the live DDD roster, availability, profile phone, device name, and last-seen data for the Team tab.
 
-```text
-DDD_AI_TEAM_SYNC_SECRET=shared-secret
-```
-
-When `DDD_TECH_TEAM_URL` is set, AI Dispatch loads active technicians from the platform and shows them in the Inbox team strip. If the platform returns an `inbox_code`, `dispatch_code`, `staff_code`, `access_code`, `pin`, or `code`, that code can be used to log into the shared inbox. Manual `STAFF_ACCESS_CODES` remain as a fallback/override so the existing flow keeps working if team sync is not configured or temporarily fails.
+Manual `STAFF_ACCESS_CODES` remain only as emergency backup codes so the inbox still works if WordPress is down or team sync is temporarily unavailable.
 
 ## Recommended Production Shape
 
@@ -217,11 +214,13 @@ CALL_SUMMARY_WEBHOOK_URL
 DDD_BOOKING_WEBHOOK_URL
 DDD_BOOKING_WEBHOOK_SECRET
 CUSTOMER_LOOKUP_SECRET
+DDD_TECH_AUTH_URL
 DDD_TECH_TEAM_URL
+DDD_TECH_TEAM_TOKEN
 DDD_TECH_TEAM_SECRET
 ```
 
-`ADMIN_PIN` controls settings edits. `STAFF_ACCESS_CODES` controls Inbox access and replies with a comma-separated list like `Owner:1111,Tech 1:2222,Tech 2:3333,Dispatch:4444`.
+`ADMIN_PIN` controls settings edits. `DDD_TECH_AUTH_URL` / `DDD_TECH_TEAM_URL` connect AI Dispatch to DDD Platform/TechAssist. `STAFF_ACCESS_CODES` is a backup-only fallback for Inbox access with a comma-separated list like `Backup Owner:1111,Backup Tech:2222`.
 
 Outbound calls from the mobile app use Twilio to call the staff member first, then bridge to the customer with `TWILIO_VOICE_FROM` as caller ID. Use the same Twilio number as `TWILIO_SMS_FROM` if you want texts and outbound calls to show the same DDD number.
 

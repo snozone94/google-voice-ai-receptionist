@@ -263,6 +263,8 @@ app.get("/api/setup-status", async (_req, res, next) => {
       aiForwardingNumber: Boolean(process.env.AI_FORWARDING_NUMBER),
       humanRouting: Boolean(settings.humanRouting?.numbers?.length),
       persistentStorage: getStorageInfo().persistent,
+      platformTechAuth: Boolean(dddPlatformAuthUrl()),
+      platformTeamSync: Boolean(process.env.DDD_TECH_TEAM_URL && process.env.DDD_TECH_TEAM_TOKEN),
       smsDelivery: Boolean(
         process.env.SMS_FOLLOWUP_WEBHOOK_URL ||
           process.env.TWILIO_SMS_WEBHOOK_SECRET ||
@@ -336,7 +338,7 @@ app.get("/api/access-check", async (req, res, next) => {
     if (!staff.ok) {
       res.status(403).json({
         ok: false,
-        error: "Code not recognized. Use the real admin code or add this tech code in Team."
+        error: "Code not recognized. Use the DDD TechAssist setup code/token, real admin code, or a backup code from Team."
       });
       return;
     }
@@ -946,7 +948,7 @@ app.get("/api/qa-dashboard", async (req, res, next) => {
         teamInfo.source === "ddd-platform"
           ? `${teamInfo.team.length} team members loaded from DDD platform.`
           : teamInfo.source === "manual"
-            ? `${teamInfo.team.length} manual/fallback team members loaded.`
+            ? `${teamInfo.team.length} emergency backup team members loaded.`
             : "DDD platform team sync is not configured yet."
       )
     ];
@@ -1379,6 +1381,11 @@ async function getStaffAccess(req) {
     return { ok: true, name: process.env.ADMIN_STAFF_NAME || "Brianna", role: "admin" };
   }
 
+  const platformStaff = await authenticateDddPlatformStaff(submittedCode);
+  if (platformStaff.ok) {
+    return platformStaff;
+  }
+
   const staffCodes = await getStaffDirectoryForAuth();
   const staff = staffCodes.find((entry) => entry.code === submittedCode);
   if (!staff) {
@@ -1416,7 +1423,7 @@ async function getStaffDirectoryForAuth() {
 async function getStaffDirectory() {
   const settings = await loadReceptionistSettings();
   const manualCodes = normalizeStaffAccessCodes(settings.staffAccessCodes?.length ? settings.staffAccessCodes : parseStaffAccessCodes(process.env.STAFF_ACCESS_CODES || ""))
-    .map((entry) => ({ ...entry, role: "staff", active: true, source: "manual" }));
+    .map((entry) => ({ ...entry, role: "backup", active: true, source: "manual" }));
   const platformTeam = await fetchDddPlatformTeam();
   const team = dedupeTeam([...platformTeam.team, ...manualCodes]);
   if (platformTeam.team.length) return { source: "ddd-platform", team };
@@ -1427,7 +1434,7 @@ async function getStaffDirectory() {
 async function fetchDddPlatformTeam() {
   const url = String(process.env.DDD_TECH_TEAM_URL || "").trim();
   if (!url) return { configured: false, team: [] };
-  const headers = { Accept: "application/json" };
+  const headers = dddPlatformHeaders();
   const secret = String(process.env.DDD_TECH_TEAM_SECRET || "").trim();
   if (secret) headers["x-ddd-ai-secret"] = secret;
 
@@ -1460,6 +1467,59 @@ async function fetchDddPlatformTeam() {
   }
 }
 
+async function authenticateDddPlatformStaff(code) {
+  const submittedCode = String(code || "").trim();
+  if (!submittedCode) return { ok: false };
+  const url = dddPlatformAuthUrl();
+  if (!url) return { ok: false };
+
+  const headers = {
+    ...dddPlatformHeaders(submittedCode),
+    "Content-Type": "application/json"
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ddd_tech_token: submittedCode }),
+      signal: AbortSignal.timeout(5000)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !(payload.token_matches || payload.can_manage_jobs || payload.ok)) {
+      return { ok: false };
+    }
+    return {
+      ok: true,
+      id: String(payload.tech_id || ""),
+      name: String(payload.tech_label || payload.name || "DDD Tech").replace(/\s+/g, " ").trim().slice(0, 80),
+      role: payload.role || "tech",
+      availability: payload.availability || "available",
+      source: "ddd-platform"
+    };
+  } catch (error) {
+    console.warn(`DDD platform staff auth failed: ${error.message}`);
+    return { ok: false };
+  }
+}
+
+function dddPlatformAuthUrl() {
+  const explicit = String(process.env.DDD_TECH_AUTH_URL || "").trim();
+  if (explicit) return explicit;
+  const teamUrl = String(process.env.DDD_TECH_TEAM_URL || "").trim();
+  if (!teamUrl) return "";
+  if (/\/techs\/?$/i.test(teamUrl)) return teamUrl.replace(/\/techs\/?$/i, "/tech-auth-test");
+  if (/\/technicians\/?$/i.test(teamUrl)) return teamUrl.replace(/\/technicians\/?$/i, "/tech-auth-test");
+  return "";
+}
+
+function dddPlatformHeaders(techToken = "") {
+  const headers = { Accept: "application/json" };
+  const token = String(techToken || process.env.DDD_TECH_TEAM_TOKEN || "").trim();
+  if (token) headers["X-DDD-Tech-Token"] = token;
+  return headers;
+}
+
 function normalizePlatformTeamMember(member = {}) {
   const code = String(
     member.inbox_code ||
@@ -1473,18 +1533,19 @@ function normalizePlatformTeamMember(member = {}) {
     .replace(/\s+/g, "")
     .slice(0, 32);
   return {
-    id: String(member.id || member.user_id || member.uuid || ""),
-    name: String(member.name || member.full_name || member.display_name || member.email || "")
+    id: String(member.id || member.tech_id || member.user_id || member.uuid || ""),
+    name: String(member.name || member.tech_label || member.full_name || member.display_name || member.email || "")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 80),
-    phone: normalizeE164(member.phone || member.mobile_phone || member.phone_number || ""),
+    phone: normalizeE164(member.phone || member.mobile_phone || member.phone_number || member.profile?.phone || ""),
     code,
     role: String(member.role || member.type || "tech")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 40),
     active: member.active !== false && member.disabled !== true,
+    availability: member.availability || member.status || "available",
     source: "ddd-platform"
   };
 }

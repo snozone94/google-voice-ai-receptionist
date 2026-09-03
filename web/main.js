@@ -1416,7 +1416,7 @@ async function verifyAccessCode() {
   const response = await fetch("/api/access-check", { headers: pushAuthHeaders() });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !payload.ok) {
-    setInboxStatus(payload.error || "Code not recognized. Use the real admin code or add this tech code in Team.");
+    setInboxStatus(payload.error || "Code not recognized. Use a DDD TechAssist setup code/token, the real admin code, or an emergency backup code from Team.");
     updateTeamCurrentCard();
     return null;
   }
@@ -1610,9 +1610,9 @@ function renderTeamPresence() {
   if (teamSourceStatus) {
     const labels = {
       "ddd-platform": "Team source: DDD platform / Tech Assist",
-      manual: "Team source: manual fallback codes",
+      manual: "Team source: emergency backup codes",
       "ddd-platform-empty": "Team source: DDD platform connected, no active techs returned",
-      unconfigured: "Team source: manual until DDD platform sync is configured"
+      unconfigured: "Team source: backup codes until DDD platform sync is configured"
     };
     teamSourceStatus.textContent = labels[teamSource] || "Team source: checking...";
   }
@@ -1856,7 +1856,7 @@ async function refreshInbox() {
   if (response.status === 403) {
     signedInStaff = null;
     updateTeamCurrentCard();
-    setInboxStatus("Code not recognized. Use the real admin code, demo code 4444, or add this tech code in Team while signed in as admin.");
+    setInboxStatus("Code not recognized. Use a DDD TechAssist setup code/token, the real admin code, demo code 4444, or an emergency backup code from Team.");
     conversations = [];
     inboxSeenMessageKeys = new Set();
     inboxSeenInitialized = false;
