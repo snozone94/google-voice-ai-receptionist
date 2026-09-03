@@ -166,6 +166,8 @@ DDD_TECH_TEAM_TOKEN=private-tech-token-or-setup-code-that-can-list-the-team
 
 When `DDD_TECH_AUTH_URL` is set, staff can sign into AI Dispatch with the same TechAssist setup code/token. AI Dispatch sends that code to the WordPress endpoint and WordPress validates it with its existing hashed-token logic. When `DDD_TECH_TEAM_URL` and `DDD_TECH_TEAM_TOKEN` are set, AI Dispatch loads the live DDD roster, availability, profile phone, device name, and last-seen data for the Team tab.
 
+Customer photo uploads avoid MMS costs. Every booking gets a private `photoUploadUrl` based on the booking token. The follow-up SMS can include `{{photoUploadLink}}`, customers upload photos from their browser, and the admin call detail shows the upload link plus saved photo links.
+
 Manual `STAFF_ACCESS_CODES` remain only as emergency backup codes so the inbox still works if WordPress is down or team sync is temporarily unavailable.
 
 ## Recommended Production Shape

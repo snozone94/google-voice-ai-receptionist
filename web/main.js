@@ -341,7 +341,7 @@ function applySettings(settings) {
   smsFollowUpToggle.checked = settings.smsFollowUp?.enabled !== false;
   smsFollowUpMessageInput.value =
     settings.smsFollowUp?.message ||
-    "Thanks for calling DDD. Your request was received: {{link}}. iPhone users: open the DDD Mobile app link and log in with the same phone number used for booking. Non-iPhone users: log in at {{webLoginLink}} with the same phone number to see booking updates. Reply here if anything changes. Reply STOP to stop.";
+    "Thanks for calling DDD. Your request was received: {{link}}. Add photos if needed: {{photoUploadLink}}. iPhone users: open DDD Mobile and log in with this phone number. Non-iPhone users: log in at {{webLoginLink}}. Reply here if anything changes. Reply STOP to stop.";
   reviewFollowUpToggle.checked = settings.reviewFollowUp?.enabled !== false;
   reviewFollowUpUrlInput.value = settings.reviewFollowUp?.url || "https://g.page/r/CfVinSqxHOIDEAE/review";
   reviewFollowUpMessageInput.value =
@@ -1838,6 +1838,10 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function escapeAttribute(value) {
+  return escapeHtml(value || "");
+}
+
 async function refreshInbox() {
   saveAccessCode();
   localStorage.setItem("dddStaffName", staffNameInput.value.trim());
@@ -2330,21 +2334,36 @@ function renderRelatedRecords(title, records = []) {
       <strong>${escapeHtml(title)}</strong>
       ${records
         .map(
-          (record) => `
-            <p>${escapeHtml(
-              [
-                record.name || record.phone || "Customer",
-                record.serviceType || record.reason || "",
-                record.location || "",
-                record.vehicleColor ? `Color: ${record.vehicleColor}` : "",
-                record.vehicle ? `Vehicle: ${record.vehicle}` : "",
-                record.preferredTime || "",
-                record.status || ""
-              ]
-                .filter(Boolean)
-                .join(" · ")
-            )}</p>
-          `
+          (record) => {
+            const photoCount = Number(record.photoCount || record.photos?.length || 0);
+            const links = [
+              record.customerStatusUrl ? `<a href="${escapeAttribute(record.customerStatusUrl)}" target="_blank" rel="noreferrer">Status</a>` : "",
+              record.customerLocationUrl ? `<a href="${escapeAttribute(record.customerLocationUrl)}" target="_blank" rel="noreferrer">Location</a>` : "",
+              record.photoUploadUrl ? `<a href="${escapeAttribute(record.photoUploadUrl)}" target="_blank" rel="noreferrer">Upload photos</a>` : "",
+              ...((record.photos || []).slice(-6).map((photo, index) =>
+                photo.url ? `<a href="${escapeAttribute(photo.url)}" target="_blank" rel="noreferrer">Photo ${index + 1}</a>` : ""
+              ))
+            ].filter(Boolean);
+            return `
+              <div class="related-record">
+                <p>${escapeHtml(
+                  [
+                    record.name || record.phone || "Customer",
+                    record.serviceType || record.reason || "",
+                    record.location || "",
+                    record.vehicleColor ? `Color: ${record.vehicleColor}` : "",
+                    record.vehicle ? `Vehicle: ${record.vehicle}` : "",
+                    photoCount ? `${photoCount} photo${photoCount === 1 ? "" : "s"}` : "",
+                    record.preferredTime || "",
+                    record.status || ""
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+                )}</p>
+                ${links.length ? `<div class="record-links">${links.join("")}</div>` : ""}
+              </div>
+            `;
+          }
         )
         .join("")}
     </div>

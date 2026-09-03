@@ -19,6 +19,7 @@ import {
   loadReceptionistSettings,
   loadBusiness,
   getStorageInfo,
+  addBookingPhotos,
   getBookingStatus,
   updateBookingLocation,
   buildDryRun,
@@ -42,6 +43,7 @@ const port = Number(process.env.PORT || 8787);
 const root = path.resolve(import.meta.dirname, "..");
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, "data");
 const vapidKeysPath = path.join(dataDir, "web-push-vapid.json");
+const uploadsDir = path.join(dataDir, "customer-uploads");
 const presence = new Map();
 const appReviewPin = String(process.env.APP_REVIEW_PIN || process.env.REVIEWER_PIN || "").trim();
 const appReviewStaff = { ok: true, name: "App Review", role: "reviewer" };
@@ -1064,6 +1066,18 @@ app.get("/api/bookings/:bookingId/status", async (req, res, next) => {
         confidence: booking.confidence,
         customerLocationUrl: booking.customerLocationUrl,
         vehicle: booking.vehicle,
+        photoUploadUrl: booking.photoUploadUrl,
+        photoCount: booking.photoCount || 0,
+        photos: Array.isArray(booking.photos)
+          ? booking.photos.map((photo) => ({
+              id: photo.id,
+              createdAt: photo.createdAt,
+              originalName: photo.originalName,
+              contentType: photo.contentType,
+              sizeBytes: photo.sizeBytes,
+              url: photo.url
+            }))
+          : [],
         createdAt: booking.createdAt,
         customerStatusUrl: booking.customerStatusUrl,
         externalSync: booking.externalSync
@@ -1094,6 +1108,19 @@ app.get("/api/bookings/:bookingId/confirm-location", async (req, res, next) => {
   }
 });
 
+app.get("/api/bookings/:bookingId/photos", async (req, res, next) => {
+  try {
+    const booking = await getBookingStatus(req.params.bookingId, req.query.token || "");
+    if (!booking) {
+      res.status(404).type("html").send("<h1>Booking not found</h1><p>Please text or call DDD.</p>");
+      return;
+    }
+    res.type("html").send(photoUploadPage(booking));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/bookings/:bookingId/location", express.json(), async (req, res, next) => {
   try {
     const booking = await updateBookingLocation(req.params.bookingId, req.query.token || req.body?.token || "", req.body || {});
@@ -1111,6 +1138,36 @@ app.post("/api/bookings/:bookingId/location", express.json(), async (req, res, n
         locationConfirmedAt: booking.locationConfirmedAt,
         confidence: booking.confidence
       }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/bookings/:bookingId/photos", express.json({ limit: "24mb" }), async (req, res, next) => {
+  try {
+    const booking = await getBookingStatus(req.params.bookingId, req.query.token || req.body?.token || "");
+    if (!booking) {
+      res.status(404).json({ ok: false, error: "Booking not found." });
+      return;
+    }
+    const uploads = await saveCustomerPhotoUploads(booking, req.body?.files || []);
+    if (!uploads.length) {
+      res.status(400).json({ ok: false, error: "Choose up to 5 image files under 6 MB each." });
+      return;
+    }
+    const updated = await addBookingPhotos(req.params.bookingId, req.query.token || req.body?.token || "", uploads);
+    res.status(201).json({
+      ok: true,
+      photoCount: updated?.photoCount || uploads.length,
+      photos: uploads.map((photo) => ({
+        id: photo.id,
+        createdAt: photo.createdAt,
+        originalName: photo.originalName,
+        contentType: photo.contentType,
+        sizeBytes: photo.sizeBytes,
+        url: photo.url
+      }))
     });
   } catch (error) {
     next(error);
@@ -1853,6 +1910,7 @@ function escapeXml(value) {
     .replace(/"/g, "&quot;");
 }
 
+app.use("/customer-uploads", express.static(uploadsDir, { fallthrough: false, maxAge: "7d" }));
 app.use(express.static(new URL("../web", import.meta.url).pathname));
 
 app.use((error, _req, res, _next) => {
@@ -1958,6 +2016,173 @@ function locationPage(booking) {
     </script>
   </body>
 </html>`;
+}
+
+function photoUploadPage(booking) {
+  const safeService = escapeHtml(booking.serviceType || "DDD service request");
+  const safePhone = escapeHtml(formatPhoneForAlert(booking.phone || ""));
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Upload DDD Photos</title>
+    <style>
+      :root { font-family: Arial, sans-serif; color: #171827; }
+      body { margin: 0; min-height: 100vh; background: linear-gradient(135deg, #fff7fb, #f5fffb 46%, #f7f4ff); }
+      main { width: min(720px, calc(100vw - 28px)); margin: 22px auto; }
+      section { overflow: hidden; border: 1px solid rgba(118, 87, 255, .24); border-radius: 12px; background: rgba(255,255,255,.94); box-shadow: 0 18px 46px rgba(35, 38, 69, .12); }
+      section::before { content: ""; display: block; height: 8px; background: linear-gradient(90deg, #ff3ea5, #ff7a3d, #ffc83d, #23c779, #16b8ff, #7657ff); }
+      .wrap { display: grid; gap: 16px; padding: 22px; }
+      .eyebrow { margin: 0; color: #a81586; font-size: 12px; font-weight: 900; text-transform: uppercase; }
+      h1 { margin: 0; font-size: clamp(30px, 8vw, 46px); line-height: 1.04; }
+      p { margin: 0; color: #5f6477; line-height: 1.45; }
+      .request { display: grid; gap: 5px; border: 1px solid #ece8f8; border-radius: 10px; padding: 13px; background: #fbfaff; }
+      label { display: grid; gap: 8px; font-weight: 900; }
+      input, textarea { width: 100%; box-sizing: border-box; border: 1px solid #d9d3ee; border-radius: 8px; padding: 13px; font: inherit; background: white; }
+      textarea { min-height: 90px; resize: vertical; }
+      button { min-height: 48px; border: 0; border-radius: 9px; padding: 0 16px; background: linear-gradient(90deg, #7657ff, #ff3ea5, #ff7a3d); color: white; font: inherit; font-weight: 900; cursor: pointer; }
+      button:disabled { opacity: .55; cursor: wait; }
+      #preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+      #preview img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; border: 1px solid #ece8f8; }
+      #status { min-height: 24px; font-weight: 900; color: #12824d; }
+      .fine { font-size: 13px; color: #6f7487; }
+      @media (max-width: 560px) { main { margin: 12px auto; } .wrap { padding: 16px; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <div class="wrap">
+          <p class="eyebrow">DDD photo upload</p>
+          <h1>Add service photos</h1>
+          <p>Upload pictures that help DDD confirm the issue. This keeps texting costs down and attaches the photos to your request.</p>
+          <div class="request">
+            <strong>${safeService}</strong>
+            <span>${safePhone}</span>
+          </div>
+          <label>
+            Photos
+            <input id="fileInput" type="file" accept="image/*" multiple />
+          </label>
+          <div id="preview"></div>
+          <label>
+            Optional note
+            <textarea id="noteInput" maxlength="400" placeholder="Anything DDD should notice in these pictures?"></textarea>
+          </label>
+          <button id="uploadButton" type="button">Upload photos</button>
+          <p id="status"></p>
+          <p class="fine">Please do not upload payment cards, IDs, or anything private unless DDD specifically asks for it.</p>
+        </div>
+      </section>
+    </main>
+    <script>
+      const bookingId = ${JSON.stringify(booking.bookingId || "")};
+      const token = ${JSON.stringify(booking.statusToken || "")};
+      const input = document.querySelector("#fileInput");
+      const noteInput = document.querySelector("#noteInput");
+      const preview = document.querySelector("#preview");
+      const status = document.querySelector("#status");
+      const uploadButton = document.querySelector("#uploadButton");
+      input.addEventListener("change", () => {
+        preview.innerHTML = "";
+        [...input.files].slice(0, 5).forEach((file) => {
+          const image = document.createElement("img");
+          image.alt = file.name;
+          image.src = URL.createObjectURL(file);
+          preview.append(image);
+        });
+      });
+      uploadButton.addEventListener("click", async () => {
+        const files = [...input.files].slice(0, 5);
+        if (!files.length) {
+          status.textContent = "Choose at least one photo first.";
+          return;
+        }
+        uploadButton.disabled = true;
+        status.textContent = "Preparing photos...";
+        try {
+          const encoded = await Promise.all(files.map((file) => new Promise((resolve, reject) => {
+            if (file.size > 6 * 1024 * 1024) {
+              reject(new Error(file.name + " is over 6 MB."));
+              return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => resolve({ name: file.name, type: file.type, dataUrl: reader.result, note: noteInput.value });
+            reader.onerror = () => reject(new Error("Could not read " + file.name));
+            reader.readAsDataURL(file);
+          })));
+          status.textContent = "Uploading...";
+          const response = await fetch("/api/bookings/" + encodeURIComponent(bookingId) + "/photos?token=" + encodeURIComponent(token), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ files: encoded })
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload.error || "Could not upload photos.");
+          status.textContent = "Uploaded. DDD has your photos.";
+          input.value = "";
+        } catch (error) {
+          status.textContent = error.message || "Could not upload photos. Please text or call DDD.";
+        } finally {
+          uploadButton.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>`;
+}
+
+async function saveCustomerPhotoUploads(booking, files = []) {
+  const safeBookingId = safeFileSegment(booking.bookingId || "booking");
+  const targetDir = path.join(uploadsDir, safeBookingId);
+  await fs.mkdir(targetDir, { recursive: true });
+  const uploads = [];
+  for (const file of files.slice(0, 5)) {
+    const dataUrl = String(file?.dataUrl || "");
+    const match = dataUrl.match(/^data:(image\/(?:png|jpe?g|webp|heic|heif));base64,([A-Za-z0-9+/=]+)$/i);
+    if (!match) continue;
+    const buffer = Buffer.from(match[2], "base64");
+    if (!buffer.length || buffer.length > 6 * 1024 * 1024) continue;
+    const contentType = match[1].toLowerCase().replace("image/jpg", "image/jpeg");
+    const ext = photoExtension(contentType);
+    const id = crypto.randomUUID();
+    const fileName = `${id}.${ext}`;
+    await fs.writeFile(path.join(targetDir, fileName), buffer);
+    uploads.push({
+      id,
+      createdAt: new Date().toISOString(),
+      bookingId: booking.bookingId,
+      phone: booking.phone || "",
+      originalName: safeDisplayText(file?.name || `photo.${ext}`, 120),
+      note: safeDisplayText(file?.note || "", 400),
+      contentType,
+      sizeBytes: buffer.length,
+      url: `/customer-uploads/${encodeURIComponent(safeBookingId)}/${encodeURIComponent(fileName)}`
+    });
+  }
+  return uploads;
+}
+
+function safeFileSegment(value = "") {
+  return String(value || "")
+    .replace(/[^a-z0-9_-]/gi, "_")
+    .slice(0, 120) || "booking";
+}
+
+function safeDisplayText(value = "", limit = 200) {
+  return String(value || "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, limit);
+}
+
+function photoExtension(contentType = "") {
+  if (/png/i.test(contentType)) return "png";
+  if (/webp/i.test(contentType)) return "webp";
+  if (/hei[cf]/i.test(contentType)) return "heic";
+  return "jpg";
 }
 
 function bookingPage() {

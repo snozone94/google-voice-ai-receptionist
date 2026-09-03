@@ -23,6 +23,7 @@
 - [x] Admin call log with intake, recordings, transcripts, and call details.
 - [x] Shared inbox with separate staff codes, replies, typing, and status.
 - [x] Shared inbox can validate DDD Platform/TechAssist setup codes/tokens when configured, with local backup codes as emergency fallback.
+- [x] Cheap customer photo upload link for bookings so customers can upload pictures by secure browser link instead of paid MMS.
 - [x] QA dashboard with health checks and recent issue visibility.
 - [ ] Add a true end-to-end simulated call tester that scores the AI response against the QA checklist.
 - [ ] Add call outcome tags that staff can manually correct after a call.

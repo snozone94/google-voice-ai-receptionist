@@ -45,7 +45,7 @@ const defaultHumanHandoffRules =
 const defaultApplyInstructions =
   "For work, contractor, technician, or job-interest calls, collect name, phone, email, role or service type, experience, and location, then direct them to the DDD apply to work link.";
 const defaultSmsFollowUpText =
-  "Thanks for calling {{business}}. Your request was received: {{link}}. iPhone users: open the DDD Mobile app link and log in with the same phone number used for booking. Non-iPhone users: log in at {{webLoginLink}} with the same phone number to see booking updates. Reply here if anything changes. Reply STOP to stop.";
+  "Thanks for calling {{business}}. Your request was received: {{link}}. Add photos if needed: {{photoUploadLink}}. iPhone users: open DDD Mobile and log in with this phone number. Non-iPhone users: log in at {{webLoginLink}}. Reply here if anything changes. Reply STOP to stop.";
 const defaultReviewFollowUpUrl = "https://g.page/r/CfVinSqxHOIDEAE/review";
 const defaultReviewFollowUpText =
   "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}";
@@ -819,6 +819,29 @@ export async function updateBookingLocation(bookingId, token, locationUpdate = {
     longitude: cleanText(locationUpdate.longitude || locationUpdate.lng || existing.longitude || "", "", 80),
     locationConfirmedAt: new Date().toISOString(),
     locationSource: cleanText(locationUpdate.source || "customer_location_page", "customer_location_page", 80)
+  };
+  next.confidence = calculateBookingConfidence(next);
+  records[index] = next;
+  await fs.writeFile(bookingsPath, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
+  return next;
+}
+
+export async function addBookingPhotos(bookingId, token, uploads = []) {
+  if (!bookingId || !token || !Array.isArray(uploads)) return null;
+  await ensureDataDir();
+  const records = await listRecords(bookingsPath, 5000);
+  const index = records.findIndex((booking) => booking.bookingId === bookingId && booking.statusToken === token);
+  if (index < 0) return null;
+  const existing = records[index];
+  const currentPhotos = Array.isArray(existing.photos) ? existing.photos : [];
+  const nextPhotos = [...currentPhotos, ...uploads]
+    .filter((photo) => photo && photo.url)
+    .slice(-30);
+  const next = {
+    ...existing,
+    photos: nextPhotos,
+    photoCount: nextPhotos.length,
+    photosUpdatedAt: new Date().toISOString()
   };
   next.confidence = calculateBookingConfidence(next);
   records[index] = next;
@@ -1731,6 +1754,10 @@ function normalizeBookingRecord(booking = {}) {
     publicBaseUrl && !publicBaseUrl.includes("your-domain")
       ? `${publicBaseUrl.replace(/\/$/, "")}/api/bookings/${encodeURIComponent(bookingId)}/confirm-location?token=${encodeURIComponent(statusToken)}`
       : "";
+  const photoUploadUrl =
+    publicBaseUrl && !publicBaseUrl.includes("your-domain")
+      ? `${publicBaseUrl.replace(/\/$/, "")}/api/bookings/${encodeURIComponent(bookingId)}/photos?token=${encodeURIComponent(statusToken)}`
+      : "";
 
   return {
     createdAt,
@@ -1763,6 +1790,9 @@ function normalizeBookingRecord(booking = {}) {
     smsConsent: booking.smsConsent === true,
     customerStatusUrl,
     customerLocationUrl,
+    photoUploadUrl,
+    photos: Array.isArray(booking.photos) ? booking.photos : [],
+    photoCount: Array.isArray(booking.photos) ? booking.photos.length : 0,
     externalSync: { ok: false, skipped: true, reason: "Not attempted yet." }
   };
 }
@@ -2328,7 +2358,7 @@ async function sendOptionalSmsFollowUp(record, type) {
     `${record.reason || ""} ${record.serviceType || ""} ${record.nextStep || ""}`
   );
   const followUpDestination = destination;
-  const message = renderSmsTemplate(settings.smsFollowUp.message, followUpDestination, settings);
+  const message = renderSmsTemplate(settings.smsFollowUp.message, followUpDestination, settings, record);
   const delivery = await sendConfiguredSms(record.phone, message);
   await postOptionalWebhook(process.env.SMS_FOLLOWUP_WEBHOOK_URL, {
     type,
@@ -2340,14 +2370,16 @@ async function sendOptionalSmsFollowUp(record, type) {
   });
 }
 
-function renderSmsTemplate(template, destination, settings = {}) {
+function renderSmsTemplate(template, destination, settings = {}, record = {}) {
   const fallbackLink = destination?.url || process.env.BOOKING_URL || "";
   const reviewLink = settings.reviewFollowUp?.url || defaultReviewFollowUpUrl;
   const webLoginLink = process.env.DDD_WEB_LOGIN_URL || "https://dddcincy.com/login";
+  const photoUploadLink = record.photoUploadUrl || record.customerStatusUrl || fallbackLink;
   return appendSmsCompliance(String(template || defaultSmsFollowUpText)
     .replaceAll("{{link}}", fallbackLink)
     .replaceAll("{{webLoginLink}}", webLoginLink)
     .replaceAll("{{reviewLink}}", reviewLink)
+    .replaceAll("{{photoUploadLink}}", photoUploadLink)
     .replaceAll("{{business}}", "DDD")
     .replace(/\s+/g, " ")
     .trim());
