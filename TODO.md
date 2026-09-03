@@ -33,7 +33,7 @@
 - [ ] Publish the branded `dddcincy.com` upload page/redirect in WordPress and set `DDD_PHOTO_UPLOAD_BASE_URL` live.
 - [ ] Add/confirm the DDD Platform endpoint that accepts uploaded booking photo metadata.
 - [ ] Add/confirm the DDD Platform customer-history endpoint for vehicles, oil type, oil quantity, and repeat jobs.
-- [ ] Add missed-call automatic SMS: "Sorry we missed you, here is the best DDD link..."
+- [x] Add missed-call automatic SMS: "Sorry we missed you, here is the best DDD link..."
 - [ ] Add optional referral/directory page for services DDD does not do, such as towing, heavy mechanical jobs, body work, glass, paint, impound, or tire sales.
 - [ ] Add optional referral/directory SMS automation once the referral URL and wording are approved.
 - [ ] Add human transfer/handoff once the exact live transfer numbers are approved and saved.

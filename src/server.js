@@ -282,7 +282,10 @@ app.get("/api/setup-status", async (_req, res, next) => {
     const recommended = {
       humanRouting: Boolean(settings.humanRouting?.numbers?.length),
       callRecording: Boolean(process.env.PUBLIC_BASE_URL && (process.env.TWILIO_AUTH_TOKEN || process.env.TWILIO_SMS_WEBHOOK_SECRET)),
-      wideLanguageListening: true
+      wideLanguageListening: true,
+      brandedPhotoUpload: Boolean(process.env.DDD_PHOTO_UPLOAD_BASE_URL),
+      platformPhotoSync: Boolean(process.env.DDD_PHOTO_UPLOAD_WEBHOOK_URL || process.env.DDD_PHOTO_WEBHOOK_URL),
+      platformCustomerHistory: Boolean(process.env.DDD_CUSTOMER_HISTORY_URL)
     };
 
     res.json({
@@ -302,7 +305,10 @@ app.get("/api/setup-status", async (_req, res, next) => {
       recordingCallbackUrl:
         process.env.PUBLIC_BASE_URL && !process.env.PUBLIC_BASE_URL.includes("your-domain")
           ? `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/twilio/recording`
-          : ""
+          : "",
+      brandedPhotoUploadUrl: process.env.DDD_PHOTO_UPLOAD_BASE_URL || "",
+      platformPhotoSyncUrl: process.env.DDD_PHOTO_UPLOAD_WEBHOOK_URL || process.env.DDD_PHOTO_WEBHOOK_URL || "",
+      platformCustomerHistoryUrl: process.env.DDD_CUSTOMER_HISTORY_URL || ""
     });
   } catch (error) {
     next(error);
@@ -840,6 +846,7 @@ app.post("/api/twilio/call-status", express.urlencoded({ extended: false }), asy
         body: `${formatPhoneForAlert(req.body.From || "")} ended as ${status || "missed"}.`,
         data: { type: "missed-call", status, from: req.body.From || "" }
       });
+      await sendMissedCallSms(req.body.From || "", status);
     }
     res.type("text/xml").send("<Response></Response>");
   } catch (error) {
@@ -1574,8 +1581,8 @@ async function getStaffDirectory() {
     .map((entry) => ({ ...entry, role: "backup", active: true, source: "manual" }));
   const platformTeam = await fetchDddPlatformTeam();
   if (platformTeam.team.length) return { source: "ddd-platform", team: dedupeTeam(platformTeam.team) };
-  if (manualCodes.length) return { source: "manual", team };
-  return { source: platformTeam.configured ? "ddd-platform-empty" : "unconfigured", team };
+  if (manualCodes.length) return { source: "manual", team: manualCodes };
+  return { source: platformTeam.configured ? "ddd-platform-empty" : "unconfigured", team: [] };
 }
 
 async function fetchDddPlatformTeam() {
@@ -1785,6 +1792,34 @@ async function sendTwilioSms(to, message) {
     to: payload.to,
     from: payload.from
   };
+}
+
+async function sendMissedCallSms(to, status = "") {
+  const normalizedTo = normalizeE164(to);
+  if (!normalizedTo || process.env.MISSED_CALL_SMS_ENABLED === "false") return;
+  const bookingUrl = process.env.BOOKING_URL || "https://dddcincy.com/book-service/";
+  const message = appendStopFooter(
+    process.env.MISSED_CALL_SMS_MESSAGE ||
+      `Sorry we missed your DDD call. You can reply here with what you need, or book service here: ${bookingUrl}`
+  );
+  const delivery = await sendTwilioSms(normalizedTo, message);
+  await saveOutgoingSms({
+    to: normalizedTo,
+    from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
+    body: message,
+    messageSid: delivery.sid || "",
+    status: delivery.status || (delivery.ok ? "sent" : "failed"),
+    agentName: "Missed-call fallback",
+    source: "missed_call",
+    reason: status
+  });
+}
+
+function appendStopFooter(message = "") {
+  const cleaned = String(message || "").replace(/\s+/g, " ").trim();
+  if (!cleaned) return "";
+  if (/\breply stop\b|text stop/i.test(cleaned)) return cleaned;
+  return `${cleaned.slice(0, 980).trim()} Reply STOP to stop.`;
 }
 
 async function startTwilioBridgeCall(staffPhone, customerPhone, requestedCallerId = "") {

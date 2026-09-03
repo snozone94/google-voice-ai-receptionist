@@ -175,7 +175,24 @@ Use `DDD_PHOTO_UPLOAD_BASE_URL` when the customer-facing upload link should show
 
 Use `DDD_CUSTOMER_HISTORY_URL` when the DDD Platform exposes a phone lookup endpoint for prior jobs, vehicles, oil type, oil quantity, and repeat services. AI Dispatch will merge that platform history with local AI Dispatch bookings so returning customers can be recognized during intake.
 
+The included WordPress bridge plugin at `wordpress/ddd-ai-dispatch-bridge.php` creates the branded `customer-photo-upload` page and adds:
+
+```text
+GET  /wp-json/ddd/v1/customer-history
+POST /wp-json/ddd/v1/ai-booking-photos
+```
+
+After installing that bridge on `dddcincy.com`, set these Render env vars:
+
+```text
+DDD_PHOTO_UPLOAD_BASE_URL=https://dddcincy.com/customer-photo-upload/
+DDD_PHOTO_UPLOAD_WEBHOOK_URL=https://dddcincy.com/wp-json/ddd/v1/ai-booking-photos
+DDD_CUSTOMER_HISTORY_URL=https://dddcincy.com/wp-json/ddd/v1/customer-history
+```
+
 Manual `STAFF_ACCESS_CODES` remain only as emergency backup codes so the inbox still works if WordPress is down or team sync is temporarily unavailable.
+
+Missed/busy/no-answer calls can trigger an automatic fallback text through Twilio. It is on by default when Twilio SMS is configured. Set `MISSED_CALL_SMS_ENABLED=false` to disable it or `MISSED_CALL_SMS_MESSAGE` to customize the wording. STOP language is appended automatically.
 
 ## Recommended Production Shape
 
