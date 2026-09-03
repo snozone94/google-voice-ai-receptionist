@@ -257,26 +257,35 @@ app.get("/support", (_req, res) => {
 app.get("/api/setup-status", async (_req, res, next) => {
   try {
     const settings = await loadReceptionistSettings();
+    const twilioSmsReady = Boolean(
+      process.env.TWILIO_ACCOUNT_SID &&
+        process.env.TWILIO_AUTH_TOKEN &&
+        normalizeE164(process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER)
+    );
     const required = {
       openAIKey: Boolean(process.env.OPENAI_API_KEY),
       publicBaseUrl: Boolean(process.env.PUBLIC_BASE_URL && !process.env.PUBLIC_BASE_URL.includes("your-domain")),
       webhookSecret: Boolean(process.env.OPENAI_WEBHOOK_SECRET),
       googleVoiceNumber: Boolean(process.env.GOOGLE_VOICE_NUMBER),
       aiForwardingNumber: Boolean(process.env.AI_FORWARDING_NUMBER),
-      humanRouting: Boolean(settings.humanRouting?.numbers?.length),
       persistentStorage: getStorageInfo().persistent,
       platformTechAuth: Boolean(dddPlatformAuthUrl()),
       platformTeamSync: Boolean(process.env.DDD_TECH_TEAM_URL && process.env.DDD_TECH_TEAM_TOKEN),
       smsDelivery: Boolean(
-        process.env.SMS_FOLLOWUP_WEBHOOK_URL ||
+        twilioSmsReady ||
+          process.env.SMS_FOLLOWUP_WEBHOOK_URL ||
           process.env.TWILIO_SMS_WEBHOOK_SECRET ||
           (process.env.VOIPMS_API_USERNAME && process.env.VOIPMS_API_PASSWORD && process.env.VOIPMS_SMS_DID)
       )
+    };
+    const recommended = {
+      humanRouting: Boolean(settings.humanRouting?.numbers?.length)
     };
 
     res.json({
       ok: Object.values(required).every(Boolean),
       required,
+      recommended,
       googleVoiceNumber: process.env.GOOGLE_VOICE_NUMBER || "",
       aiForwardingNumber: process.env.AI_FORWARDING_NUMBER || "",
       webhookUrl:
