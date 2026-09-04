@@ -109,8 +109,23 @@ function ddd_ai_dispatch_auth(WP_REST_Request $request) {
     if ($team_token && hash_equals((string) $team_token, (string) $provided_token)) {
         return true;
     }
+    if ($provided_token && ddd_ai_dispatch_platform_token_is_valid($provided_token)) {
+        return true;
+    }
 
     return new WP_Error('rest_forbidden', 'DDD AI Dispatch bridge access denied.', ['status' => 401]);
+}
+
+function ddd_ai_dispatch_platform_token_is_valid($token) {
+    $request = new WP_REST_Request('GET', '/ddd/v1/techs');
+    $request->set_header('x-ddd-tech-token', (string) $token);
+    $response = rest_do_request($request);
+
+    if ($response->is_error()) {
+        return false;
+    }
+
+    return (int) $response->get_status() < 400;
 }
 
 function ddd_ai_dispatch_customer_history(WP_REST_Request $request) {
