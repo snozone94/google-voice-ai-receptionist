@@ -437,6 +437,55 @@ button:hover:not(:disabled) {
   transform: translateY(-1px);
 }
 
+.sticky-access-bar {
+  position: sticky;
+  top: 74px;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin: 10px 0 14px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.76)) padding-box,
+    linear-gradient(90deg, #ff3ea5, #ff7a3d, #ffc83d, #23c779, #16b8ff, #7657ff) border-box;
+  box-shadow: 0 14px 34px rgba(118, 87, 255, 0.15);
+  backdrop-filter: blur(18px);
+}
+
+.sticky-access-bar label {
+  display: grid;
+  gap: 4px;
+  color: #676a83;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.sticky-access-bar input {
+  min-height: 38px;
+  border-radius: 8px;
+  font-size: 0.92rem;
+}
+
+.sticky-access-bar p {
+  margin: 0;
+  color: #282a43;
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.sticky-access-bar button {
+  min-height: 38px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 0.86rem;
+}
+
 .tab-panel {
   display: none;
 }
@@ -2405,6 +2454,27 @@ li.missing {
 }
 
 @media (max-width: 680px) {
+  .sticky-access-bar {
+    top: 70px;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    border-radius: 14px;
+    padding: 8px;
+  }
+
+  .sticky-access-bar label {
+    grid-column: 1 / -1;
+  }
+
+  .sticky-access-bar p {
+    font-size: 0.78rem;
+  }
+
+  .sticky-access-bar button {
+    min-width: 88px;
+    padding: 0 12px;
+  }
+
   .numbers,
   .activity,
   .activity-overview,

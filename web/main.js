@@ -31,6 +31,9 @@ const insightCards = {
 const setupList = document.querySelector("#setupList");
 const webhookUrl = document.querySelector("#webhookUrl");
 const adminPinInput = document.querySelector("#adminPinInput");
+const stickyAccessCodeInput = document.querySelector("#stickyAccessCodeInput");
+const stickyLoginButton = document.querySelector("#stickyLoginButton");
+const stickyAccessSessionStatus = document.querySelector("#stickyAccessSessionStatus");
 const enabledToggle = document.querySelector("#enabledToggle");
 const humanRouteModeSelect = document.querySelector("#humanRouteModeSelect");
 const humanRouteTimeoutInput = document.querySelector("#humanRouteTimeoutInput");
@@ -176,6 +179,7 @@ let accessCheckPromise = null;
 
 const savedAccessCode = localStorage.getItem("dddAccessCode") || localStorage.getItem("dddAdminPin") || localStorage.getItem("dddStaffCode") || localStorage.getItem("dddStaffPin") || "";
 adminPinInput.value = savedAccessCode;
+if (stickyAccessCodeInput) stickyAccessCodeInput.value = savedAccessCode;
 staffPinInput.value = "";
 staffNameInput.value = localStorage.getItem("dddStaffName") || "";
 staffStatusSelect.value = normalizeStaffStatus(localStorage.getItem("dddStaffStatus"));
@@ -1382,11 +1386,20 @@ function staffHeaders() {
 }
 
 function accessCodeValue() {
-  return (adminPinInput.value || staffPinInput.value || "").trim();
+  const focusedStickyCode = document.activeElement === stickyAccessCodeInput ? stickyAccessCodeInput?.value : "";
+  const focusedMainCode = document.activeElement === adminPinInput ? adminPinInput?.value : "";
+  return (focusedStickyCode || focusedMainCode || adminPinInput.value || stickyAccessCodeInput?.value || staffPinInput.value || "").trim();
+}
+
+function syncAccessInputs(sourceInput = null) {
+  const code = (sourceInput?.value || accessCodeValue()).trim();
+  if (adminPinInput && adminPinInput !== sourceInput) adminPinInput.value = code;
+  if (stickyAccessCodeInput && stickyAccessCodeInput !== sourceInput) stickyAccessCodeInput.value = code;
+  return code;
 }
 
 function saveAccessCode() {
-  const code = accessCodeValue();
+  const code = syncAccessInputs();
   localStorage.setItem("dddAccessCode", code);
   localStorage.setItem("dddAdminPin", code);
   localStorage.setItem("dddStaffCode", code);
@@ -1424,16 +1437,18 @@ function updateSignedInUi() {
   const role = signedInStaff?.role || "";
   document.body.dataset.access = verified ? role || "staff" : "locked";
   if (inboxLoginButton) inboxLoginButton.textContent = verified ? "Signed in" : "Open inbox";
-  if (accessSessionStatus) {
-    if (!accessCodeValue()) {
-      accessSessionStatus.textContent = "Enter a code to unlock your workspace.";
-    } else if (!verified) {
-      accessSessionStatus.textContent = "Code saved on this device. Not verified yet.";
-    } else if (role === "admin") {
-      accessSessionStatus.textContent = `Admin signed in as ${signedInStaff.name || "Brianna"}. All admin tabs are unlocked.`;
-    } else {
-      accessSessionStatus.textContent = `${signedInStaff.name || "DDD team"} signed in. Inbox, team, callbacks, and alerts are unlocked.`;
-    }
+  if (stickyLoginButton) stickyLoginButton.textContent = verified ? "Signed in" : "Sign in";
+  let message = "Enter a code to unlock your workspace.";
+  if (accessCodeValue() && !verified) {
+    message = "Code saved here. Tap Sign in to verify across every tab.";
+  } else if (verified && role === "admin") {
+    message = `Admin signed in as ${signedInStaff.name || "Brianna"}. All admin tabs are unlocked.`;
+  } else if (verified) {
+    message = `${signedInStaff.name || "DDD team"} signed in. Inbox, team, callbacks, and alerts are unlocked.`;
+  }
+  if (accessSessionStatus) accessSessionStatus.textContent = message;
+  if (stickyAccessSessionStatus) {
+    stickyAccessSessionStatus.textContent = message;
   }
   if (settingsStatus && verified && role !== "admin") {
     settingsStatus.textContent = "Signed in for inbox. Admin code unlocks settings, calls, insights, QA.";
@@ -2154,6 +2169,13 @@ inboxLoginButton?.addEventListener("click", async () => {
   sendPresence().catch(() => {});
 });
 
+stickyLoginButton?.addEventListener("click", async () => {
+  const staff = await verifyAccessCode({ quiet: false, refresh: true });
+  if (staff?.role !== "admin" && ["calls", "insights", "qa"].some((tab) => tabPanels.find((panel) => panel.dataset.tabPanel === tab)?.classList.contains("active"))) {
+    setInboxStatus("Tech code is signed in. Use the admin code for Calls, Insights, and QA.");
+  }
+});
+
 refreshInboxPanelButton?.addEventListener("click", () => {
   refreshInbox().catch((error) => setInboxStatus(error.message));
   sendPresence().catch(() => {});
@@ -2171,14 +2193,30 @@ addStaffCodeButton?.addEventListener("click", () => {
   updateSaveControls("New tech row added. Enter a name and code, then Save changes.");
 });
 
+function handleAccessInputChange(sourceInput) {
+  syncAccessInputs(sourceInput);
+  saveAccessCode();
+  queueStaffRefresh();
+}
+
 adminPinInput.addEventListener("change", async () => {
+  syncAccessInputs(adminPinInput);
   saveAccessCode();
   await verifyAccessCode({ quiet: false, refresh: true });
 });
 
 adminPinInput.addEventListener("input", () => {
+  handleAccessInputChange(adminPinInput);
+});
+
+stickyAccessCodeInput?.addEventListener("change", async () => {
+  syncAccessInputs(stickyAccessCodeInput);
   saveAccessCode();
-  queueStaffRefresh();
+  await verifyAccessCode({ quiet: false, refresh: true });
+});
+
+stickyAccessCodeInput?.addEventListener("input", () => {
+  handleAccessInputChange(stickyAccessCodeInput);
 });
 
 staffNameInput.addEventListener("change", () => {
