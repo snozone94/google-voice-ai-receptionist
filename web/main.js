@@ -1444,6 +1444,15 @@ function setWebPushStatus(message) {
   if (webPushStatus) webPushStatus.textContent = message;
 }
 
+function describeWebPushSupport() {
+  if (!("Notification" in window)) return "Notifications are not available in this browser.";
+  if (!("serviceWorker" in navigator)) return "Service workers are not available in this browser.";
+  if (!("PushManager" in window)) return "Push alerts are not available in this browser.";
+  if (Notification.permission === "denied") return "Chrome is blocking notifications for this site. Open site settings and change Notifications to Allow.";
+  if (Notification.permission === "granted") return "Chrome permission is allowed on this device.";
+  return "Chrome has not been allowed yet. Tap Enable browser alerts and choose Allow.";
+}
+
 async function getNotificationRegistration() {
   if (!("serviceWorker" in navigator)) return null;
   const registration = await navigator.serviceWorker.register("/sw.js");
@@ -1452,7 +1461,12 @@ async function getNotificationRegistration() {
 }
 
 async function showLocalWebNotification(title, body, data = {}) {
-  if (!("Notification" in window) || Notification.permission !== "granted") return false;
+  if (!("Notification" in window)) return false;
+  if (Notification.permission === "default") {
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") return false;
+  }
+  if (Notification.permission !== "granted") return false;
   const options = {
     body,
     icon: "/assets/ddd-ai-dispatch-logo.png",
@@ -1507,7 +1521,7 @@ function isStandaloneWebApp() {
 function updateWebPushAvailabilityStatus() {
   if (!webPushStatus) return;
   if (!("Notification" in window)) {
-    setWebPushStatus("This browser does not support notifications. Use the iPhone app for native push.");
+    setWebPushStatus(`${describeWebPushSupport()} Use the iPhone app for native push.`);
     return;
   }
   if (isIosBrowser() && !isStandaloneWebApp()) {
@@ -1515,10 +1529,10 @@ function updateWebPushAvailabilityStatus() {
     return;
   }
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-    setWebPushStatus("This browser cannot receive web push alerts. Use the iOS app for native push.");
+    setWebPushStatus(`${describeWebPushSupport()} Use the iOS app for native push.`);
     return;
   }
-  setWebPushStatus(Notification.permission === "granted" ? "Browser permission is on. Tap Send test alert." : "Tap Enable browser alerts, then allow notifications.");
+  setWebPushStatus(describeWebPushSupport());
 }
 
 async function enableWebPushNotifications() {
@@ -1539,9 +1553,10 @@ async function enableWebPushNotifications() {
     setWebPushStatus("Asking this browser for notification permission...");
     const permission = await Notification.requestPermission();
     if (permission !== "granted") {
-      setWebPushStatus("Notifications were not allowed on this browser.");
+      setWebPushStatus(describeWebPushSupport());
       return;
     }
+    const showedLocal = await showLocalWebNotification("DDD AI Dispatch test", "Chrome alerts are allowed on this device.");
 
     const keyResponse = await fetch("/api/web-push/public-key");
     const keyPayload = await keyResponse.json();
@@ -1566,8 +1581,7 @@ async function enableWebPushNotifications() {
     if (!response.ok) {
       throw new Error(response.status === 403 ? "Use your real admin or tech access code. Demo code cannot enable live alerts." : payload.error || "Could not save this browser for alerts.");
     }
-    await showLocalWebNotification("DDD AI Dispatch test", "Browser alerts are allowed on this device.");
-    setWebPushStatus("Browser alerts are connected here. If you saw the native pop-up, this device is ready.");
+    setWebPushStatus(showedLocal ? "Chrome alerts are connected here. This device is ready." : "Saved this browser, but Chrome did not show the local alert. Check Chrome and macOS notification settings.");
   } catch (error) {
     setWebPushStatus(error.message);
   }
@@ -1579,7 +1593,8 @@ async function sendWebPushTest() {
       setWebPushStatus("Enter your access code at the top first.");
       return;
     }
-    setWebPushStatus("Sending test alert...");
+    setWebPushStatus("Showing local alert and sending server test...");
+    const showedLocal = await showLocalWebNotification("DDD AI Dispatch test", "This device can show native browser alerts.");
     const response = await fetch("/api/push/test", {
       method: "POST",
       headers: {
@@ -1592,9 +1607,8 @@ async function sendWebPushTest() {
     if (!response.ok) {
       throw new Error(response.status === 403 ? "Use your real admin or tech access code. Demo code cannot send live alerts." : payload.error || "Could not send test alert.");
     }
-    const showedLocal = await showLocalWebNotification("DDD AI Dispatch test", "This device can show native browser alerts.");
     if (payload.sent) {
-      setWebPushStatus(`Test alert sent to ${payload.sent} device${payload.sent === 1 ? "" : "s"}.`);
+      setWebPushStatus(showedLocal ? `Local alert shown. Server test sent to ${payload.sent} saved device${payload.sent === 1 ? "" : "s"}.` : `Server test sent to ${payload.sent} device${payload.sent === 1 ? "" : "s"}, but this browser did not show a local alert.`);
       return;
     }
     setWebPushStatus(showedLocal ? "This device showed a native alert, but no saved push devices were found yet. Tap Enable browser alerts once." : "No devices are registered yet.");
