@@ -117,6 +117,7 @@ const editSettingsButton = document.querySelector("#editSettingsButton");
 const settingsStatus = document.querySelector("#settingsStatus");
 const refreshInboxButton = document.querySelector("#refreshInboxButton");
 const inboxLoginButton = document.querySelector("#inboxLoginButton");
+const accessSessionStatus = document.querySelector("#accessSessionStatus");
 const refreshInboxPanelButton = document.querySelector("#refreshInboxPanelButton");
 const refreshTeamButton = document.querySelector("#refreshTeamButton");
 const staffPinInput = document.querySelector("#staffPinInput");
@@ -170,6 +171,8 @@ let teamDirectory = [];
 let activePresence = [];
 let teamSource = "";
 let signedInStaff = null;
+let verifiedAccessCode = "";
+let accessCheckPromise = null;
 
 const savedAccessCode = localStorage.getItem("dddAccessCode") || localStorage.getItem("dddAdminPin") || localStorage.getItem("dddStaffCode") || localStorage.getItem("dddStaffPin") || "";
 adminPinInput.value = savedAccessCode;
@@ -200,14 +203,17 @@ function setActiveTab(tabName) {
     refreshPresence().catch(() => {});
   }
   if (tabName === "inbox" && accessCodeValue()) {
+    verifyAccessCode({ quiet: true, refresh: false }).catch(() => {});
     refreshInbox().catch((error) => setInboxStatus(error.message));
   }
-  if (tabName === "calls" && adminPinInput.value.trim()) {
+  if (tabName === "calls" && accessCodeValue()) {
+    verifyAccessCode({ quiet: true, refresh: false }).catch(() => {});
     refreshCallLog().catch((error) => {
       callLogStatus.textContent = error.message;
     });
   }
-  if (tabName === "insights" && adminPinInput.value.trim()) {
+  if (tabName === "insights" && accessCodeValue()) {
+    verifyAccessCode({ quiet: true, refresh: false }).catch(() => {});
     refreshInsights().catch((error) => {
       insightsStatus.textContent = error.message;
     });
@@ -254,6 +260,7 @@ fetch("/api/setup-status")
   .catch(() => {});
 
 if (accessCodeValue()) {
+  verifyAccessCode({ quiet: true, refresh: true }).catch(() => {});
   refreshInbox().catch((error) => setInboxStatus(error.message));
   refreshPresence().catch(() => {});
 }
@@ -1383,6 +1390,10 @@ function saveAccessCode() {
   localStorage.setItem("dddAccessCode", code);
   localStorage.setItem("dddAdminPin", code);
   localStorage.setItem("dddStaffCode", code);
+  if (signedInStaff?.ok && verifiedAccessCode && verifiedAccessCode !== code) {
+    signedInStaff = null;
+    verifiedAccessCode = "";
+  }
   updateTeamCurrentCard();
 }
 
@@ -1393,12 +1404,69 @@ function pushAuthHeaders() {
   };
 }
 
+function isAccessVerified() {
+  return Boolean(signedInStaff?.ok && verifiedAccessCode && verifiedAccessCode === accessCodeValue());
+}
+
+function setSignedInStaff(staff) {
+  const code = accessCodeValue();
+  signedInStaff = staff ? { ok: true, ...staff } : null;
+  verifiedAccessCode = staff && code ? code : "";
+  if (signedInStaff?.name) {
+    staffNameInput.value = signedInStaff.name;
+    localStorage.setItem("dddStaffName", signedInStaff.name);
+  }
+  updateTeamCurrentCard();
+}
+
+function updateSignedInUi() {
+  const verified = isAccessVerified();
+  const role = signedInStaff?.role || "";
+  document.body.dataset.access = verified ? role || "staff" : "locked";
+  if (inboxLoginButton) inboxLoginButton.textContent = verified ? "Signed in" : "Open inbox";
+  if (accessSessionStatus) {
+    if (!accessCodeValue()) {
+      accessSessionStatus.textContent = "Enter a code to unlock your workspace.";
+    } else if (!verified) {
+      accessSessionStatus.textContent = "Code saved on this device. Not verified yet.";
+    } else if (role === "admin") {
+      accessSessionStatus.textContent = `Admin signed in as ${signedInStaff.name || "Brianna"}. All admin tabs are unlocked.`;
+    } else {
+      accessSessionStatus.textContent = `${signedInStaff.name || "DDD team"} signed in. Inbox, team, callbacks, and alerts are unlocked.`;
+    }
+  }
+  if (settingsStatus && verified && role !== "admin") {
+    settingsStatus.textContent = "Signed in for inbox. Admin code unlocks settings, calls, insights, QA.";
+  }
+}
+
+async function refreshAccessScopedData() {
+  if (!isAccessVerified()) return;
+  refreshPresence().catch(() => {});
+  refreshInbox().catch((error) => setInboxStatus(error.message));
+  updateWebPushDiagnostic().catch(() => {});
+  if (signedInStaff.role === "admin") {
+    loadSettings().catch(() => {
+      settingsStatus.textContent = "Could not reload admin-only settings.";
+    });
+    refreshCallLog().catch((error) => {
+      callLogStatus.textContent = error.message;
+    });
+    refreshInsights().catch((error) => {
+      if (insightsStatus) insightsStatus.textContent = error.message;
+    });
+    refreshQaDashboard().catch((error) => {
+      if (qaStatus) qaStatus.textContent = error.message;
+    });
+  }
+}
+
 function updateTeamCurrentCard() {
   if (teamCurrentCodeStatus) {
     const code = accessCodeValue();
     if (!code) {
       teamCurrentCodeStatus.textContent = "No access code entered yet";
-    } else if (signedInStaff?.ok) {
+    } else if (isAccessVerified()) {
       teamCurrentCodeStatus.textContent = `Signed in as ${signedInStaff.name || "DDD team"} (${signedInStaff.role || "staff"})`;
     } else if (code === "4444" || code === "0000") {
       teamCurrentCodeStatus.textContent = "Demo code saved on this device";
@@ -1410,29 +1478,40 @@ function updateTeamCurrentCard() {
     const name = staffNameInput.value.trim() || "This device";
     teamCurrentStatus.textContent = `${name}: ${formatPresenceStatus(staffStatusSelect.value)}`;
   }
+  updateSignedInUi();
 }
 
-async function verifyAccessCode() {
+async function verifyAccessCode({ quiet = false, refresh = true } = {}) {
   const code = accessCodeValue();
-  signedInStaff = null;
+  if (isAccessVerified()) {
+    updateSignedInUi();
+    return signedInStaff;
+  }
+  if (accessCheckPromise) return accessCheckPromise;
+  setSignedInStaff(null);
   updateTeamCurrentCard();
   if (!code) {
-    setInboxStatus("Enter the admin or tech access code at the top.");
+    if (!quiet) setInboxStatus("Enter the admin or tech access code at the top.");
     return null;
   }
-  const response = await fetch("/api/access-check", { headers: pushAuthHeaders() });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !payload.ok) {
-    setInboxStatus(payload.error || "Code not recognized. Use a DDD TechAssist setup code/token, the real admin code, or an emergency backup code from Team.");
-    updateTeamCurrentCard();
-    return null;
+  accessCheckPromise = (async () => {
+    const response = await fetch("/api/access-check", { headers: pushAuthHeaders() });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      setSignedInStaff(null);
+      if (!quiet) setInboxStatus(payload.error || "Code not recognized. Use a DDD TechAssist setup code/token, the real admin code, or an emergency backup code from Team.");
+      return null;
+    }
+    setSignedInStaff(payload);
+    if (!quiet) setInboxStatus(`Signed in as ${payload.name || "DDD team"} (${payload.role || "staff"}).`);
+    if (refresh) refreshAccessScopedData();
+    return signedInStaff;
+  })();
+  try {
+    return await accessCheckPromise;
+  } finally {
+    accessCheckPromise = null;
   }
-  signedInStaff = payload;
-  localStorage.setItem("dddStaffName", payload.name || staffNameInput.value.trim() || "DDD team");
-  if (!staffNameInput.value.trim() && payload.name) staffNameInput.value = payload.name;
-  updateTeamCurrentCard();
-  setInboxStatus(`Signed in as ${payload.name || "DDD team"} (${payload.role || "staff"}).`);
-  return payload;
 }
 
 function urlBase64ToUint8Array(value) {
@@ -1979,10 +2058,19 @@ async function refreshInbox() {
     renderConversations();
     return;
   }
+  const staff = await verifyAccessCode({ quiet: true, refresh: false });
+  if (!staff) {
+    setInboxStatus("Code not recognized. Use a DDD TechAssist setup code/token, the real admin code, demo code 4444, or an emergency backup code from Team.");
+    conversations = [];
+    inboxSeenMessageKeys = new Set();
+    inboxSeenInitialized = false;
+    renderConversations();
+    return;
+  }
   setInboxStatus("Opening inbox...");
   const response = await fetch("/api/conversations", { headers: staffHeaders() });
   if (response.status === 403) {
-    signedInStaff = null;
+    setSignedInStaff(null);
     updateTeamCurrentCard();
     setInboxStatus("Code not recognized. Use a DDD TechAssist setup code/token, the real admin code, demo code 4444, or an emergency backup code from Team.");
     conversations = [];
@@ -1994,9 +2082,7 @@ async function refreshInbox() {
   if (!response.ok) throw new Error("Could not load text inbox.");
   const payload = await response.json();
   if (payload.staff?.name) {
-    signedInStaff = payload.staff;
-    staffNameInput.value = payload.staff.name;
-    localStorage.setItem("dddStaffName", payload.staff.name);
+    setSignedInStaff(payload.staff);
   }
   teamDirectory = payload.team || [];
   teamSource = payload.teamSource || "";
@@ -2053,6 +2139,7 @@ async function sendPresence() {
 
 refreshInboxButton.addEventListener("click", () => {
   setActiveTab("inbox");
+  verifyAccessCode({ quiet: true, refresh: false }).catch(() => {});
   refreshInbox().catch((error) => setInboxStatus(error.message));
   refreshInsights().catch((error) => {
     if (insightsStatus) insightsStatus.textContent = error.message;
@@ -2074,6 +2161,7 @@ refreshInboxPanelButton?.addEventListener("click", () => {
 
 refreshTeamButton?.addEventListener("click", () => {
   updateTeamCurrentCard();
+  verifyAccessCode({ quiet: true, refresh: false }).catch(() => {});
   refreshPresence().catch(() => {});
   sendPresence().catch(() => {});
 });
@@ -2083,12 +2171,9 @@ addStaffCodeButton?.addEventListener("click", () => {
   updateSaveControls("New tech row added. Enter a name and code, then Save changes.");
 });
 
-adminPinInput.addEventListener("change", () => {
+adminPinInput.addEventListener("change", async () => {
   saveAccessCode();
-  loadSettings().catch(() => {
-    settingsStatus.textContent = "Could not reload admin-only settings.";
-  });
-  refreshInbox().catch((error) => setInboxStatus(error.message));
+  await verifyAccessCode({ quiet: false, refresh: true });
 });
 
 adminPinInput.addEventListener("input", () => {
@@ -2121,10 +2206,11 @@ function queueStaffRefresh() {
   saveAccessCode();
   localStorage.setItem("dddStaffName", staffNameInput.value.trim());
   clearTimeout(staffRefreshTimer);
-  setInboxStatus(accessCodeValue() ? "Checking inbox access..." : "Enter your access code at the top to load texts.");
+  const code = accessCodeValue();
+  setInboxStatus(code ? "Checking access..." : "Enter your access code at the top to load texts.");
   staffRefreshTimer = setTimeout(() => {
-    refreshInbox().catch((error) => setInboxStatus(error.message));
-    sendPresence().catch(() => {});
+    if (!accessCodeValue()) return;
+    verifyAccessCode({ quiet: true, refresh: true }).catch((error) => setInboxStatus(error.message));
   }, 450);
 }
 
