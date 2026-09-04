@@ -259,6 +259,12 @@ fetch("/api/setup-status")
       item.className = ok ? "ready" : "missing";
       setupList.append(item);
     }
+    if (status.recommended?.emailAlerts !== undefined) {
+      const emailItem = document.createElement("li");
+      emailItem.textContent = `${status.recommended.emailAlerts ? "Ready" : "Missing"}: Email fallback alerts`;
+      emailItem.className = status.recommended.emailAlerts ? "ready" : "missing";
+      setupList.append(emailItem);
+    }
 
     webhookUrl.textContent = status.webhookUrl ? `Webhook URL: ${status.webhookUrl}` : "Webhook URL appears after PUBLIC_BASE_URL is set.";
   })
