@@ -1444,6 +1444,58 @@ function setWebPushStatus(message) {
   if (webPushStatus) webPushStatus.textContent = message;
 }
 
+async function getNotificationRegistration() {
+  if (!("serviceWorker" in navigator)) return null;
+  const registration = await navigator.serviceWorker.register("/sw.js");
+  await navigator.serviceWorker.ready;
+  return registration;
+}
+
+async function showLocalWebNotification(title, body, data = {}) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return false;
+  const options = {
+    body,
+    icon: "/assets/ddd-ai-dispatch-logo.png",
+    badge: "/assets/ddd-ai-dispatch-logo.png",
+    data: {
+      url: "/",
+      type: "local-test",
+      ...data
+    }
+  };
+  const registration = await getNotificationRegistration();
+  if (registration?.showNotification) {
+    await registration.showNotification(title, options);
+    return true;
+  }
+  new Notification(title, options);
+  return true;
+}
+
+async function subscribeBrowserForPush(publicKey) {
+  const registration = await getNotificationRegistration();
+  if (!registration?.pushManager) throw new Error("This browser cannot create a push subscription.");
+  const subscribe = () =>
+    registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey)
+    });
+  const existingSubscription = await registration.pushManager.getSubscription();
+  if (existingSubscription) {
+    await existingSubscription.unsubscribe().catch(() => {});
+  }
+  try {
+    return await subscribe();
+  } catch (error) {
+    const staleSubscription = await registration.pushManager.getSubscription();
+    if (staleSubscription) {
+      await staleSubscription.unsubscribe().catch(() => {});
+      return await subscribe();
+    }
+    throw error;
+  }
+}
+
 function isIosBrowser() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
@@ -1497,14 +1549,7 @@ async function enableWebPushNotifications() {
       throw new Error(keyPayload.error || "Browser push is not ready yet.");
     }
 
-    const registration = await navigator.serviceWorker.register("/sw.js");
-    const existingSubscription = await registration.pushManager.getSubscription();
-    const subscription =
-      existingSubscription ||
-      (await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(keyPayload.publicKey)
-      }));
+    const subscription = await subscribeBrowserForPush(keyPayload.publicKey);
 
     const response = await fetch("/api/push/register", {
       method: "POST",
@@ -1521,7 +1566,8 @@ async function enableWebPushNotifications() {
     if (!response.ok) {
       throw new Error(response.status === 403 ? "Use your real admin or tech access code. Demo code cannot enable live alerts." : payload.error || "Could not save this browser for alerts.");
     }
-    setWebPushStatus("Browser alerts are connected here.");
+    await showLocalWebNotification("DDD AI Dispatch test", "Browser alerts are allowed on this device.");
+    setWebPushStatus("Browser alerts are connected here. If you saw the native pop-up, this device is ready.");
   } catch (error) {
     setWebPushStatus(error.message);
   }
@@ -1546,7 +1592,12 @@ async function sendWebPushTest() {
     if (!response.ok) {
       throw new Error(response.status === 403 ? "Use your real admin or tech access code. Demo code cannot send live alerts." : payload.error || "Could not send test alert.");
     }
-    setWebPushStatus(payload.sent ? `Test alert sent to ${payload.sent} device${payload.sent === 1 ? "" : "s"}.` : "No devices are registered yet.");
+    const showedLocal = await showLocalWebNotification("DDD AI Dispatch test", "This device can show native browser alerts.");
+    if (payload.sent) {
+      setWebPushStatus(`Test alert sent to ${payload.sent} device${payload.sent === 1 ? "" : "s"}.`);
+      return;
+    }
+    setWebPushStatus(showedLocal ? "This device showed a native alert, but no saved push devices were found yet. Tap Enable browser alerts once." : "No devices are registered yet.");
   } catch (error) {
     setWebPushStatus(error.message);
   }

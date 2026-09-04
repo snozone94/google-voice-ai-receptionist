@@ -581,6 +581,32 @@ app.get("/api/web-push/public-key", async (req, res, next) => {
   }
 });
 
+app.get("/api/push/status", async (req, res, next) => {
+  try {
+    const staff = await getStaffAccess(req);
+    if (!staff.ok) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+
+    const vapid = await getWebPushVapidKeys();
+    const tokens = await listPushTokens(500);
+    const webSubscriptions = tokens.filter((token) => token.platform === "web" && token.subscription?.endpoint);
+    const expoSubscriptions = tokens.filter((token) => token.platform === "expo" && token.token);
+    res.json({
+      ok: true,
+      staff,
+      vapidReady: Boolean(vapid.publicKey),
+      vapidGenerated: Boolean(vapid.generated),
+      subscriptions: tokens.length,
+      webSubscriptions: webSubscriptions.length,
+      expoSubscriptions: expoSubscriptions.length
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/push/test", express.json(), async (req, res, next) => {
   try {
     const staff = await getStaffAccess(req);
