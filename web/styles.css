@@ -1891,6 +1891,17 @@ button:hover:not(:disabled) {
   line-height: 1.35;
 }
 
+.web-push-diagnostic {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(118, 87, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.68);
+  color: #32324a;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .web-push-actions {
   display: flex;
   flex-wrap: wrap;

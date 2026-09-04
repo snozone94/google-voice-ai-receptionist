@@ -100,7 +100,9 @@ const notifyWeeklySummaryToggle = document.querySelector("#notifyWeeklySummaryTo
 const notifyMonthlySummaryToggle = document.querySelector("#notifyMonthlySummaryToggle");
 const enableWebPushButton = document.querySelector("#enableWebPushButton");
 const testWebPushButton = document.querySelector("#testWebPushButton");
+const checkWebPushButton = document.querySelector("#checkWebPushButton");
 const webPushStatus = document.querySelector("#webPushStatus");
+const webPushDiagnostic = document.querySelector("#webPushDiagnostic");
 const activityOverview = document.querySelector("#activityOverview");
 const activityTimeline = document.querySelector("#activityTimeline");
 const activityFilterButtons = document.querySelectorAll("[data-activity-filter]");
@@ -1444,6 +1446,10 @@ function setWebPushStatus(message) {
   if (webPushStatus) webPushStatus.textContent = message;
 }
 
+function setWebPushDiagnostic(message) {
+  if (webPushDiagnostic) webPushDiagnostic.textContent = message;
+}
+
 function describeWebPushSupport() {
   if (!("Notification" in window)) return "Notifications are not available in this browser.";
   if (!("serviceWorker" in navigator)) return "Service workers are not available in this browser.";
@@ -1451,6 +1457,48 @@ function describeWebPushSupport() {
   if (Notification.permission === "denied") return "Chrome is blocking notifications for this site. Open site settings and change Notifications to Allow.";
   if (Notification.permission === "granted") return "Chrome permission is allowed on this device.";
   return "Chrome has not been allowed yet. Tap Enable browser alerts and choose Allow.";
+}
+
+async function getPermissionState() {
+  if (!navigator.permissions?.query) return "unknown";
+  try {
+    const permission = await navigator.permissions.query({ name: "notifications" });
+    return permission.state || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+async function updateWebPushDiagnostic() {
+  const localParts = [
+    `Native API: ${"Notification" in window ? "yes" : "no"}`,
+    `Chrome permission: ${"Notification" in window ? Notification.permission : "missing"}`,
+    `Permission API: ${await getPermissionState()}`,
+    `Service worker: ${"serviceWorker" in navigator ? "yes" : "no"}`,
+    `Push manager: ${"PushManager" in window ? "yes" : "no"}`
+  ];
+
+  if (!accessCodeValue()) {
+    setWebPushDiagnostic(`${localParts.join(" | ")}. Enter your code for saved-device count.`);
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/push/status", {
+      headers: {
+        ...pushAuthHeaders()
+      }
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(response.status === 403 ? "code not allowed for push status" : payload.error || "server status unavailable");
+    }
+    localParts.push(`Saved web devices: ${payload.webSubscriptions ?? 0}`);
+    localParts.push(`Saved app devices: ${payload.expoSubscriptions ?? 0}`);
+    setWebPushDiagnostic(localParts.join(" | "));
+  } catch (error) {
+    setWebPushDiagnostic(`${localParts.join(" | ")}. Server: ${error.message}`);
+  }
 }
 
 async function getNotificationRegistration() {
@@ -1530,9 +1578,11 @@ function updateWebPushAvailabilityStatus() {
   }
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
     setWebPushStatus(`${describeWebPushSupport()} Use the iOS app for native push.`);
+    updateWebPushDiagnostic().catch(() => {});
     return;
   }
   setWebPushStatus(describeWebPushSupport());
+  updateWebPushDiagnostic().catch(() => {});
 }
 
 async function enableWebPushNotifications() {
@@ -1582,8 +1632,10 @@ async function enableWebPushNotifications() {
       throw new Error(response.status === 403 ? "Use your real admin or tech access code. Demo code cannot enable live alerts." : payload.error || "Could not save this browser for alerts.");
     }
     setWebPushStatus(showedLocal ? "Chrome alerts are connected here. This device is ready." : "Saved this browser, but Chrome did not show the local alert. Check Chrome and macOS notification settings.");
+    await updateWebPushDiagnostic();
   } catch (error) {
     setWebPushStatus(error.message);
+    updateWebPushDiagnostic().catch(() => {});
   }
 }
 
@@ -1612,8 +1664,10 @@ async function sendWebPushTest() {
       return;
     }
     setWebPushStatus(showedLocal ? "This device showed a native alert, but no saved push devices were found yet. Tap Enable browser alerts once." : "No devices are registered yet.");
+    await updateWebPushDiagnostic();
   } catch (error) {
     setWebPushStatus(error.message);
+    updateWebPushDiagnostic().catch(() => {});
   }
 }
 
@@ -2608,6 +2662,11 @@ refreshInsightsButton?.addEventListener("click", () => {
 
 enableWebPushButton?.addEventListener("click", enableWebPushNotifications);
 testWebPushButton?.addEventListener("click", sendWebPushTest);
+checkWebPushButton?.addEventListener("click", () => {
+  updateWebPushAvailabilityStatus();
+  updateWebPushDiagnostic().catch((error) => setWebPushDiagnostic(error.message));
+});
+updateWebPushDiagnostic().catch(() => {});
 
 callButton.addEventListener("click", async () => {
   callButton.disabled = true;
