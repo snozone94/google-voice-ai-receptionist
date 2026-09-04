@@ -1451,7 +1451,7 @@ function updateSignedInUi() {
   } else if (verified && role === "admin") {
     message = `Admin signed in as ${signedInStaff.name || "Brianna"}. All admin tabs are unlocked.`;
   } else if (verified) {
-    message = `${signedInStaff.name || "DDD team"} signed in. Inbox, team, callbacks, and alerts are unlocked.`;
+    message = `${signedInStaff.name || "DDD team"} signed in. Inbox, calls, callbacks, and alerts are unlocked.`;
   }
   if (accessSessionStatus) accessSessionStatus.textContent = message;
   if (stickyAccessSessionStatus) {
@@ -2207,8 +2207,8 @@ inboxLoginButton?.addEventListener("click", async () => {
 
 stickyLoginButton?.addEventListener("click", async () => {
   const staff = await verifyAccessCode({ quiet: false, refresh: true });
-  if (staff?.role !== "admin" && ["calls", "insights", "qa"].some((tab) => tabPanels.find((panel) => panel.dataset.tabPanel === tab)?.classList.contains("active"))) {
-    setInboxStatus("Tech code is signed in. Use the admin code for Calls, Insights, and QA.");
+  if (staff?.role !== "admin" && ["insights", "qa"].some((tab) => tabPanels.find((panel) => panel.dataset.tabPanel === tab)?.classList.contains("active"))) {
+    setInboxStatus("Tech code is signed in. Use the admin code for Insights and QA.");
   }
 });
 
@@ -2429,7 +2429,7 @@ async function refreshCallLog() {
     callLog = [];
     selectedCallId = "";
     renderCallLog();
-    callLogStatus.textContent = "Admin access is needed for call details.";
+    callLogStatus.textContent = "Enter your DDD access code to load call details.";
     return;
   }
   if (!response.ok) throw new Error("Could not load call log.");
@@ -2495,6 +2495,7 @@ function renderSelectedCall() {
   const transcriptHtml = renderGroupedTranscript(call.transcript || []);
   const synopsis = buildCallSynopsis(call);
   const correction = call.correction || {};
+  const canCorrectCall = signedInStaff?.role === "admin";
   callDetail.innerHTML = `
     <div class="call-detail-header">
       <div>
@@ -2507,20 +2508,24 @@ function renderSelectedCall() {
       <strong>${escapeHtml(cleanCallText(call.outcome?.detail || "Call logged for review."))}</strong>
       <span>${escapeHtml(call.outcome?.callerStayedOn ? "Caller stayed on" : call.outcome?.hungUpEarly ? "Caller hung up early" : "Needs review")}</span>
     </div>
-    <div class="call-correction-panel">
-      <div>
-        <label for="callOutcomeCorrection">Correct outcome</label>
-        <select id="callOutcomeCorrection">
-          ${renderCorrectionOptions(correction.outcomeTag || "")}
-        </select>
-      </div>
-      <div>
-        <label for="callCorrectionNote">Admin note</label>
-        <input id="callCorrectionNote" type="text" maxlength="500" value="${escapeAttribute(correction.note || "")}" placeholder="Optional note for this call" />
-      </div>
-      <button type="button" data-action="save-call-correction" data-call-id="${escapeAttribute(call.id)}">Save correction</button>
-      <p id="callCorrectionStatus">${correction.updatedAt ? `Last corrected ${escapeHtml(formatTime(correction.updatedAt))}` : "Corrections update this call's status and insight counts."}</p>
-    </div>
+    ${
+      canCorrectCall
+        ? `<div class="call-correction-panel">
+            <div>
+              <label for="callOutcomeCorrection">Correct outcome</label>
+              <select id="callOutcomeCorrection">
+                ${renderCorrectionOptions(correction.outcomeTag || "")}
+              </select>
+            </div>
+            <div>
+              <label for="callCorrectionNote">Admin note</label>
+              <input id="callCorrectionNote" type="text" maxlength="500" value="${escapeAttribute(correction.note || "")}" placeholder="Optional note for this call" />
+            </div>
+            <button type="button" data-action="save-call-correction" data-call-id="${escapeAttribute(call.id)}">Save correction</button>
+            <p id="callCorrectionStatus">${correction.updatedAt ? `Last corrected ${escapeHtml(formatTime(correction.updatedAt))}` : "Corrections update this call's status and insight counts."}</p>
+          </div>`
+        : ""
+    }
     <div class="call-metrics">
       ${renderMetric("Duration", call.durationLabel || "Unknown", call.durationSeconds ? "ok" : "warn")}
       ${renderMetric("Booking", call.bookings?.length ? "Saved" : "Not saved", call.bookings?.length ? "ok" : "warn")}

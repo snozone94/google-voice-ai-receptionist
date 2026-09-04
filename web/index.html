@@ -157,14 +157,14 @@
       </section>
 
       <nav class="tabbar" aria-label="Admin sections">
-        <button class="tab-button active" type="button" data-tab-target="overview">Overview</button>
+        <button class="tab-button active" type="button" data-tab-target="inbox">Inbox</button>
+        <button class="tab-button" type="button" data-tab-target="calls">Calls</button>
+        <button class="tab-button" type="button" data-tab-target="overview">Overview</button>
+        <button class="tab-button" type="button" data-tab-target="team">Team</button>
         <button class="tab-button" type="button" data-tab-target="voice">Voice</button>
         <button class="tab-button" type="button" data-tab-target="script">Script</button>
         <button class="tab-button" type="button" data-tab-target="intake">Intake</button>
         <button class="tab-button" type="button" data-tab-target="followup">Follow-up</button>
-        <button class="tab-button" type="button" data-tab-target="team">Team</button>
-        <button class="tab-button" type="button" data-tab-target="inbox">Inbox</button>
-        <button class="tab-button" type="button" data-tab-target="calls">Calls</button>
         <button class="tab-button" type="button" data-tab-target="insights">Insights</button>
         <button class="tab-button" type="button" data-tab-target="qa">QA</button>
         <button class="tab-button" type="button" data-tab-target="activity">Activity</button>
@@ -179,7 +179,7 @@
         <button id="stickyLoginButton" type="button">Sign in</button>
       </section>
 
-      <section class="panel tab-panel active" data-tab-panel="overview">
+      <section class="panel tab-panel" data-tab-panel="overview">
         <div class="section-title-row">
           <div>
             <p class="eyebrow">At a glance</p>
@@ -587,7 +587,7 @@
         </div>
       </section>
 
-      <section class="panel tab-panel" data-tab-panel="inbox">
+      <section class="panel tab-panel active" data-tab-panel="inbox">
         <div class="section-title-row">
           <div>
             <p class="eyebrow">Shared DDD inbox</p>
@@ -622,7 +622,7 @@
       <section class="panel tab-panel" data-tab-panel="calls">
         <div class="section-title-row">
           <div>
-            <p class="eyebrow">Admin call history</p>
+            <p class="eyebrow">Call history</p>
             <h2>Call Log</h2>
           </div>
           <button id="refreshCallLogButton" type="button">Refresh calls</button>
@@ -634,7 +634,7 @@
             <p class="empty-state">Call transcript, saved intake, booking info, and recording links will appear here.</p>
           </article>
         </div>
-        <p id="callLogStatus">Enter the real admin access code to load call details.</p>
+        <p id="callLogStatus">Enter your DDD access code to load call details.</p>
       </section>
 
       <section class="panel tab-panel" data-tab-panel="insights">

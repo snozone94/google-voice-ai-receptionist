@@ -1340,15 +1340,17 @@ app.get("/api/calls", async (req, res, next) => {
 
 app.get("/api/call-log", async (req, res, next) => {
   try {
-    if (!hasAdminAccess(req) && !hasAppReviewAccess(req)) {
+    const reviewAccess = hasAppReviewAccess(req) && !hasAdminAccess(req);
+    const staff = reviewAccess ? appReviewStaff : await getStaffAccess(req);
+    if (!staff.ok) {
       res.status(403).json({ ok: false, error: "Forbidden" });
       return;
     }
-    if (hasAppReviewAccess(req) && !hasAdminAccess(req)) {
+    if (reviewAccess) {
       res.json({ calls: appReviewCallLog.slice(0, Number(req.query.limit || 50)) });
       return;
     }
-    res.json({ calls: await listCallLog(Number(req.query.limit || 50)) });
+    res.json({ staff, calls: await listCallLog(Number(req.query.limit || 50)) });
   } catch (error) {
     next(error);
   }
