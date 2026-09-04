@@ -247,6 +247,13 @@ DDD_TECH_TEAM_SECRET
 DDD_PHOTO_UPLOAD_BASE_URL
 DDD_PHOTO_UPLOAD_WEBHOOK_URL
 DDD_CUSTOMER_HISTORY_URL
+ALERT_EMAIL_TO
+SMTP_USER
+GMAIL_APP_PASSWORD
+SMTP_HOST
+SMTP_PORT
+SMTP_FROM
+EARLY_HANGUP_ALERT_SECONDS
 ```
 
 `ADMIN_PIN` controls settings edits. `DDD_TECH_AUTH_URL` / `DDD_TECH_TEAM_URL` connect AI Dispatch to DDD Platform/TechAssist. `STAFF_ACCESS_CODES` is a backup-only fallback for Inbox access with a comma-separated list like `Backup Owner:1111,Backup Tech:2222`.
@@ -254,6 +261,20 @@ DDD_CUSTOMER_HISTORY_URL
 Outbound calls from the mobile app use Twilio to call the staff member first, then bridge to the customer with `TWILIO_VOICE_FROM` as caller ID. Use the same Twilio number as `TWILIO_SMS_FROM` if you want texts and outbound calls to show the same DDD number.
 
 Native app push alerts use Expo push tokens. The mobile app registers a phone through `POST /api/push/register`; the backend sends alerts for new calls, missed/busy calls, incoming texts, and manual test alerts. Real remote push notifications need an installed Expo development/App Store build so iOS can issue a usable push token.
+
+Email fallback alerts can notify `dddroadhelp@gmail.com` when browser or iOS notifications are missed. For Gmail, enable 2-step verification on the Gmail account, create a Gmail App Password, then set these Render environment variables:
+
+```text
+ALERT_EMAIL_TO=dddroadhelp@gmail.com
+SMTP_USER=dddroadhelp@gmail.com
+GMAIL_APP_PASSWORD=your-gmail-app-password
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_FROM=dddroadhelp@gmail.com
+EARLY_HANGUP_ALERT_SECONDS=30
+```
+
+Missed, busy, no-answer, canceled, failed, and very short completed calls trigger team alerts and the missed-call fallback SMS so the caller shows in the inbox for follow-up.
 
 Twilio incoming SMS webhook:
 

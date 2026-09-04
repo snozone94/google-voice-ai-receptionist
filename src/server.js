@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import express from "express";
 import fs from "node:fs/promises";
 import path from "node:path";
+import tls from "node:tls";
 import OpenAI from "openai";
 import webPush from "web-push";
 import {
@@ -285,7 +286,8 @@ app.get("/api/setup-status", async (_req, res, next) => {
       wideLanguageListening: true,
       brandedPhotoUpload: Boolean(process.env.DDD_PHOTO_UPLOAD_BASE_URL),
       platformPhotoSync: Boolean(process.env.DDD_PHOTO_UPLOAD_WEBHOOK_URL || process.env.DDD_PHOTO_WEBHOOK_URL),
-      platformCustomerHistory: Boolean(process.env.DDD_CUSTOMER_HISTORY_URL)
+      platformCustomerHistory: Boolean(process.env.DDD_CUSTOMER_HISTORY_URL),
+      emailAlerts: emailAlertsReady()
     };
 
     res.json({
@@ -626,6 +628,24 @@ app.post("/api/push/test", express.json(), async (req, res, next) => {
   }
 });
 
+app.post("/api/email/test", express.json(), async (req, res, next) => {
+  try {
+    if (!hasAdminAccess(req)) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+
+    const result = await sendAlertEmail({
+      title: "DDD AI Dispatch email test",
+      body: "Email alerts are connected for missed calls, early hangups, calls, and texts.",
+      data: { type: "email-test" }
+    });
+    res.status(result.ok ? 200 : 502).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/twilio/voice-verify", express.urlencoded({ extended: false }), async (req, res) => {
   if (!hasTwilioSmsAccess(req)) {
     res.status(403).send("Forbidden");
@@ -854,25 +874,31 @@ app.post("/api/twilio/call-status", express.urlencoded({ extended: false }), asy
       return;
     }
     const status = req.body.CallStatus || req.body.callStatus || "";
+    const normalizedStatus = String(status).toLowerCase();
+    const durationSeconds = Number(req.body.CallDuration || req.body.callDuration || 0) || 0;
     await saveCallEvent({
       type: "twilio.call.status",
       data: {
         call_id: req.body.CallSid || req.body.callSid || "",
         status,
-        durationSeconds: req.body.CallDuration || req.body.callDuration || 0,
+        durationSeconds,
         sip_headers: [
           { name: "from", value: req.body.From || "" },
           { name: "to", value: req.body.To || "" }
         ]
       }
     });
-    if (/busy|failed|no-answer|canceled|cancelled|missed/.test(String(status).toLowerCase())) {
+    const earlyHangupSeconds = Number(process.env.EARLY_HANGUP_ALERT_SECONDS || 30) || 30;
+    const isMissed = /busy|failed|no-answer|canceled|cancelled|missed/.test(normalizedStatus);
+    const isEarlyHangup = normalizedStatus === "completed" && durationSeconds > 0 && durationSeconds <= earlyHangupSeconds;
+    if (isMissed || isEarlyHangup) {
+      const reason = isEarlyHangup ? `hung up after ${durationSeconds}s` : status || "missed";
       notifyTeam({
         title: "DDD call needs review",
-        body: `${formatPhoneForAlert(req.body.From || "")} ended as ${status || "missed"}.`,
-        data: { type: "missed-call", status, from: req.body.From || "" }
+        body: `${formatPhoneForAlert(req.body.From || "")} ${isEarlyHangup ? reason : `ended as ${reason}`}.`,
+        data: { type: isEarlyHangup ? "early-hangup" : "missed-call", status, durationSeconds, from: req.body.From || "" }
       });
-      await sendMissedCallSms(req.body.From || "", status);
+      await sendMissedCallSms(req.body.From || "", reason);
     }
     res.type("text/xml").send("<Response></Response>");
   } catch (error) {
@@ -1841,6 +1867,161 @@ async function sendMissedCallSms(to, status = "") {
   });
 }
 
+function getAlertEmailConfig() {
+  const user = process.env.SMTP_USER || "";
+  const host = process.env.SMTP_HOST || (/@gmail\.com$/i.test(user) ? "smtp.gmail.com" : "");
+  const port = Number(process.env.SMTP_PORT || 465) || 465;
+  const to = splitEmailList(process.env.ALERT_EMAIL_TO || "dddroadhelp@gmail.com");
+  const from = process.env.SMTP_FROM || user || "dddroadhelp@gmail.com";
+  return {
+    host,
+    port,
+    secure: process.env.SMTP_SECURE === "false" ? false : true,
+    user,
+    pass: process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || "",
+    from,
+    to
+  };
+}
+
+function emailAlertsReady() {
+  const config = getAlertEmailConfig();
+  return Boolean(config.host && config.user && config.pass && config.from && config.to.length);
+}
+
+function splitEmailList(value = "") {
+  return String(value || "")
+    .split(/[,\s]+/)
+    .map((entry) => entry.trim())
+    .filter((entry) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(entry));
+}
+
+async function sendAlertEmail({ title = "DDD AI Dispatch alert", body = "", data = {} } = {}) {
+  const config = getAlertEmailConfig();
+  if (!emailAlertsReady() || process.env.EMAIL_ALERTS_ENABLED === "false") {
+    return { ok: false, skipped: true, reason: "Email alerts are not configured." };
+  }
+
+  const lines = [
+    body || "DDD AI Dispatch has a new alert.",
+    "",
+    `Type: ${data.type || "alert"}`,
+    data.from ? `Caller/customer: ${formatPhoneForAlert(data.from)} (${normalizeE164(data.from) || data.from})` : "",
+    data.status ? `Status: ${data.status}` : "",
+    data.durationSeconds ? `Duration: ${data.durationSeconds}s` : "",
+    "",
+    `Open admin: ${process.env.PUBLIC_BASE_URL || "https://google-voice-ai-receptionist.onrender.com/"}`
+  ].filter((line) => line !== "");
+
+  try {
+    await sendSmtpMail({
+      ...config,
+      subject: title,
+      text: lines.join("\n")
+    });
+    return { ok: true, skipped: false };
+  } catch (error) {
+    console.warn(`Email alert failed: ${error.message}`);
+    return { ok: false, skipped: false, error: error.message };
+  }
+}
+
+async function sendSmtpMail({ host, port, secure, user, pass, from, to, subject, text }) {
+  if (secure === false) {
+    throw new Error("Email alerts currently support secure SMTP only. Use Gmail SMTP on port 465.");
+  }
+  const socket = tls.connect({
+    host,
+    port,
+    servername: host,
+    rejectUnauthorized: true
+  });
+  socket.setTimeout(Number(process.env.SMTP_TIMEOUT_MS || 10000) || 10000, () => {
+    socket.destroy(new Error("SMTP connection timed out."));
+  });
+  const reader = createSmtpReader(socket);
+
+  await reader.expect(220);
+  await smtpWrite(socket, `EHLO ${process.env.SMTP_HELO_DOMAIN || "ddd-ai-dispatch.local"}`);
+  await reader.expect(250);
+  await smtpWrite(socket, "AUTH LOGIN");
+  await reader.expect(334);
+  await smtpWrite(socket, Buffer.from(user).toString("base64"));
+  await reader.expect(334);
+  await smtpWrite(socket, Buffer.from(pass).toString("base64"));
+  await reader.expect(235);
+  await smtpWrite(socket, `MAIL FROM:<${from}>`);
+  await reader.expect(250);
+  for (const recipient of to) {
+    await smtpWrite(socket, `RCPT TO:<${recipient}>`);
+    await reader.expect([250, 251]);
+  }
+  await smtpWrite(socket, "DATA");
+  await reader.expect(354);
+  await smtpWrite(socket, buildEmailMessage({ from, to, subject, text }));
+  await reader.expect(250);
+  await smtpWrite(socket, "QUIT");
+  socket.end();
+}
+
+function createSmtpReader(socket) {
+  let buffer = "";
+  const waiters = [];
+  socket.on("data", (chunk) => {
+    buffer += chunk.toString("utf8");
+    drain();
+  });
+  socket.on("error", (error) => {
+    while (waiters.length) waiters.shift().reject(error);
+  });
+
+  function drain() {
+    const match = buffer.match(/(?:^|\r?\n)(\d{3}) [^\r\n]*(?:\r?\n|$)/);
+    if (!match || !waiters.length) return;
+    const response = buffer.slice(0, match.index + match[0].length);
+    buffer = buffer.slice(match.index + match[0].length);
+    waiters.shift().resolve(response);
+    drain();
+  }
+
+  return {
+    async expect(expected) {
+      const expectedCodes = Array.isArray(expected) ? expected : [expected];
+      const response = await new Promise((resolve, reject) => {
+        waiters.push({ resolve, reject });
+        drain();
+      });
+      const code = Number(response.match(/^(\d{3})/m)?.[1] || 0);
+      if (!expectedCodes.includes(code)) {
+        throw new Error(`SMTP expected ${expectedCodes.join("/")} but got ${code}`);
+      }
+      return response;
+    }
+  };
+}
+
+function smtpWrite(socket, line) {
+  return new Promise((resolve, reject) => {
+    socket.write(`${line}\r\n`, "utf8", (error) => (error ? reject(error) : resolve()));
+  });
+}
+
+function buildEmailMessage({ from, to, subject, text }) {
+  const safeSubject = String(subject || "DDD AI Dispatch alert").replace(/[\r\n]+/g, " ").slice(0, 140);
+  const safeText = String(text || "").replace(/\r?\n\./g, "\n..");
+  return [
+    `From: DDD AI Dispatch <${from}>`,
+    `To: ${to.join(", ")}`,
+    `Subject: ${safeSubject}`,
+    `Date: ${new Date().toUTCString()}`,
+    "Content-Type: text/plain; charset=utf-8",
+    "MIME-Version: 1.0",
+    "",
+    safeText,
+    "."
+  ].join("\r\n");
+}
+
 function appendStopFooter(message = "") {
   const cleaned = String(message || "").replace(/\s+/g, " ").trim();
   if (!cleaned) return "";
@@ -1950,12 +2131,14 @@ function configureWebPush(publicKey, privateKey) {
 }
 
 async function notifyTeam({ title, body, data = {} }) {
+  const emailResultPromise = sendAlertEmail({ title, body, data });
   let tokens = [];
   try {
     tokens = await listPushTokens(100);
   } catch (error) {
     console.warn(`Could not load push tokens: ${error.message}`);
-    return { ok: false, sent: 0, skipped: true, errors: [error.message] };
+    const emailResult = await emailResultPromise;
+    return { ok: Boolean(emailResult.ok), sent: 0, skipped: !emailResult.ok, errors: [error.message, emailResult.error].filter(Boolean) };
   }
 
   const expoMessages = tokens
@@ -1974,7 +2157,10 @@ async function notifyTeam({ title, body, data = {} }) {
     (subscription) => subscription.subscription?.endpoint && !/^https:\/\/example\.com\//i.test(subscription.subscription.endpoint)
   );
 
-  if (!expoMessages.length && !webSubscriptions.length) return { ok: true, sent: 0, skipped: true, errors: [] };
+  if (!expoMessages.length && !webSubscriptions.length) {
+    const emailResult = await emailResultPromise;
+    return { ok: emailResult.ok || emailResult.skipped, sent: 0, skipped: !emailResult.ok, errors: [emailResult.error].filter(Boolean) };
+  }
 
   let sent = 0;
   const errors = [];
@@ -2023,10 +2209,12 @@ async function notifyTeam({ title, body, data = {} }) {
         }
       }
     }
-    return { ok: errors.length === 0, sent, skipped: false, errors };
+    const emailResult = await emailResultPromise;
+    return { ok: errors.length === 0 && (emailResult.ok || emailResult.skipped), sent, skipped: false, errors: [...errors, emailResult.error].filter(Boolean) };
   } catch (error) {
     console.warn(`Push failed: ${error.message}`);
-    return { ok: false, sent, skipped: false, errors: [error.message, ...errors] };
+    const emailResult = await emailResultPromise;
+    return { ok: Boolean(emailResult.ok), sent, skipped: false, errors: [error.message, ...errors, emailResult.error].filter(Boolean) };
   }
 }
 

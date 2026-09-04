@@ -103,6 +103,7 @@ const notifyWeeklySummaryToggle = document.querySelector("#notifyWeeklySummaryTo
 const notifyMonthlySummaryToggle = document.querySelector("#notifyMonthlySummaryToggle");
 const enableWebPushButton = document.querySelector("#enableWebPushButton");
 const testWebPushButton = document.querySelector("#testWebPushButton");
+const testEmailAlertButton = document.querySelector("#testEmailAlertButton");
 const checkWebPushButton = document.querySelector("#checkWebPushButton");
 const webPushStatus = document.querySelector("#webPushStatus");
 const webPushDiagnostic = document.querySelector("#webPushDiagnostic");
@@ -1765,6 +1766,35 @@ async function sendWebPushTest() {
   }
 }
 
+async function sendEmailAlertTest() {
+  try {
+    if (!accessCodeValue()) {
+      setWebPushStatus("Enter your real admin access code first.");
+      return;
+    }
+    setWebPushStatus("Sending email test to dddroadhelp@gmail.com...");
+    const response = await fetch("/api/email/test", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...adminHeaders()
+      },
+      body: JSON.stringify({})
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      const message =
+        response.status === 403
+          ? "Use the real admin code to test email alerts."
+          : payload.error || payload.reason || "Email alerts need SMTP_USER and GMAIL_APP_PASSWORD set in Render.";
+      throw new Error(message);
+    }
+    setWebPushStatus("Email test sent to dddroadhelp@gmail.com.");
+  } catch (error) {
+    setWebPushStatus(error.message);
+  }
+}
+
 function formatPhone(phone) {
   const raw = String(phone || "");
   const sipPhone = raw.match(/\+?1?\d{10,11}/)?.[0] || "";
@@ -2786,6 +2816,7 @@ refreshInsightsButton?.addEventListener("click", () => {
 
 enableWebPushButton?.addEventListener("click", enableWebPushNotifications);
 testWebPushButton?.addEventListener("click", sendWebPushTest);
+testEmailAlertButton?.addEventListener("click", sendEmailAlertTest);
 checkWebPushButton?.addEventListener("click", () => {
   updateWebPushAvailabilityStatus();
   updateWebPushDiagnostic().catch((error) => setWebPushDiagnostic(error.message));
