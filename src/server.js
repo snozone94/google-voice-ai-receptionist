@@ -2079,15 +2079,26 @@ async function sendAlertEmail({ title = "DDD AI Dispatch alert", body = "", data
     return { ok: false, skipped: true, reason: "Email alerts are not configured." };
   }
 
+  const adminUrl = process.env.PUBLIC_BASE_URL || "https://google-voice-ai-receptionist.onrender.com/";
   const lines = [
+    "What happened:",
     body || "DDD AI Dispatch has a new alert.",
     "",
-    `Type: ${data.type || "alert"}`,
+    "Details:",
+    `Alert type: ${data.type || "alert"}`,
     data.from ? `Caller/customer: ${formatPhoneForAlert(data.from)} (${normalizeE164(data.from) || data.from})` : "",
+    data.to ? `DDD line: ${formatPhoneForAlert(data.to)} (${normalizeE164(data.to) || data.to})` : "",
+    data.callId ? `Call ID: ${data.callId}` : "",
+    data.route ? `Route: ${data.route}` : "",
     data.status ? `Status: ${data.status}` : "",
     data.durationSeconds ? `Duration: ${data.durationSeconds}s` : "",
+    data.reason ? `Reason: ${data.reason}` : "",
     "",
-    `Open admin: ${process.env.PUBLIC_BASE_URL || "https://google-voice-ai-receptionist.onrender.com/"}`
+    "Next step:",
+    data.type === "sms"
+      ? "Open the DDD inbox and reply to the customer."
+      : "Open the DDD admin to review the call, booking, or inbox conversation.",
+    adminUrl ? `Open admin: ${adminUrl}` : ""
   ].filter((line) => line !== "");
 
   try {
