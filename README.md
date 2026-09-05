@@ -254,6 +254,9 @@ SMTP_HOST
 SMTP_PORT
 SMTP_FROM
 EARLY_HANGUP_ALERT_SECONDS
+COMPLETED_CALL_SMS_ENABLED
+COMPLETED_CALL_SMS_MESSAGE
+CALL_FOLLOWUP_SMS_DEDUPE_MINUTES
 ```
 
 `ADMIN_PIN` controls settings edits. `DDD_TECH_AUTH_URL` / `DDD_TECH_TEAM_URL` connect AI Dispatch to DDD Platform/TechAssist. `STAFF_ACCESS_CODES` is a backup-only fallback for Inbox access with a comma-separated list like `Backup Owner:1111,Backup Tech:2222`.
@@ -274,7 +277,7 @@ SMTP_FROM=dddroadhelp@gmail.com
 EARLY_HANGUP_ALERT_SECONDS=30
 ```
 
-Missed, busy, no-answer, canceled, failed, and very short completed calls trigger team alerts and the missed-call fallback SMS so the caller shows in the inbox for follow-up.
+Missed, busy, no-answer, canceled, failed, and very short completed calls trigger team alerts and the missed-call fallback SMS so the caller shows in the inbox for follow-up. Completed inbound calls also send a team alert, and `COMPLETED_CALL_SMS_ENABLED` controls whether the backend sends a short "reply here" text when no outbound SMS was already sent to that caller recently.
 
 Twilio incoming SMS webhook:
 

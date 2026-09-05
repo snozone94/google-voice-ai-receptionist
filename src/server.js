@@ -893,12 +893,19 @@ app.post("/api/twilio/call-status", express.urlencoded({ extended: false }), asy
     const isEarlyHangup = normalizedStatus === "completed" && durationSeconds > 0 && durationSeconds <= earlyHangupSeconds;
     if (isMissed || isEarlyHangup) {
       const reason = isEarlyHangup ? `hung up after ${durationSeconds}s` : status || "missed";
-      notifyTeam({
+      await notifyTeam({
         title: "DDD call needs review",
         body: `${formatPhoneForAlert(req.body.From || "")} ${isEarlyHangup ? reason : `ended as ${reason}`}.`,
         data: { type: isEarlyHangup ? "early-hangup" : "missed-call", status, durationSeconds, from: req.body.From || "" }
       });
       await sendMissedCallSms(req.body.From || "", reason);
+    } else if (normalizedStatus === "completed") {
+      await notifyTeam({
+        title: "DDD call completed",
+        body: `${formatPhoneForAlert(req.body.From || "")} completed${durationSeconds ? ` in ${formatAlertDuration(durationSeconds)}` : ""}.`,
+        data: { type: "call-completed", status, durationSeconds, from: req.body.From || "" }
+      });
+      await sendCompletedCallSmsIfNeeded(req.body.From || "", status);
     }
     res.type("text/xml").send("<Response></Response>");
   } catch (error) {
@@ -1867,6 +1874,48 @@ async function sendMissedCallSms(to, status = "") {
     source: "missed_call",
     reason: status
   });
+}
+
+async function sendCompletedCallSmsIfNeeded(to, status = "") {
+  const normalizedTo = normalizeE164(to);
+  if (!normalizedTo || process.env.COMPLETED_CALL_SMS_ENABLED === "false") return { ok: false, skipped: true };
+
+  const dedupeMinutes = Number(process.env.CALL_FOLLOWUP_SMS_DEDUPE_MINUTES || 15) || 15;
+  const recentWindowMs = Math.max(1, dedupeMinutes) * 60 * 1000;
+  const recentMessages = await listSms(300);
+  const now = Date.now();
+  const alreadyTexted = recentMessages.some((message) => {
+    if (message.direction !== "outbound" || normalizeE164(message.to) !== normalizedTo) return false;
+    const sentAt = Date.parse(message.createdAt || "");
+    return Number.isFinite(sentAt) && now - sentAt <= recentWindowMs;
+  });
+  if (alreadyTexted) return { ok: true, skipped: true, reason: "Recent outbound SMS already exists." };
+
+  const bookingUrl = process.env.BOOKING_URL || "https://dddcincy.com/book-service/";
+  const message = appendStopFooter(
+    process.env.COMPLETED_CALL_SMS_MESSAGE ||
+      `Thanks for calling DDD. Reply here with any updates or details and our team can text you back. Book or manage service here: ${bookingUrl}`
+  );
+  const delivery = await sendTwilioSms(normalizedTo, message);
+  await saveOutgoingSms({
+    to: normalizedTo,
+    from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
+    body: message,
+    messageSid: delivery.sid || "",
+    status: delivery.status || (delivery.ok ? "sent" : "failed"),
+    agentName: "Call follow-up",
+    source: "completed_call",
+    reason: status || "completed"
+  });
+  return delivery;
+}
+
+function formatAlertDuration(seconds = 0) {
+  const total = Math.max(0, Number(seconds || 0) || 0);
+  if (!total) return "";
+  const minutes = Math.floor(total / 60);
+  const remainder = total % 60;
+  return minutes ? `${minutes}m ${String(remainder).padStart(2, "0")}s` : `${remainder}s`;
 }
 
 function getAlertEmailConfig() {
