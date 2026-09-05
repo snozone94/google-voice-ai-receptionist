@@ -1534,6 +1534,14 @@ async function handleSipWebhook(req, res, next) {
         ? { ...settings, verificationMode: true }
         : settings;
       await saveCallEvent(event);
+      const callerPhone = getSipHeaderValue(event.data?.sip_headers || [], "from");
+      const calledPhone = getSipHeaderValue(event.data?.sip_headers || [], "to");
+      await withNotificationDeadline(notifyTeamTracked({
+        title: "New DDD call",
+        body: `${formatPhoneForAlert(callerPhone)} is calling DDD AI Dispatch.`,
+        data: { type: "call", callId: callId || "", from: callerPhone, to: calledPhone, route: "openai-sip" }
+      }, "incoming-openai-sip-call"), "incoming-openai-sip-call");
+      queueCallStartSms(callerPhone);
       if (!settings.enabled) {
         console.warn("AI receptionist is off. Incoming call was logged but not accepted.");
         res.sendStatus(200);
@@ -2442,6 +2450,12 @@ function maskPushSubscription(subscription = {}) {
       ? { endpoint: `${subscription.subscription.endpoint.slice(0, 32)}...`, keys: { p256dh: "...", auth: "..." } }
       : null
   };
+}
+
+function getSipHeaderValue(headers = [], name = "") {
+  const target = String(name).toLowerCase();
+  const header = headers.find((item) => String(item.name || "").toLowerCase() === target);
+  return String(header?.value || "").trim();
 }
 
 function formatPhoneForAlert(value = "") {
