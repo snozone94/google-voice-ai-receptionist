@@ -2686,6 +2686,8 @@ function normalizeE164(value) {
 }
 
 function normalizeConversationPhone(value) {
+  const normalized = normalizeE164(value);
+  if (normalized) return normalized;
   const digits = String(value || "").replace(/\D/g, "");
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
