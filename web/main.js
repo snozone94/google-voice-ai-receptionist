@@ -1971,6 +1971,8 @@ function renderConversations() {
   for (const conversation of conversations) {
     const booking = getLatestConversationBooking(conversation);
     const confidence = booking?.confidence || estimateConversationConfidence(conversation);
+    const row = document.createElement("div");
+    row.className = "conversation-swipe";
     const button = document.createElement("button");
     button.type = "button";
     button.className = conversation.phone === selectedConversationPhone ? "conversation-item selected" : "conversation-item";
@@ -1986,11 +1988,57 @@ function renderConversations() {
       selectedConversationPhone = conversation.phone;
       renderConversations();
     });
-    conversationList.append(button);
+    let touchStartX = 0;
+    let touchStartY = 0;
+    button.addEventListener("touchstart", (event) => {
+      const touch = event.touches[0];
+      touchStartX = touch?.clientX || 0;
+      touchStartY = touch?.clientY || 0;
+    }, { passive: true });
+    button.addEventListener("touchend", (event) => {
+      const touch = event.changedTouches[0];
+      const deltaX = (touch?.clientX || 0) - touchStartX;
+      const deltaY = Math.abs((touch?.clientY || 0) - touchStartY);
+      if (deltaX < -55 && deltaY < 40) {
+        row.classList.add("archive-open");
+      } else if (deltaX > 35) {
+        row.classList.remove("archive-open");
+      }
+    }, { passive: true });
+    const archiveButton = document.createElement("button");
+    archiveButton.type = "button";
+    archiveButton.className = "conversation-archive-button";
+    archiveButton.textContent = "Archive";
+    archiveButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      archiveInboxConversation(conversation.phone).catch((error) => setInboxStatus(error.message));
+    });
+    row.append(button, archiveButton);
+    conversationList.append(row);
   }
 
   renderSelectedConversation();
   renderTypingStatus();
+}
+
+async function archiveInboxConversation(phone) {
+  const normalizedPhone = normalizePhoneForRoute(phone);
+  if (!normalizedPhone) throw new Error("Could not archive: missing customer number.");
+  setInboxStatus(`Archiving ${formatPhone(normalizedPhone)}...`);
+  const response = await fetch(`/api/conversations/${encodeURIComponent(normalizedPhone)}`, {
+    method: "DELETE",
+    headers: staffHeaders()
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.error || "Could not archive this conversation.");
+  }
+  conversations = conversations.filter((conversation) => normalizePhoneForRoute(conversation.phone) !== normalizedPhone);
+  if (selectedConversationPhone && normalizePhoneForRoute(selectedConversationPhone) === normalizedPhone) {
+    selectedConversationPhone = conversations[0]?.phone || "";
+  }
+  renderConversations();
+  setInboxStatus(`${formatPhone(normalizedPhone)} archived. It is hidden from the active inbox but still saved in history.`);
 }
 
 function renderSelectedConversation() {

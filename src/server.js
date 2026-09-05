@@ -21,6 +21,7 @@ import {
   loadBusiness,
   getStorageInfo,
   addBookingPhotos,
+  archiveConversation,
   getBookingStatus,
   updateCallCorrection,
   updateBookingLocation,
@@ -432,6 +433,21 @@ app.get("/api/conversations", async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+});
+
+app.delete("/api/conversations/:phone", async (req, res, next) => {
+  try {
+    const staff = await getStaffAccess(req);
+    if (!staff.ok) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+
+    const archived = await archiveConversation(req.params.phone, staff.name || "DDD team");
+    res.json({ ok: true, staff, archived });
+  } catch (error) {
+    res.status(400).json({ ok: false, error: error.message });
   }
 });
 

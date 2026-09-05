@@ -751,7 +751,15 @@ button:hover:not(:disabled) {
   overscroll-behavior: contain;
 }
 
+.conversation-swipe {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+}
+
 .conversation-item {
+  position: relative;
+  z-index: 1;
   display: grid;
   gap: 4px;
   width: 100%;
@@ -767,10 +775,35 @@ button:hover:not(:disabled) {
   transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
+.conversation-swipe.archive-open .conversation-item {
+  transform: translateX(-92px);
+}
+
+.conversation-archive-button {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 86px;
+  border: 0;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ff3e6c, #ff7a3d);
+  color: white;
+  font-size: 0.82rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.conversation-swipe:not(.archive-open):hover .conversation-archive-button {
+  opacity: 0.9;
+}
+
 .conversation-item:hover {
   transform: translateY(-1px);
   border-color: rgba(255, 62, 165, 0.28);
   box-shadow: 0 12px 26px rgba(37, 38, 69, 0.1);
+}
+
+.conversation-swipe.archive-open .conversation-item:hover {
+  transform: translateX(-92px);
 }
 
 .conversation-item-top {

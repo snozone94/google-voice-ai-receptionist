@@ -14,6 +14,7 @@ const pushTokensPath = path.join(dataDir, "push-tokens.jsonl");
 const settingsPath = path.join(dataDir, "settings.json");
 const bundledSettingsPath = path.join(bundledDataDir, "settings.json");
 const callCorrectionsPath = path.join(dataDir, "call-corrections.json");
+const archivedConversationsPath = path.join(dataDir, "archived-conversations.json");
 const bookingStatuses = ["Requested", "Confirmed", "Technician Assigned", "Technician En Route", "Arrived", "In Progress", "Completed", "Cancelled"];
 
 export const voiceOptions = [
@@ -1085,6 +1086,7 @@ export async function listConversations(limit = 200) {
   const messages = await listRecords(smsPath, limit);
   const bookings = await listRecords(bookingsPath, 1000);
   const calls = await listRecords(callsPath, 1000);
+  const archivedPhones = await listArchivedConversationPhones();
   const bookingsByPhone = new Map();
   for (const booking of bookings) {
     const phone = normalizeConversationPhone(booking.phone || booking.customer_phone);
@@ -1154,11 +1156,37 @@ export async function listConversations(limit = 200) {
   }
 
   return [...conversations.values()]
+    .filter((conversation) => !archivedPhones.has(normalizeConversationPhone(conversation.phone)))
     .map((conversation) => ({
       ...conversation,
       messages: conversation.messages.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
     }))
     .sort((a, b) => String(b.lastMessageAt).localeCompare(String(a.lastMessageAt)));
+}
+
+export async function archiveConversation(phone, archivedBy = "DDD team") {
+  const normalizedPhone = normalizeConversationPhone(phone);
+  if (!normalizedPhone || !normalizeE164(normalizedPhone)) {
+    throw new Error("Enter a valid customer phone number.");
+  }
+  const archived = await readJsonObject(archivedConversationsPath, {});
+  archived[normalizedPhone] = {
+    phone: normalizedPhone,
+    archivedAt: new Date().toISOString(),
+    archivedBy: cleanText(archivedBy, "DDD team", 80)
+  };
+  await ensureDataDir();
+  await fs.writeFile(archivedConversationsPath, `${JSON.stringify(archived, null, 2)}\n`);
+  return archived[normalizedPhone];
+}
+
+export async function listArchivedConversationPhones() {
+  const archived = await readJsonObject(archivedConversationsPath, {});
+  return new Set(
+    Object.keys(archived)
+      .map((phone) => normalizeConversationPhone(phone))
+      .filter(Boolean)
+  );
 }
 
 export function calculateBookingConfidence(booking = {}) {
