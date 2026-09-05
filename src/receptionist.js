@@ -1084,6 +1084,7 @@ export async function listPushTokens(limit = 100) {
 export async function listConversations(limit = 200) {
   const messages = await listRecords(smsPath, limit);
   const bookings = await listRecords(bookingsPath, 1000);
+  const calls = await listRecords(callsPath, 1000);
   const bookingsByPhone = new Map();
   for (const booking of bookings) {
     const phone = normalizeConversationPhone(booking.phone || booking.customer_phone);
@@ -1116,6 +1117,40 @@ export async function listConversations(limit = 200) {
     conversation.lastMessageAt = message.createdAt || conversation.lastMessageAt;
     conversation.lastBody = message.body || conversation.lastBody;
     if (direction === "inbound") conversation.unread += 1;
+  }
+  for (const call of [...calls].reverse()) {
+    const key = normalizeConversationPhone(call.from);
+    if (!key) continue;
+    const status = call.status || (call.durationSeconds ? `completed in ${formatDuration(call.durationSeconds)}` : "call received");
+    if (!conversations.has(key)) {
+      conversations.set(key, {
+        phone: key,
+        lastMessageAt: call.createdAt,
+        lastBody: `Call: ${status}`,
+        unread: 1,
+        bookings: bookingsByPhone.get(key) || [],
+        messages: []
+      });
+    }
+    const conversation = conversations.get(key);
+    const hasCallNote = conversation.messages.some((message) => message.messageSid === `call:${call.callId || call.createdAt}`);
+    if (!hasCallNote) {
+      conversation.messages.push({
+        createdAt: call.createdAt,
+        direction: "call",
+        from: key,
+        to: call.to || "",
+        body: `Call: ${status}`,
+        messageSid: `call:${call.callId || call.createdAt}`,
+        status,
+        agentName: "DDD AI Dispatch",
+        customerPhone: key
+      });
+    }
+    if (String(call.createdAt || "").localeCompare(String(conversation.lastMessageAt || "")) > 0) {
+      conversation.lastMessageAt = call.createdAt;
+      conversation.lastBody = `Call: ${status}`;
+    }
   }
 
   return [...conversations.values()]
