@@ -105,6 +105,8 @@ const enableWebPushButton = document.querySelector("#enableWebPushButton");
 const testWebPushButton = document.querySelector("#testWebPushButton");
 const testEmailAlertButton = document.querySelector("#testEmailAlertButton");
 const checkWebPushButton = document.querySelector("#checkWebPushButton");
+const alertAuditPhoneInput = document.querySelector("#alertAuditPhoneInput");
+const alertAuditButton = document.querySelector("#alertAuditButton");
 const webPushStatus = document.querySelector("#webPushStatus");
 const webPushDiagnostic = document.querySelector("#webPushDiagnostic");
 const activityOverview = document.querySelector("#activityOverview");
@@ -186,6 +188,7 @@ staffNameInput.value = localStorage.getItem("dddStaffName") || "";
 staffStatusSelect.value = normalizeStaffStatus(localStorage.getItem("dddStaffStatus"));
 if (outboundStaffPhoneInput) outboundStaffPhoneInput.value = localStorage.getItem("dddOutboundStaffPhone") || "";
 if (outboundCallerIdSelect) outboundCallerIdSelect.value = localStorage.getItem("dddOutboundCallerId") || "";
+if (alertAuditPhoneInput) alertAuditPhoneInput.value = localStorage.getItem("dddAlertAuditPhone") || "";
 updateTeamCurrentCard();
 updateWebPushAvailabilityStatus();
 
@@ -1801,6 +1804,35 @@ async function sendEmailAlertTest() {
   }
 }
 
+async function runAlertAudit() {
+  try {
+    if (!accessCodeValue()) {
+      setWebPushStatus("Enter your real admin access code first.");
+      return;
+    }
+    const phone = alertAuditPhoneInput?.value.trim() || "";
+    if (alertAuditPhoneInput) localStorage.setItem("dddAlertAuditPhone", phone);
+    setWebPushStatus("Running full alert audit...");
+    const response = await fetch("/api/alerts/audit", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...adminHeaders()
+      },
+      body: JSON.stringify({ phone })
+    });
+    const payload = await response.json().catch(() => ({}));
+    const emailText = payload.email?.ok ? "email sent" : payload.email?.skipped ? "email skipped" : `email failed${payload.email?.error ? `: ${payload.email.error}` : ""}`;
+    const pushText = payload.push?.sent ? `${payload.push.sent} push alert${payload.push.sent === 1 ? "" : "s"} sent` : "no push devices reached";
+    const smsText = payload.sms?.ok ? "SMS sent" : payload.sms?.skipped ? payload.sms.reason || "SMS skipped" : `SMS failed${payload.sms?.error ? `: ${payload.sms.error}` : ""}`;
+    if (!response.ok && !payload.ok) throw new Error([emailText, pushText, smsText].filter(Boolean).join(" | "));
+    setWebPushStatus(`Audit: ${emailText} | ${pushText} | ${smsText}`);
+    updateWebPushDiagnostic().catch(() => {});
+  } catch (error) {
+    setWebPushStatus(error.message);
+  }
+}
+
 function formatPhone(phone) {
   const raw = String(phone || "");
   const sipPhone = raw.match(/\+?1?\d{10,11}/)?.[0] || "";
@@ -2858,6 +2890,10 @@ refreshInsightsButton?.addEventListener("click", () => {
 enableWebPushButton?.addEventListener("click", enableWebPushNotifications);
 testWebPushButton?.addEventListener("click", sendWebPushTest);
 testEmailAlertButton?.addEventListener("click", sendEmailAlertTest);
+alertAuditPhoneInput?.addEventListener("input", () => {
+  localStorage.setItem("dddAlertAuditPhone", alertAuditPhoneInput.value.trim());
+});
+alertAuditButton?.addEventListener("click", runAlertAudit);
 checkWebPushButton?.addEventListener("click", () => {
   updateWebPushAvailabilityStatus();
   updateWebPushDiagnostic().catch((error) => setWebPushDiagnostic(error.message));

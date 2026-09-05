@@ -646,6 +646,55 @@ app.post("/api/email/test", express.json(), async (req, res, next) => {
   }
 });
 
+app.post("/api/alerts/audit", express.json(), async (req, res, next) => {
+  try {
+    if (!hasAdminAccess(req)) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+    const phone = normalizeE164(req.body?.phone || req.body?.to || "");
+    const pushResult = await notifyTeamTracked({
+      title: "DDD AI Dispatch alert audit",
+      body: "This is a full alert test from the live DDD AI Dispatch backend.",
+      data: { type: "alert-audit", from: phone || "" }
+    }, "alert-audit");
+
+    let smsResult = { ok: false, skipped: true, reason: "No phone number entered for SMS audit." };
+    if (phone) {
+      const message = appendStopFooter(
+        process.env.ALERT_AUDIT_SMS_MESSAGE ||
+          "DDD AI Dispatch alert test. This confirms outbound texting is working from the DDD inbox."
+      );
+      smsResult = await sendTwilioSms(phone, message);
+      await saveOutgoingSms({
+        to: phone,
+        from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
+        body: message,
+        messageSid: smsResult.sid || "",
+        status: smsResult.status || (smsResult.ok ? "sent" : "failed"),
+        agentName: "Alert audit",
+        source: "alert_audit",
+        reason: "manual-test"
+      });
+      console.log(`Alert audit SMS ${smsResult.ok ? "sent" : "failed"} to ${formatPhoneForAlert(phone)}${smsResult.error ? `: ${smsResult.error}` : ""}`);
+    }
+
+    res.status(pushResult.ok || smsResult.ok ? 200 : 502).json({
+      ok: Boolean(pushResult.ok || smsResult.ok),
+      email: pushResult.email || null,
+      push: {
+        ok: pushResult.ok,
+        sent: pushResult.sent || 0,
+        skipped: pushResult.skipped || false,
+        errors: pushResult.errors || []
+      },
+      sms: smsResult
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/twilio/voice-verify", express.urlencoded({ extended: false }), async (req, res) => {
   if (!hasTwilioSmsAccess(req)) {
     res.status(403).send("Forbidden");
@@ -729,7 +778,7 @@ async function handleTwilioVoice(req, res, next) {
     await withNotificationDeadline(notifyTeamTracked({
       title: "New DDD call",
       body: `${formatPhoneForAlert(req.body?.From || req.query?.From)} is calling DDD AI Dispatch.`,
-      data: { type: "call", from: req.body?.From || req.query?.From || "" }
+      data: { type: "call", callId: req.body?.CallSid || req.query?.CallSid || "", from: req.body?.From || req.query?.From || "" }
     }, "incoming-call"), "incoming-call");
 
     if (routeMode === "humans" || settings.enabled === false) {
@@ -2302,6 +2351,19 @@ async function notifyTeamTracked(payload, label = "team-alert") {
   const emailStatus = result?.email?.ok ? "sent" : result?.email?.skipped ? "skipped" : "failed";
   const suffix = errors.length ? ` errors=${errors.join(" | ")}` : "";
   console.log(`Team notification ${label} ${status}; email=${emailStatus}; pushSent=${result?.sent || 0}${suffix}`);
+  if (payload?.data?.from || payload?.data?.callId) {
+    await saveCallEvent({
+      type: "ddd.notification",
+      data: {
+        call_id: payload.data.callId || "",
+        status: `${label}:${status}:email-${emailStatus}:push-${result?.sent || 0}`,
+        sip_headers: [
+          { name: "from", value: payload.data.from || "" },
+          { name: "to", value: process.env.GOOGLE_VOICE_NUMBER || process.env.TWILIO_SMS_FROM || "" }
+        ]
+      }
+    });
+  }
   return result;
 }
 
