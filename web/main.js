@@ -2050,27 +2050,57 @@ function renderConversationDetails(conversation, booking, confidence) {
 
 function renderQuickReplies(conversation, booking, confidence) {
   if (!quickReplies) return;
+  const text = `${conversation?.lastBody || ""} ${(conversation?.messages || []).map((message) => message.body).join(" ")}`.toLowerCase();
   const locationUrl = booking?.customerLocationUrl || "";
-  const replies = [
-    {
-      label: "Ask location",
-      text: locationUrl
+  const service = booking?.serviceType || inferServiceFromText(text) || "service";
+  const replies = [];
+  const addReply = (label, replyText) => {
+    if (!replies.some((reply) => reply.text === replyText)) replies.push({ label, text: replyText });
+  };
+
+  addReply("Professional follow-up", `Hi, this is DDD. We received your ${service} request and can help get the next step moving. Please reply with any updates, photos, or timing changes here.`);
+
+  if (confidence?.missing?.includes("location")) {
+    addReply(
+      "Get location",
+      locationUrl
         ? `Please confirm your service location here so DDD can dispatch correctly: ${locationUrl}`
-        : "What is the exact address, business name, or nearest cross street for service?"
-    },
-    {
-      label: "On it",
-      text: "Thanks. DDD received this and will follow up with the next step shortly."
-    },
-    {
-      label: "Need vehicle",
-      text: "What is the vehicle year, make, model, and color?"
-    },
-    {
-      label: "Payment",
-      text: "DDD accepts cash, card, tap pay, and installments. We do not accept checks."
-    }
-  ];
+        : "Please send the exact address, business name, or nearest cross street for service so DDD can dispatch correctly."
+    );
+  }
+
+  if (confidence?.missing?.includes("vehicle") || /\b(car|truck|vehicle|oil|brake|rotor|hub|tire|spare|jump|battery|lockout)\b/i.test(text)) {
+    addReply("Get vehicle", "Please send the vehicle year, make, model, and color. If this is for tires, brakes, rotors, oil, battery, or hubs, also let us know if you already have the parts/materials.");
+  }
+
+  if (/\b(tire|spare|wheel|lug|lock key|wheel lock)\b/i.test(text)) {
+    addReply("Tire details", "For the tire service, is it one tire or multiple? Also, does the vehicle have a wheel lock or special key, and do you have it with you?");
+  }
+
+  if (/\b(brake|rotor|pad|hub|bearing|oil|battery)\b/i.test(text)) {
+    addReply("Parts check", "Do you already have the parts/materials, or do you need DDD to confirm what is needed first?");
+  }
+
+  if (/\b(price|cost|pay|payment|card|cash|installment|check)\b/i.test(text)) {
+    addReply("Payment", "DDD accepts cash, card, tap pay, and installments. We do not accept checks. Final pricing depends on service, location, vehicle, parts, and availability.");
+  }
+
+  if (/\b(cancel|reschedule|change|different time|later|tomorrow)\b/i.test(text)) {
+    addReply("Reschedule", "No problem. Please reply with the new day/time that works best, and DDD will confirm the update as soon as possible.");
+  }
+
+  if (/\b(complaint|refund|damage|upset|mad|angry|issue|problem)\b/i.test(text)) {
+    addReply("Complaint", "I’m sorry about that. Please send the job details, what happened, and the best callback number. We’ll flag this for priority review. You can also email support@dddcincy.com.");
+  }
+
+  if (/\b(photo|picture|image|upload|damage|flat|tire|leak)\b/i.test(text) || booking?.photoUploadUrl) {
+    addReply("Photo link", `Please upload photos here so DDD can attach them to your request: ${booking?.photoUploadUrl || "https://dddcincy.com/customer-photo-upload/"}`);
+  }
+
+  addReply("On it", "Thanks. DDD has this and will follow up with the next step shortly.");
+  addReply("Booking link", "You can book or manage service here: https://dddcincy.com/book-service/");
+  addReply("Call back soon", "Thanks for reaching out. DDD may be helping another customer right now, but we have your message and will follow up as soon as possible.");
+
   quickReplies.innerHTML = replies
     .map((reply) => `<button type="button" data-reply="${escapeHtml(reply.text)}">${escapeHtml(reply.label)}</button>`)
     .join("");

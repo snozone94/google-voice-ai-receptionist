@@ -726,11 +726,11 @@ async function handleTwilioVoice(req, res, next) {
         ]
       }
     });
-    queueTeamNotification({
+    await withNotificationDeadline(notifyTeamTracked({
       title: "New DDD call",
       body: `${formatPhoneForAlert(req.body?.From || req.query?.From)} is calling DDD AI Dispatch.`,
       data: { type: "call", from: req.body?.From || req.query?.From || "" }
-    }, "incoming-call");
+    }, "incoming-call"), "incoming-call");
 
     if (routeMode === "humans" || settings.enabled === false) {
       res.type("text/xml").send(buildHumanDialTwiml(settings, { recordingCallback, statusCallback }));
@@ -2209,7 +2209,7 @@ async function notifyTeam({ title, body, data = {} }) {
   } catch (error) {
     console.warn(`Could not load push tokens: ${error.message}`);
     const emailResult = await emailResultPromise;
-    return { ok: Boolean(emailResult.ok), sent: 0, skipped: !emailResult.ok, errors: [error.message, emailResult.error].filter(Boolean) };
+    return { ok: Boolean(emailResult.ok), sent: 0, skipped: !emailResult.ok, email: emailResult, errors: [error.message, emailResult.error].filter(Boolean) };
   }
 
   const expoMessages = tokens
@@ -2230,7 +2230,7 @@ async function notifyTeam({ title, body, data = {} }) {
 
   if (!expoMessages.length && !webSubscriptions.length) {
     const emailResult = await emailResultPromise;
-    return { ok: emailResult.ok || emailResult.skipped, sent: 0, skipped: !emailResult.ok, errors: [emailResult.error].filter(Boolean) };
+    return { ok: emailResult.ok || emailResult.skipped, sent: 0, skipped: !emailResult.ok, email: emailResult, errors: [emailResult.error].filter(Boolean) };
   }
 
   let sent = 0;
@@ -2281,11 +2281,11 @@ async function notifyTeam({ title, body, data = {} }) {
       }
     }
     const emailResult = await emailResultPromise;
-    return { ok: errors.length === 0 && (emailResult.ok || emailResult.skipped), sent, skipped: false, errors: [...errors, emailResult.error].filter(Boolean) };
+    return { ok: errors.length === 0 && (emailResult.ok || emailResult.skipped), sent, skipped: false, email: emailResult, errors: [...errors, emailResult.error].filter(Boolean) };
   } catch (error) {
     console.warn(`Push failed: ${error.message}`);
     const emailResult = await emailResultPromise;
-    return { ok: Boolean(emailResult.ok), sent, skipped: false, errors: [error.message, ...errors, emailResult.error].filter(Boolean) };
+    return { ok: Boolean(emailResult.ok), sent, skipped: false, email: emailResult, errors: [error.message, ...errors, emailResult.error].filter(Boolean) };
   }
 }
 
@@ -2299,9 +2299,27 @@ async function notifyTeamTracked(payload, label = "team-alert") {
   const result = await notifyTeam(payload);
   const errors = Array.isArray(result?.errors) ? result.errors.filter(Boolean) : [];
   const status = result?.ok ? "sent" : result?.skipped ? "skipped" : "failed";
+  const emailStatus = result?.email?.ok ? "sent" : result?.email?.skipped ? "skipped" : "failed";
   const suffix = errors.length ? ` errors=${errors.join(" | ")}` : "";
-  console.log(`Team notification ${label} ${status}; pushSent=${result?.sent || 0}${suffix}`);
+  console.log(`Team notification ${label} ${status}; email=${emailStatus}; pushSent=${result?.sent || 0}${suffix}`);
   return result;
+}
+
+async function withNotificationDeadline(promise, label = "team-alert") {
+  const timeoutMs = Number(process.env.CALL_START_ALERT_TIMEOUT_MS || 4500) || 4500;
+  try {
+    await Promise.race([
+      promise,
+      new Promise((resolve) =>
+        setTimeout(() => {
+          console.warn(`Team notification ${label} still pending after ${timeoutMs}ms; call routing will continue.`);
+          resolve();
+        }, timeoutMs)
+      )
+    ]);
+  } catch (error) {
+    console.warn(`Team notification ${label} failed before call routing: ${error.message}`);
+  }
 }
 
 function maskPushSubscription(subscription = {}) {
