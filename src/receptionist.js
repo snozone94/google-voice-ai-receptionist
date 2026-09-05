@@ -1020,7 +1020,9 @@ export async function saveOutgoingSms(message) {
     body: cleanLongText(message.Body || message.body, "", 2000),
     messageSid: cleanText(message.MessageSid || message.messageSid || "", "", 80),
     status: cleanText(message.SmsStatus || message.status || "sent", "sent", 80),
-    agentName: cleanText(message.agentName || "DDD team", "DDD team", 80)
+    agentName: cleanText(message.agentName || "DDD team", "DDD team", 80),
+    source: cleanText(message.source || "", "", 80),
+    reason: cleanText(message.reason || "", "", 160)
   };
   await ensureDataDir();
   await fs.appendFile(smsPath, `${JSON.stringify(record)}\n`);

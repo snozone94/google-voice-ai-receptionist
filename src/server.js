@@ -780,6 +780,7 @@ async function handleTwilioVoice(req, res, next) {
       body: `${formatPhoneForAlert(req.body?.From || req.query?.From)} is calling DDD AI Dispatch.`,
       data: { type: "call", callId: req.body?.CallSid || req.query?.CallSid || "", from: req.body?.From || req.query?.From || "" }
     }, "incoming-call"), "incoming-call");
+    queueCallStartSms(req.body?.From || req.query?.From || "");
 
     if (routeMode === "humans" || settings.enabled === false) {
       res.type("text/xml").send(buildHumanDialTwiml(settings, { recordingCallback, statusCallback }));
@@ -1936,6 +1937,54 @@ async function sendMissedCallSms(to, status = "") {
     source: "missed_call",
     reason: status
   });
+}
+
+function queueCallStartSms(to) {
+  sendCallStartSmsIfNeeded(to).catch((error) => {
+    console.warn(`Call-start SMS crashed: ${error.message}`);
+  });
+}
+
+async function sendCallStartSmsIfNeeded(to) {
+  const normalizedTo = normalizeE164(to);
+  if (!normalizedTo || process.env.CALL_START_SMS_ENABLED === "false") {
+    console.warn(`Call-start SMS skipped: ${normalizedTo ? "disabled" : "missing caller number"}`);
+    return { ok: false, skipped: true };
+  }
+
+  const dedupeMinutes = Number(process.env.CALL_START_SMS_DEDUPE_MINUTES || 30) || 30;
+  const recentWindowMs = Math.max(1, dedupeMinutes) * 60 * 1000;
+  const recentMessages = await listSms(300);
+  const now = Date.now();
+  const alreadyTexted = recentMessages.some((message) => {
+    if (message.direction !== "outbound" || normalizeE164(message.to) !== normalizedTo) return false;
+    if (!/call_start|completed_call|missed_call|alert_audit/.test(message.source || "")) return false;
+    const sentAt = Date.parse(message.createdAt || "");
+    return Number.isFinite(sentAt) && now - sentAt <= recentWindowMs;
+  });
+  if (alreadyTexted) {
+    console.log(`Call-start SMS skipped for ${formatPhoneForAlert(normalizedTo)}: recent call SMS already exists.`);
+    return { ok: true, skipped: true, reason: "Recent call SMS already exists." };
+  }
+
+  const bookingUrl = process.env.BOOKING_URL || "https://dddcincy.com/book-service/";
+  const message = appendStopFooter(
+    process.env.CALL_START_SMS_MESSAGE ||
+      `Thanks for calling DDD. If we get disconnected, reply here with your name, service, vehicle, and location. You can also book here: ${bookingUrl}`
+  );
+  const delivery = await sendTwilioSms(normalizedTo, message);
+  console.log(`Call-start SMS ${delivery.ok ? "sent" : "failed"} to ${formatPhoneForAlert(normalizedTo)}${delivery.error ? `: ${delivery.error}` : ""}`);
+  await saveOutgoingSms({
+    to: normalizedTo,
+    from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
+    body: message,
+    messageSid: delivery.sid || "",
+    status: delivery.status || (delivery.ok ? "sent" : "failed"),
+    agentName: "Call-start fallback",
+    source: "call_start",
+    reason: "incoming-call"
+  });
+  return delivery;
 }
 
 async function sendCompletedCallSmsIfNeeded(to, status = "") {
