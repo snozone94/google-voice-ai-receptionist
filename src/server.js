@@ -2466,7 +2466,12 @@ function formatPhoneForAlert(value = "") {
 }
 
 function normalizeE164(value) {
-  const digits = String(value || "").replace(/\D/g, "");
+  const text = String(value || "");
+  const sipPhone = text.match(/\+1\d{10}\b/);
+  if (sipPhone) return sipPhone[0];
+  const nationalPhone = text.match(/(?:^|\D)(\d{10})(?:\D|$)/);
+  if (nationalPhone) return `+1${nationalPhone[1]}`;
+  const digits = text.replace(/\D/g, "");
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
   return "";

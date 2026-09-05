@@ -979,12 +979,14 @@ export async function addBookingPhotos(bookingId, token, uploads = []) {
 }
 
 export async function saveCallEvent(event) {
+  const from = extractSipHeader(event.data?.sip_headers || [], "from");
+  const to = extractSipHeader(event.data?.sip_headers || [], "to");
   const record = {
     createdAt: new Date().toISOString(),
     type: event.type,
     callId: event.data?.call_id,
-    from: extractSipHeader(event.data?.sip_headers || [], "from"),
-    to: extractSipHeader(event.data?.sip_headers || [], "to"),
+    from: normalizeE164(from) || from,
+    to: normalizeE164(to) || to,
     status: cleanText(event.data?.status || event.data?.call_status || "", "", 80),
     durationSeconds: Number(event.data?.durationSeconds || event.data?.duration_seconds || event.data?.CallDuration || 0) || 0,
     recordingUrl: cleanText(event.data?.recording_url || event.data?.recordingUrl || "", "", 500),
@@ -2637,7 +2639,12 @@ function normalizePhoneForSms(value) {
 }
 
 function normalizeE164(value) {
-  const digits = String(value || "").replace(/\D/g, "");
+  const text = String(value || "");
+  const sipPhone = text.match(/\+1\d{10}\b/);
+  if (sipPhone) return sipPhone[0];
+  const nationalPhone = text.match(/(?:^|\D)(\d{10})(?:\D|$)/);
+  if (nationalPhone) return `+1${nationalPhone[1]}`;
+  const digits = text.replace(/\D/g, "");
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
   return "";
