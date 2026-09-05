@@ -387,11 +387,11 @@ app.post("/api/twilio/sms", express.urlencoded({ extended: false }), async (req,
 
     const record = await saveIncomingSms(req.body || {});
     console.log(`Inbound Twilio SMS stored from ${record.from || "unknown"} to ${record.to || "unknown"}`);
-    notifyTeam({
+    queueTeamNotification({
       title: "New DDD text",
       body: `${formatPhoneForAlert(record.from)}: ${record.body || "New customer message"}`.slice(0, 160),
       data: { type: "sms", from: record.from || "" }
-    });
+    }, "incoming-sms");
     res.type("text/xml").send("<Response></Response>");
   } catch (error) {
     next(error);
@@ -726,27 +726,30 @@ async function handleTwilioVoice(req, res, next) {
         ]
       }
     });
-    notifyTeam({
+    queueTeamNotification({
       title: "New DDD call",
       body: `${formatPhoneForAlert(req.body?.From || req.query?.From)} is calling DDD AI Dispatch.`,
       data: { type: "call", from: req.body?.From || req.query?.From || "" }
-    });
+    }, "incoming-call");
 
     if (routeMode === "humans" || settings.enabled === false) {
-      res.type("text/xml").send(buildHumanDialTwiml(settings, { recordingCallback }));
+      res.type("text/xml").send(buildHumanDialTwiml(settings, { recordingCallback, statusCallback }));
       return;
     }
 
     if (!sipUri) {
-      res.type("text/xml").send(buildHumanDialTwiml(settings, { recordingCallback }));
+      res.type("text/xml").send(buildHumanDialTwiml(settings, { recordingCallback, statusCallback }));
       return;
     }
 
     const actionAttr = routeMode === "ai_then_humans" ? ` action="${xmlEscape(humanFallbackAction)}" method="POST"` : "";
+    const dialStatusAttr = statusCallback
+      ? ` statusCallback="${xmlEscape(statusCallback)}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed"`
+      : "";
     res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="30" answerOnBridge="true"${actionAttr} record="record-from-answer" recordingStatusCallback="${xmlEscape(recordingCallback)}" recordingStatusCallbackMethod="POST">
-    <Sip statusCallback="${xmlEscape(statusCallback)}" statusCallbackMethod="POST">${xmlEscape(sipUri)}</Sip>
+  <Dial timeout="30" answerOnBridge="true"${actionAttr}${dialStatusAttr} record="record-from-answer" recordingStatusCallback="${xmlEscape(recordingCallback)}" recordingStatusCallbackMethod="POST">
+    <Sip statusCallback="${xmlEscape(statusCallback)}" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed">${xmlEscape(sipUri)}</Sip>
   </Dial>
 </Response>`);
   } catch (error) {
@@ -777,7 +780,10 @@ app.post("/api/twilio/human-fallback", express.urlencoded({ extended: false }), 
     const recordingCallback = publicBaseUrl
       ? `${publicBaseUrl}/api/twilio/recording?secret=${secret}`
       : `/api/twilio/recording?secret=${secret}`;
-    res.type("text/xml").send(buildHumanDialTwiml(settings, { recordingCallback }));
+    const statusCallback = publicBaseUrl
+      ? `${publicBaseUrl}/api/twilio/call-status?secret=${secret}`
+      : `/api/twilio/call-status?secret=${secret}`;
+    res.type("text/xml").send(buildHumanDialTwiml(settings, { recordingCallback, statusCallback }));
   } catch (error) {
     next(error);
   }
@@ -791,7 +797,7 @@ function getInitialVoiceRouteStatus({ routeMode, sipUri, humanNumbers }) {
   return humanNumbers.length ? "routing-to-ai-with-human-fallback" : "routing-to-ai";
 }
 
-function buildHumanDialTwiml(settings, { recordingCallback = "" } = {}) {
+function buildHumanDialTwiml(settings, { recordingCallback = "", statusCallback = "" } = {}) {
   const route = settings.humanRouting || {};
   const numbers = Array.isArray(route.numbers) ? route.numbers : [];
   const timeout = Math.min(45, Math.max(8, Number(route.timeoutSeconds || 22)));
@@ -809,6 +815,9 @@ function buildHumanDialTwiml(settings, { recordingCallback = "" } = {}) {
     .join("");
   const callbackAttrs = [
     callerId ? `callerId="${xmlEscape(callerId)}"` : "",
+    statusCallback ? `statusCallback="${xmlEscape(statusCallback)}"` : "",
+    statusCallback ? `statusCallbackMethod="POST"` : "",
+    statusCallback ? `statusCallbackEvent="initiated ringing answered completed"` : "",
     recordingCallback ? `recordingStatusCallback="${xmlEscape(recordingCallback)}"` : "",
     recordingCallback ? `recordingStatusCallbackMethod="POST"` : ""
   ]
@@ -893,18 +902,18 @@ app.post("/api/twilio/call-status", express.urlencoded({ extended: false }), asy
     const isEarlyHangup = normalizedStatus === "completed" && durationSeconds > 0 && durationSeconds <= earlyHangupSeconds;
     if (isMissed || isEarlyHangup) {
       const reason = isEarlyHangup ? `hung up after ${durationSeconds}s` : status || "missed";
-      await notifyTeam({
+      await notifyTeamTracked({
         title: "DDD call needs review",
         body: `${formatPhoneForAlert(req.body.From || "")} ${isEarlyHangup ? reason : `ended as ${reason}`}.`,
         data: { type: isEarlyHangup ? "early-hangup" : "missed-call", status, durationSeconds, from: req.body.From || "" }
-      });
+      }, "call-needs-review");
       await sendMissedCallSms(req.body.From || "", reason);
     } else if (normalizedStatus === "completed") {
-      await notifyTeam({
+      await notifyTeamTracked({
         title: "DDD call completed",
         body: `${formatPhoneForAlert(req.body.From || "")} completed${durationSeconds ? ` in ${formatAlertDuration(durationSeconds)}` : ""}.`,
         data: { type: "call-completed", status, durationSeconds, from: req.body.From || "" }
-      });
+      }, "call-completed");
       await sendCompletedCallSmsIfNeeded(req.body.From || "", status);
     }
     res.type("text/xml").send("<Response></Response>");
@@ -1857,13 +1866,17 @@ async function sendTwilioSms(to, message) {
 
 async function sendMissedCallSms(to, status = "") {
   const normalizedTo = normalizeE164(to);
-  if (!normalizedTo || process.env.MISSED_CALL_SMS_ENABLED === "false") return;
+  if (!normalizedTo || process.env.MISSED_CALL_SMS_ENABLED === "false") {
+    console.warn(`Missed-call SMS skipped: ${normalizedTo ? "disabled" : "missing caller number"}`);
+    return;
+  }
   const bookingUrl = process.env.BOOKING_URL || "https://dddcincy.com/book-service/";
   const message = appendStopFooter(
     process.env.MISSED_CALL_SMS_MESSAGE ||
       `Sorry we missed your DDD call. You can reply here with what you need, or book service here: ${bookingUrl}`
   );
   const delivery = await sendTwilioSms(normalizedTo, message);
+  console.log(`Missed-call SMS ${delivery.ok ? "sent" : "failed"} to ${formatPhoneForAlert(normalizedTo)}${delivery.error ? `: ${delivery.error}` : ""}`);
   await saveOutgoingSms({
     to: normalizedTo,
     from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
@@ -1878,7 +1891,10 @@ async function sendMissedCallSms(to, status = "") {
 
 async function sendCompletedCallSmsIfNeeded(to, status = "") {
   const normalizedTo = normalizeE164(to);
-  if (!normalizedTo || process.env.COMPLETED_CALL_SMS_ENABLED === "false") return { ok: false, skipped: true };
+  if (!normalizedTo || process.env.COMPLETED_CALL_SMS_ENABLED === "false") {
+    console.warn(`Completed-call SMS skipped: ${normalizedTo ? "disabled" : "missing caller number"}`);
+    return { ok: false, skipped: true };
+  }
 
   const dedupeMinutes = Number(process.env.CALL_FOLLOWUP_SMS_DEDUPE_MINUTES || 15) || 15;
   const recentWindowMs = Math.max(1, dedupeMinutes) * 60 * 1000;
@@ -1889,7 +1905,10 @@ async function sendCompletedCallSmsIfNeeded(to, status = "") {
     const sentAt = Date.parse(message.createdAt || "");
     return Number.isFinite(sentAt) && now - sentAt <= recentWindowMs;
   });
-  if (alreadyTexted) return { ok: true, skipped: true, reason: "Recent outbound SMS already exists." };
+  if (alreadyTexted) {
+    console.log(`Completed-call SMS skipped for ${formatPhoneForAlert(normalizedTo)}: recent outbound SMS already exists.`);
+    return { ok: true, skipped: true, reason: "Recent outbound SMS already exists." };
+  }
 
   const bookingUrl = process.env.BOOKING_URL || "https://dddcincy.com/book-service/";
   const message = appendStopFooter(
@@ -1897,6 +1916,7 @@ async function sendCompletedCallSmsIfNeeded(to, status = "") {
       `Thanks for calling DDD. Reply here with any updates or details and our team can text you back. Book or manage service here: ${bookingUrl}`
   );
   const delivery = await sendTwilioSms(normalizedTo, message);
+  console.log(`Completed-call SMS ${delivery.ok ? "sent" : "failed"} to ${formatPhoneForAlert(normalizedTo)}${delivery.error ? `: ${delivery.error}` : ""}`);
   await saveOutgoingSms({
     to: normalizedTo,
     from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
@@ -2267,6 +2287,21 @@ async function notifyTeam({ title, body, data = {} }) {
     const emailResult = await emailResultPromise;
     return { ok: Boolean(emailResult.ok), sent, skipped: false, errors: [error.message, ...errors, emailResult.error].filter(Boolean) };
   }
+}
+
+function queueTeamNotification(payload, label = "team-alert") {
+  notifyTeamTracked(payload, label).catch((error) => {
+    console.warn(`Team notification ${label} crashed: ${error.message}`);
+  });
+}
+
+async function notifyTeamTracked(payload, label = "team-alert") {
+  const result = await notifyTeam(payload);
+  const errors = Array.isArray(result?.errors) ? result.errors.filter(Boolean) : [];
+  const status = result?.ok ? "sent" : result?.skipped ? "skipped" : "failed";
+  const suffix = errors.length ? ` errors=${errors.join(" | ")}` : "";
+  console.log(`Team notification ${label} ${status}; pushSent=${result?.sent || 0}${suffix}`);
+  return result;
 }
 
 function maskPushSubscription(subscription = {}) {
