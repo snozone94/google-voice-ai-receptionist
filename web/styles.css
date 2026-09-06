@@ -3824,3 +3824,157 @@ h1 {
     font-size: 0.7rem;
   }
 }
+
+/* Final admin shell pass: keep daily-use tools obvious and tuck setup pages behind More. */
+.simplified-tabbar {
+  align-items: center;
+}
+
+.simplified-tabbar .advanced-tab {
+  display: none;
+}
+
+.simplified-tabbar.show-advanced .advanced-tab {
+  display: inline-flex;
+}
+
+.more-tab-button {
+  border-color: rgba(255, 62, 165, 0.32);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.78)) padding-box,
+    var(--rainbow) border-box;
+}
+
+.more-tab-button[aria-expanded="true"] {
+  color: #fff;
+  background: linear-gradient(135deg, #16b8ff, #7657ff, #ff3ea5);
+  box-shadow: 0 12px 28px rgba(118, 87, 255, 0.24);
+}
+
+@media (min-width: 721px) {
+  .simplified-tabbar {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .simplified-tabbar .tab-button {
+    min-width: 104px;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 720px) {
+  body {
+    padding-bottom: calc(78px + env(safe-area-inset-bottom));
+  }
+
+  .hero-panel {
+    padding: 10px;
+    border-radius: 16px;
+  }
+
+  .hero-panel::before {
+    margin: -10px -10px 8px;
+  }
+
+  .brand-row {
+    gap: 8px;
+  }
+
+  .brand-row img,
+  .brand-row .logo-mark {
+    width: 42px;
+    height: 42px;
+  }
+
+  .brand-copy h1 {
+    font-size: clamp(1.25rem, 7vw, 1.85rem);
+    line-height: 1;
+  }
+
+  .quick-control-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .quick-control-grid .control-card {
+    min-height: 0;
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  .quick-control-grid .control-card h2 {
+    font-size: 0.96rem;
+  }
+
+  .quick-control-grid .control-card p {
+    font-size: 0.76rem;
+  }
+
+  .simplified-tabbar {
+    left: 6px;
+    right: 6px;
+    bottom: max(6px, env(safe-area-inset-bottom));
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-auto-rows: 36px;
+    max-height: 44px;
+    gap: 5px;
+    padding: 5px;
+    overflow: hidden;
+    border-radius: 18px;
+  }
+
+  .simplified-tabbar.show-advanced {
+    max-height: min(188px, 42vh);
+    overflow-y: auto;
+    align-content: start;
+  }
+
+  .simplified-tabbar .tab-button {
+    width: 100%;
+    min-height: 36px;
+    height: 36px;
+    padding: 0 4px;
+    font-size: 0.64rem;
+    line-height: 1;
+    white-space: normal;
+    justify-content: center;
+  }
+
+  .simplified-tabbar .advanced-tab {
+    display: none;
+  }
+
+  .simplified-tabbar.show-advanced .advanced-tab {
+    display: inline-flex;
+  }
+
+  .sticky-access-bar {
+    top: 4px;
+    margin-bottom: 8px;
+    min-height: 42px;
+  }
+
+  .sticky-access-bar p {
+    font-size: 0.72rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .simplified-tabbar {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-auto-rows: 34px;
+    max-height: 42px;
+  }
+
+  .simplified-tabbar.show-advanced {
+    max-height: min(184px, 42vh);
+  }
+
+  .simplified-tabbar .tab-button {
+    min-height: 34px;
+    height: 34px;
+    font-size: 0.58rem;
+  }
+}

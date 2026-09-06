@@ -155,6 +155,9 @@ const qaChecklistInput = document.querySelector("#qaChecklistInput");
 const qaStatus = document.querySelector("#qaStatus");
 const tabButtons = [...document.querySelectorAll("[data-tab-target]")];
 const tabPanels = [...document.querySelectorAll("[data-tab-panel]")];
+const simplifiedTabbar = document.querySelector(".simplified-tabbar");
+const advancedMenuButton = document.querySelector("#advancedMenuButton");
+const advancedTabNames = new Set(["voice", "script", "intake", "followup", "insights", "qa", "activity"]);
 
 let peerConnection;
 let localStream;
@@ -196,7 +199,21 @@ for (const button of tabButtons) {
   button.addEventListener("click", () => setActiveTab(button.dataset.tabTarget));
 }
 
+advancedMenuButton?.addEventListener("click", () => {
+  const expanded = !simplifiedTabbar?.classList.contains("show-advanced");
+  simplifiedTabbar?.classList.toggle("show-advanced", expanded);
+  advancedMenuButton.setAttribute("aria-expanded", expanded ? "true" : "false");
+  advancedMenuButton.textContent = expanded ? "Less" : "More";
+});
+
 function setActiveTab(tabName) {
+  if (advancedTabNames.has(tabName)) {
+    simplifiedTabbar?.classList.add("show-advanced");
+    if (advancedMenuButton) {
+      advancedMenuButton.setAttribute("aria-expanded", "true");
+      advancedMenuButton.textContent = "Less";
+    }
+  }
   for (const button of tabButtons) {
     button.classList.toggle("active", button.dataset.tabTarget === tabName);
     if (button.dataset.tabTarget === tabName) {
