@@ -4190,3 +4190,125 @@ textarea::placeholder {
       var(--rainbow) border-box;
   }
 }
+
+/* Readability pass for dark cards: info inside cards must stay visible. */
+.inbox-shell,
+.call-log-shell {
+  background:
+    linear-gradient(145deg, rgba(12, 15, 31, 0.72), rgba(38, 27, 61, 0.54)) padding-box,
+    linear-gradient(135deg, rgba(255, 62, 165, 0.42), rgba(22, 184, 255, 0.36), rgba(35, 199, 121, 0.24)) border-box;
+  border-color: transparent;
+}
+
+.conversation-list,
+.call-log-list,
+.message-list,
+.call-detail {
+  background: rgba(7, 10, 25, 0.26);
+}
+
+.conversation-header,
+.reply-form {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.conversation-header strong,
+.conversation-header span,
+.reply-form label,
+.reply-form p {
+  color: #17182a;
+}
+
+.conversation-details {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.conversation-details div,
+.metric,
+.activity-list li,
+.insight-list li,
+.qa-list li,
+.related-record,
+.call-section {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(255, 255, 255, 0.74);
+  color: #17182a;
+}
+
+.conversation-details div span,
+.metric span,
+.activity-list li span,
+.insight-list li span,
+.qa-list li span,
+.related-record span,
+.call-section span {
+  color: #626779;
+}
+
+.conversation-details div strong,
+.metric strong,
+.activity-list li strong,
+.insight-list li strong,
+.qa-list li strong,
+.related-record strong,
+.call-section strong {
+  color: #17182a;
+}
+
+.conversation-item,
+.call-log-item {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.93), rgba(229, 246, 255, 0.87)) padding-box,
+    linear-gradient(135deg, rgba(255, 62, 165, 0.38), rgba(22, 184, 255, 0.34)) border-box;
+  color: #17182a;
+}
+
+.conversation-item.selected,
+.call-log-item.selected {
+  background:
+    linear-gradient(135deg, rgba(255, 62, 165, 0.96), rgba(255, 122, 61, 0.86), rgba(22, 184, 255, 0.82)) padding-box,
+    linear-gradient(135deg, #ffffff, rgba(255, 255, 255, 0.44)) border-box;
+  border-color: transparent;
+}
+
+.conversation-item strong,
+.call-log-item strong {
+  color: #17182a;
+}
+
+.conversation-item span,
+.conversation-item small,
+.call-log-item span,
+.call-log-item small {
+  color: #4b5166;
+}
+
+.conversation-item.selected strong,
+.conversation-item.selected span,
+.conversation-item.selected small,
+.call-log-item.selected strong,
+.call-log-item.selected span,
+.call-log-item.selected small {
+  color: #ffffff;
+  text-shadow: 0 1px 10px rgba(23, 24, 42, 0.25);
+}
+
+.message-bubble {
+  background: rgba(255, 255, 255, 0.94);
+  color: #17182a;
+}
+
+.message-bubble.outbound {
+  background: linear-gradient(135deg, #f4edff, #fff1f9);
+  color: #17182a;
+}
+
+.message-bubble.outbound p,
+.message-bubble.outbound small {
+  color: #17182a;
+}
+
+.mini-confidence,
+.confidence-pill {
+  text-shadow: none;
+}
