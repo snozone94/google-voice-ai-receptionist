@@ -4046,3 +4046,147 @@ main {
     box-shadow: 0 14px 34px rgba(7, 10, 28, 0.32);
   }
 }
+
+/* Darken card interiors too, while preserving readable forms and messages. */
+.panel,
+.hero-panel,
+.tabbar,
+.sticky-access-bar {
+  color: #f8f9ff;
+  background:
+    linear-gradient(145deg, rgba(20, 22, 42, 0.88), rgba(31, 29, 58, 0.78)) padding-box,
+    var(--rainbow) border-box;
+  border-color: transparent;
+}
+
+.panel h1,
+.panel h2,
+.panel h3,
+.panel h4,
+.panel strong,
+.hero-panel h1,
+.hero-panel h2,
+.hero-panel h3,
+.hero-panel strong,
+.sticky-access-bar p {
+  color: #ffffff;
+}
+
+.panel p,
+.panel span,
+.panel small,
+.panel li,
+.hero-panel p,
+.hero-panel span,
+.hero-panel small {
+  color: rgba(248, 249, 255, 0.78);
+}
+
+.eyebrow,
+.section-title-row .eyebrow,
+.hero-panel .eyebrow {
+  color: #ff9fde;
+}
+
+.control-card,
+.metric,
+.settings-grid,
+.conversation-panel,
+.conversation-item,
+.call-log-shell,
+.call-log-item,
+.call-detail,
+.conversation-details,
+.call-correction-panel,
+.noise-panel,
+.web-push-panel,
+.route-summary,
+.switch-row,
+.staff-card,
+.team-card,
+.insight-card,
+.qa-card,
+.activity-card {
+  color: #f8f9ff;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.065)) padding-box,
+    linear-gradient(135deg, rgba(255, 62, 165, 0.36), rgba(35, 199, 121, 0.22), rgba(22, 184, 255, 0.28), rgba(118, 87, 255, 0.3)) border-box;
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 14px 32px rgba(5, 8, 24, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.conversation-item.selected,
+.call-log-item.selected,
+.tab-button.active {
+  background: linear-gradient(135deg, #ff3ea5, #ff7a3d, #16b8ff);
+  color: #fff;
+}
+
+.conversation-item strong,
+.call-log-item strong,
+.control-card h2,
+.metric strong,
+.route-summary strong,
+.conversation-header strong,
+.call-detail-header h3 {
+  color: #ffffff;
+}
+
+.conversation-item span,
+.conversation-item small,
+.call-log-item span,
+.call-log-item small,
+.control-card p:not(.eyebrow),
+.metric span,
+.route-summary span,
+.conversation-header span,
+.conversation-details span {
+  color: rgba(248, 249, 255, 0.72);
+}
+
+input,
+select,
+textarea,
+.message-bubble,
+.reply-form {
+  color: #161827;
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(255, 255, 255, 0.62);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(52, 54, 77, 0.58);
+}
+
+.message-bubble p,
+.message-bubble small {
+  color: #252845;
+}
+
+.message-bubble.outbound {
+  background: linear-gradient(135deg, #eaf8ff, #fff0fa);
+}
+
+.tab-button {
+  color: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.more-tab-button {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.08)) padding-box,
+    var(--rainbow) border-box;
+}
+
+@media (max-width: 720px) {
+  .panel,
+  .hero-panel,
+  .tabbar,
+  .sticky-access-bar {
+    background:
+      linear-gradient(145deg, rgba(18, 20, 38, 0.93), rgba(34, 28, 60, 0.86)) padding-box,
+      var(--rainbow) border-box;
+  }
+}
