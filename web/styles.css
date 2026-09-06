@@ -4312,3 +4312,189 @@ textarea::placeholder {
 .confidence-pill {
   text-shadow: none;
 }
+
+/* Apply the readable card treatment across every admin tab. */
+.overview-grid > div,
+.account-links-card,
+.test-box,
+.lead-capture,
+.admin-subgrid label,
+.settings-grid label,
+.flow-grid label,
+.routing-card,
+.notification-box,
+.team-current-card,
+.team-code-editor,
+.team-strip,
+.presence-pill,
+.staff-code-row,
+.noise-panel,
+.web-push-panel,
+.alert-audit-row,
+.insight-highlight,
+.insight-card,
+.insight-suggestions,
+.insight-learning-box,
+.insight-metric,
+.insight-top-list,
+.insight-change-box,
+.insight-call,
+.qa-card,
+.qa-row,
+.activity-overview div,
+.activity-item,
+.status-timeline li,
+.activity > div,
+.account-link-grid a,
+#setupList li,
+#bookingsList li {
+  color: #f8f9ff;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.07)) padding-box,
+    linear-gradient(135deg, rgba(255, 62, 165, 0.34), rgba(255, 200, 61, 0.18), rgba(35, 199, 121, 0.18), rgba(22, 184, 255, 0.28), rgba(118, 87, 255, 0.26)) border-box;
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 12px 28px rgba(5, 8, 24, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.overview-grid > div h3,
+.account-links-card h3,
+.test-box label,
+.admin-subgrid label,
+.settings-grid label,
+.flow-grid label,
+.routing-card h3,
+.notification-box h3,
+.team-current-card h3,
+.team-code-editor h3,
+.team-strip h3,
+.presence-pill strong,
+.insight-highlight strong,
+.insight-card h3,
+.insight-suggestions h3,
+.insight-learning-box h3,
+.insight-metric strong,
+.insight-top-list strong,
+.insight-change-box strong,
+.insight-call strong,
+.qa-card h3,
+.qa-row strong,
+.activity-overview strong,
+.activity-copy strong,
+.status-timeline strong,
+.account-link-grid a strong,
+#setupList li strong,
+#bookingsList li strong {
+  color: #ffffff;
+}
+
+.overview-grid > div p,
+.account-links-card p,
+.test-box p,
+.admin-subgrid label span,
+.settings-grid label span,
+.flow-grid label span,
+.routing-card p,
+.notification-box p,
+.team-current-card p,
+.team-current-details span,
+.team-code-editor p,
+.team-strip small,
+.presence-pill small,
+.editor-note,
+.insight-highlight span,
+.insight-highlight small,
+.insight-card span,
+.insight-card small,
+.insight-metric span,
+.insight-metric small,
+.insight-top-list p,
+.insight-top-list span,
+.insight-change-box p,
+.insight-call span,
+.insight-call small,
+.qa-row p,
+.qa-row span,
+.activity-overview span,
+.activity-copy time,
+.activity-copy span,
+.activity-copy p,
+.status-timeline span,
+.empty-state,
+.account-link-grid a span,
+#setupList li,
+#bookingsList li {
+  color: rgba(248, 249, 255, 0.76);
+}
+
+.account-link-grid a:hover,
+.activity-filter.active,
+.route-mode-cards button.active,
+.scenario-row button:hover,
+.quick-replies button:hover {
+  color: #ffffff;
+  background: linear-gradient(135deg, #ff3ea5, #ff7a3d, #16b8ff);
+}
+
+.account-link-grid a:hover span,
+.account-link-grid a:hover strong,
+.activity-filter.active,
+.route-mode-cards button.active strong,
+.route-mode-cards button.active span {
+  color: #ffffff;
+}
+
+.route-mode-cards button,
+.scenario-row button,
+.quick-replies button,
+.activity-filter {
+  color: #f8f9ff;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.route-mode-cards button strong,
+.route-mode-cards button span,
+.scenario-row button,
+.quick-replies button,
+.activity-filter {
+  color: rgba(248, 249, 255, 0.86);
+}
+
+.web-push-diagnostic,
+.learning-preview,
+#webhookUrl,
+#inboxStatus,
+#callLogStatus,
+#insightsStatus,
+#qaStatus,
+#activityStatus {
+  color: rgba(248, 249, 255, 0.74);
+}
+
+.status-pill,
+.mini-confidence,
+.confidence-pill,
+.qa-row.ok span,
+.qa-row.warn span {
+  background: rgba(255, 255, 255, 0.9);
+  color: #17182a;
+}
+
+.admin-subgrid input,
+.admin-subgrid select,
+.admin-subgrid textarea,
+.settings-grid input,
+.settings-grid select,
+.settings-grid textarea,
+.flow-grid textarea,
+.test-box textarea,
+.staff-code-row input {
+  color: #17182a;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+body:not(.edit-mode) .settings-grid label {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.055)) padding-box,
+    linear-gradient(135deg, rgba(255, 62, 165, 0.28), rgba(22, 184, 255, 0.24)) border-box;
+}
