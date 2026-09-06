@@ -2007,7 +2007,7 @@ async function sendCallStartSmsIfNeeded(to) {
   const message = appendStopFooter(
     callSelfServiceSmsMessage(
       process.env.CALL_START_SMS_MESSAGE,
-      `Thanks for calling DDD. If we get disconnected, reply here with your service, vehicle, and location. iPhone users can use DDD Mobile: ${iosAppUrl()}. Non-iPhone users can book/manage service here: ${bookingUrl()}.`
+      `Thanks for calling DDD. No worries if you do not want to stay on the AI call. You can reply here with your service, vehicle, and location, or book/manage service here: iPhone users can use DDD Mobile ${iosAppUrl()} ; non-iPhone users can book at ${bookingUrl()}`
     )
   );
   const delivery = await sendTwilioSms(normalizedTo, message);
