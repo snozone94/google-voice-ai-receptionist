@@ -176,12 +176,15 @@ let inboxSeenMessageKeys = new Set();
 let inboxSeenInitialized = false;
 let callLog = [];
 let selectedCallId = "";
+let callSeenKeys = new Set();
+let callSeenInitialized = false;
 let teamDirectory = [];
 let activePresence = [];
 let teamSource = "";
 let signedInStaff = null;
 let verifiedAccessCode = "";
 let accessCheckPromise = null;
+let autoWebPushRegistering = false;
 
 const savedAccessCode = localStorage.getItem("dddAccessCode") || localStorage.getItem("dddAdminPin") || localStorage.getItem("dddStaffCode") || localStorage.getItem("dddStaffPin") || "";
 adminPinInput.value = savedAccessCode;
@@ -1486,6 +1489,7 @@ async function refreshAccessScopedData() {
   if (!isAccessVerified()) return;
   refreshPresence().catch(() => {});
   refreshInbox().catch((error) => setInboxStatus(error.message));
+  ensureWebPushRegisteredIfAllowed().catch(() => {});
   updateWebPushDiagnostic().catch(() => {});
   if (signedInStaff.role === "admin") {
     loadSettings().catch(() => {
@@ -1655,6 +1659,37 @@ async function showLocalWebNotification(title, body, data = {}) {
   return true;
 }
 
+async function ensureWebPushRegisteredIfAllowed() {
+  if (autoWebPushRegistering || !isAccessVerified()) return false;
+  if (!("Notification" in window) || Notification.permission !== "granted") return false;
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return false;
+  autoWebPushRegistering = true;
+  try {
+    const keyResponse = await fetch("/api/web-push/public-key");
+    const keyPayload = await keyResponse.json().catch(() => ({}));
+    if (!keyResponse.ok || !keyPayload.publicKey) return false;
+    const subscription = await subscribeBrowserForPush(keyPayload.publicKey);
+    const response = await fetch("/api/push/register", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...pushAuthHeaders()
+      },
+      body: JSON.stringify({
+        platform: "web",
+        subscription
+      })
+    });
+    if (!response.ok) return false;
+    setWebPushStatus("Chrome alerts are connected on this device.");
+    return true;
+  } catch {
+    return false;
+  } finally {
+    autoWebPushRegistering = false;
+  }
+}
+
 async function subscribeBrowserForPush(publicKey) {
   const registration = await getNotificationRegistration();
   if (!registration?.pushManager) throw new Error("This browser cannot create a push subscription.");
@@ -1767,6 +1802,7 @@ async function sendWebPushTest() {
       return;
     }
     setWebPushStatus("Showing local alert and sending server test...");
+    await ensureWebPushRegisteredIfAllowed();
     const showedLocal = await showLocalWebNotification("DDD AI Dispatch test", "This device can show native browser alerts.");
     const response = await fetch("/api/push/test", {
       method: "POST",
@@ -1899,12 +1935,31 @@ function announceNewInboxMessages(nextConversations = []) {
   const body = `${from}: ${latest.message.body || "New customer text"}`.slice(0, 140);
   setInboxStatus(`New text from ${from}. Inbox updated.`);
   if ("Notification" in window && Notification.permission === "granted") {
-    new Notification("New DDD text", {
-      body,
-      icon: "/assets/ddd-ai-dispatch-logo.png",
-      badge: "/assets/ddd-ai-dispatch-logo.png"
-    });
+    showLocalWebNotification("New DDD text", body, { type: "sms", phone: latest.conversation.phone }).catch(() => {});
   }
+}
+
+function announceNewCalls(nextCalls = []) {
+  const currentKeys = new Set();
+  const newCalls = [];
+  for (const call of nextCalls) {
+    const key = call.id || call.callId || `${call.caller}:${call.startedAt || call.createdAt}:${call.displayStatus || call.status || ""}`;
+    currentKeys.add(key);
+    if (callSeenInitialized && !callSeenKeys.has(key)) {
+      newCalls.push(call);
+    }
+  }
+
+  callSeenKeys = currentKeys;
+  callSeenInitialized = true;
+  if (!newCalls.length) return;
+
+  const latest = newCalls[0];
+  const from = formatPhone(latest.caller || latest.from || "");
+  const detail = latest.displayStatus || latest.outcome?.label || latest.status || "New call logged";
+  const body = `${from}: ${detail}${latest.durationLabel ? ` · ${latest.durationLabel}` : ""}`.slice(0, 140);
+  if (callLogStatus) callLogStatus.textContent = `New call from ${from}.`;
+  showLocalWebNotification("New DDD call", body, { type: "call", callId: latest.id || latest.callId || "", phone: latest.caller || latest.from || "" }).catch(() => {});
 }
 
 function renderTeamPresence() {
@@ -2561,7 +2616,9 @@ async function refreshCallLog() {
   }
   if (!response.ok) throw new Error("Could not load call log.");
   const payload = await response.json();
-  callLog = payload.calls || [];
+  const nextCalls = payload.calls || [];
+  announceNewCalls(nextCalls);
+  callLog = nextCalls;
   if (!selectedCallId || !callLog.some((call) => call.id === selectedCallId)) {
     selectedCallId = callLog[0]?.id || "";
   }
