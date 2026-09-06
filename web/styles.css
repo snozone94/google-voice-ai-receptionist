@@ -753,7 +753,11 @@ button:hover:not(:disabled) {
 
 .conversation-swipe {
   position: relative;
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 8px;
+  overflow: visible;
   border-radius: 14px;
 }
 
@@ -776,13 +780,12 @@ button:hover:not(:disabled) {
 }
 
 .conversation-swipe.archive-open .conversation-item {
-  transform: translateX(-92px);
+  transform: translateX(-4px);
 }
 
 .conversation-archive-button {
-  position: absolute;
-  inset: 0 0 0 auto;
-  width: 86px;
+  width: 82px;
+  min-height: 78px;
   border: 0;
   border-radius: 14px;
   background: linear-gradient(135deg, #ff3e6c, #ff7a3d);
@@ -790,6 +793,7 @@ button:hover:not(:disabled) {
   font-size: 0.82rem;
   font-weight: 950;
   cursor: pointer;
+  box-shadow: 0 10px 22px rgba(255, 62, 108, 0.16);
 }
 
 .conversation-swipe:not(.archive-open):hover .conversation-archive-button {
@@ -803,7 +807,7 @@ button:hover:not(:disabled) {
 }
 
 .conversation-swipe.archive-open .conversation-item:hover {
-  transform: translateX(-92px);
+  transform: translateX(-4px);
 }
 
 .conversation-item-top {
@@ -2840,10 +2844,26 @@ li.missing {
     border-radius: 14px;
   }
 
+  .conversation-swipe {
+    flex: 0 0 min(92vw, 372px);
+    grid-template-columns: minmax(0, 1fr) 76px;
+    scroll-snap-align: start;
+  }
+
   .conversation-item {
+    min-height: 72px;
+  }
+
+  .call-log-item {
     flex: 0 0 min(78vw, 280px);
     min-height: 72px;
     scroll-snap-align: start;
+  }
+
+  .conversation-archive-button {
+    width: 76px;
+    min-height: 72px;
+    padding: 0 8px;
   }
 
   .conversation-panel {
@@ -3739,10 +3759,25 @@ h1 {
     min-height: 86px;
   }
 
+  .conversation-swipe {
+    flex: 0 0 min(92vw, 386px);
+    grid-template-columns: minmax(0, 1fr) 74px;
+  }
+
   .conversation-item,
   .call-log-item {
-    flex: 0 0 min(76vw, 310px);
     min-height: 72px;
+  }
+
+  .call-log-item {
+    flex: 0 0 min(76vw, 310px);
+  }
+
+  .conversation-archive-button {
+    width: 74px;
+    min-height: 72px;
+    padding: 0 7px;
+    font-size: 0.72rem;
   }
 
   .conversation-panel,
