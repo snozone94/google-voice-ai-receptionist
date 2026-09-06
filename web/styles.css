@@ -3978,3 +3978,71 @@ h1 {
     font-size: 0.58rem;
   }
 }
+
+/* Dark rainbow background pass: less all-white, still readable for dispatch work. */
+:root {
+  color-scheme: light;
+}
+
+body {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 62, 165, 0.42), transparent 28%),
+    radial-gradient(circle at 88% 4%, rgba(22, 184, 255, 0.35), transparent 30%),
+    radial-gradient(circle at 72% 90%, rgba(35, 199, 121, 0.24), transparent 32%),
+    linear-gradient(145deg, #171729 0%, #281c43 38%, #10263f 72%, #111723 100%);
+  background-attachment: fixed;
+}
+
+body::before,
+body::after {
+  display: block;
+}
+
+body::before {
+  inset: 0;
+  background:
+    linear-gradient(115deg, rgba(255, 255, 255, 0.07) 0 1px, transparent 1px 18px),
+    linear-gradient(90deg, rgba(255, 62, 165, 0.18), rgba(255, 200, 61, 0.1), rgba(35, 199, 121, 0.1), rgba(22, 184, 255, 0.14), rgba(118, 87, 255, 0.16));
+  filter: none;
+  opacity: 0.72;
+  animation: auroraTurn 34s linear infinite;
+}
+
+body::after {
+  inset: 0;
+  background: linear-gradient(118deg, transparent 28%, rgba(255, 255, 255, 0.16) 44%, transparent 62%);
+  opacity: 0.28;
+  mix-blend-mode: screen;
+  animation: diagonalSheen 18s ease-in-out infinite;
+}
+
+main {
+  isolation: isolate;
+}
+
+.panel,
+.hero-panel,
+.tabbar,
+.sticky-access-bar {
+  border-color: rgba(255, 255, 255, 0.62);
+  background:
+    linear-gradient(140deg, rgba(255, 255, 255, 0.94), rgba(248, 251, 255, 0.84)) padding-box,
+    var(--rainbow) border-box;
+  box-shadow: 0 18px 48px rgba(7, 10, 28, 0.28), 0 0 34px rgba(255, 62, 165, 0.14);
+}
+
+.tabbar,
+.sticky-access-bar {
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+.hero-panel {
+  box-shadow: 0 24px 70px rgba(7, 10, 28, 0.34), 0 0 54px rgba(22, 184, 255, 0.16);
+}
+
+@media (max-width: 720px) {
+  .panel,
+  .hero-panel {
+    box-shadow: 0 14px 34px rgba(7, 10, 28, 0.32);
+  }
+}
