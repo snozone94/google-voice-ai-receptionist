@@ -1960,7 +1960,7 @@ async function sendMissedCallSms(to, status = "") {
     return { ok: true, skipped: true, reason: "Recent call SMS already exists." };
   }
 
-  const message = appendStopFooter(process.env.MISSED_CALL_SMS_MESSAGE || defaultCallerSelfServiceSms());
+  const message = appendStopFooter(callSelfServiceSmsMessage(process.env.MISSED_CALL_SMS_MESSAGE));
   const delivery = await sendTwilioSms(normalizedTo, message);
   console.log(`Missed-call SMS ${delivery.ok ? "sent" : "failed"} to ${formatPhoneForAlert(normalizedTo)}${delivery.error ? `: ${delivery.error}` : ""}`);
   await saveOutgoingSms({
@@ -2005,8 +2005,10 @@ async function sendCallStartSmsIfNeeded(to) {
   }
 
   const message = appendStopFooter(
-    process.env.CALL_START_SMS_MESSAGE ||
+    callSelfServiceSmsMessage(
+      process.env.CALL_START_SMS_MESSAGE,
       `Thanks for calling DDD. If we get disconnected, reply here with your service, vehicle, and location. iPhone users can use DDD Mobile: ${iosAppUrl()}. Non-iPhone users can book/manage service here: ${bookingUrl()}.`
+    )
   );
   const delivery = await sendTwilioSms(normalizedTo, message);
   console.log(`Call-start SMS ${delivery.ok ? "sent" : "failed"} to ${formatPhoneForAlert(normalizedTo)}${delivery.error ? `: ${delivery.error}` : ""}`);
@@ -2045,8 +2047,10 @@ async function sendCompletedCallSmsIfNeeded(to, status = "") {
   }
 
   const message = appendStopFooter(
-    process.env.COMPLETED_CALL_SMS_MESSAGE ||
+    callSelfServiceSmsMessage(
+      process.env.COMPLETED_CALL_SMS_MESSAGE,
       `Thanks for calling DDD. Reply here with any updates or details and our team can text you back. Book or manage service here: ${bookingUrl()}. iPhone users can use DDD Mobile: ${iosAppUrl()}.`
+    )
   );
   const delivery = await sendTwilioSms(normalizedTo, message);
   console.log(`Completed-call SMS ${delivery.ok ? "sent" : "failed"} to ${formatPhoneForAlert(normalizedTo)}${delivery.error ? `: ${delivery.error}` : ""}`);
@@ -2254,6 +2258,13 @@ function iosAppUrl() {
 
 function defaultCallerSelfServiceSms() {
   return `Thanks for calling DDD. No worries if you do not want to stay on the AI call. You can reply here with your service, vehicle, and location. iPhone users can use DDD Mobile: ${iosAppUrl()}. Non-iPhone users can book/manage service here: ${bookingUrl()}.`;
+}
+
+function callSelfServiceSmsMessage(customMessage = "", fallbackMessage = defaultCallerSelfServiceSms()) {
+  const custom = String(customMessage || "").trim();
+  const hasAppLink = /apps\.apple\.com\/app\/id6762315831|DDD Mobile/i.test(custom);
+  const hasBookingLink = /dddcincy\.com\/book-service|BOOKING_URL|\{\{link\}\}/i.test(custom);
+  return custom && hasAppLink && hasBookingLink ? custom : fallbackMessage;
 }
 
 async function startTwilioBridgeCall(staffPhone, customerPhone, requestedCallerId = "") {
