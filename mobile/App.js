@@ -1,5 +1,4 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Audio } from "expo-av";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import { LinearGradient } from "expo-linear-gradient";
@@ -25,15 +24,18 @@ const defaultApiBaseUrl = "https://google-voice-ai-receptionist.onrender.com";
 const apiStorageKey = "ddd-ai-dispatch-api-base-url";
 const adminPinStorageKey = "ddd-ai-dispatch-admin-pin";
 const staffPhoneStorageKey = "ddd-ai-dispatch-staff-phone";
-const tabs = [
-  { name: "Home", color: "#7657ff" },
-  { name: "Voice", color: "#ff3ea5" },
-  { name: "Script", color: "#ff7a3d" },
-  { name: "Flows", color: "#ffc83d" },
-  { name: "Team", color: "#23c779" },
+const primaryTabs = [
   { name: "Inbox", color: "#16b8ff" },
-  { name: "Calls", color: "#7657ff" },
-  { name: "Insights", color: "#ff3ea5" }
+  { name: "Calls", color: "#ff7a3d" },
+  { name: "Home", color: "#7657ff" },
+  { name: "Team", color: "#23c779" },
+  { name: "More", color: "#ff3ea5" }
+];
+const advancedTabs = [
+  { name: "Voice", color: "#ff3ea5" },
+  { name: "Script", color: "#ff7a3d", label: "AI Script" },
+  { name: "Flows", color: "#ffc83d", label: "Questions" },
+  { name: "Insights", color: "#23c779", label: "Reports" }
 ];
 const rainbowColors = ["#7657ff", "#ff3ea5", "#ff7a3d", "#ffc83d", "#23c779", "#16b8ff", "#7657ff"];
 const softRainbowColors = ["rgba(255, 62, 165, 0.16)", "rgba(255, 200, 61, 0.12)", "rgba(35, 199, 121, 0.12)", "rgba(22, 184, 255, 0.16)", "rgba(118, 87, 255, 0.14)"];
@@ -74,11 +76,30 @@ const blankSettings = {
   humanHandoffRules: "",
   complaintInstructions: "",
   applyInstructions: "",
+  offeredServices: "",
+  notOfferedServices: "",
+  directoryReferral: {
+    enabled: false,
+    url: "",
+    message: ""
+  },
+  afterHoursInstructions: "",
+  callOutcomeRules: "",
+  fallbackRules: "",
   customInstructions: "",
   qualifyingServicesText: "",
   followUpStyle: "",
   outOfScopeHandling: "",
   bookingDestinationsText: "",
+  humanRouting: {
+    mode: "ai_then_humans",
+    numbers: [],
+    ringStyle: "simultaneous",
+    timeoutSeconds: 22,
+    callerMessage: "Please hold while I connect you with DDD.",
+    fallbackMessage: "DDD could not reach the team live, but your call was logged. Please leave a message or text DDD and the team will follow up.",
+    transferTriggers: []
+  },
   smsFollowUp: {
     enabled: true,
     message:
@@ -97,14 +118,31 @@ const blankSettings = {
   },
   soundPreferences: {
     ambientSound: "none",
-    thinkingSound: true
+    thinkingSound: true,
+    thinkingPhrase: "One moment while I get that into the request.",
+    backgroundAudio: {
+      enabled: false,
+      mode: "off",
+      label: "None",
+      url: ""
+    }
+  },
+  notificationPreferences: {
+    newCalls: true,
+    missedCalls: true,
+    bookings: true,
+    texts: true,
+    qaIssues: true,
+    dailySummary: true,
+    weeklySummary: true,
+    monthlySummary: true
   },
   staffAccessCodes: [],
   voiceOptions: []
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState("Home");
+  const [activeTab, setActiveTab] = useState("Inbox");
   const [apiBaseUrl, setApiBaseUrl] = useState(defaultApiBaseUrl);
   const [savedApiBaseUrl, setSavedApiBaseUrl] = useState(defaultApiBaseUrl);
   const [adminPin, setAdminPin] = useState("");
@@ -124,7 +162,6 @@ export default function App() {
   const [activity, setActivity] = useState({ calls: [], leads: [], bookings: [], conversations: [], insights: null });
   const [settings, setSettings] = useState(blankSettings);
   const [signedInStaff, setSignedInStaff] = useState(null);
-  const currentSoundRef = useRef(null);
   const autosaveTimerRef = useRef(null);
   const lastSavedSettingsRef = useRef("");
 
@@ -188,7 +225,6 @@ export default function App() {
       .catch(() => loadAll(defaultApiBaseUrl));
     return () => {
       mounted = false;
-      currentSoundRef.current?.unloadAsync().catch(() => {});
       clearTimeout(autosaveTimerRef.current);
     };
   }, [loadAll]);
@@ -238,10 +274,6 @@ export default function App() {
   async function previewVoice() {
     setPreviewing(true);
     try {
-      if (currentSoundRef.current) {
-        await currentSoundRef.current.unloadAsync().catch(() => {});
-        currentSoundRef.current = null;
-      }
       const audioUri = `${cleanBaseUrl}/api/voice-preview.mp3?${new URLSearchParams({
         voice: settings.voice,
         voiceSpeed: String(settings.voiceSpeed),
@@ -249,9 +281,10 @@ export default function App() {
         text: settings.greeting || "Thank you for calling Triple D Roadside. How can I help today?",
         t: String(Date.now())
       }).toString()}`;
-      const created = await Audio.Sound.createAsync({ uri: audioUri }, { shouldPlay: true });
-      currentSoundRef.current = created.sound;
-      setStatus("Voice preview playing.");
+      const canOpen = await Linking.canOpenURL(audioUri);
+      if (!canOpen) throw new Error("This phone cannot open the voice preview link.");
+      await Linking.openURL(audioUri);
+      setStatus("Voice preview opened.");
     } catch (error) {
       setStatus(error.message);
     } finally {
@@ -357,8 +390,8 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="dark" />
-      <LinearGradient colors={["#fff7fb", "#f8fff9", "#f7f5ff"]} style={styles.shell}>
+      <StatusBar style="light" />
+      <LinearGradient colors={["#140f2a", "#102d3b", "#33133d"]} style={styles.shell}>
         <Header business={business} settings={settings} editMode={editMode} />
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -434,6 +467,7 @@ export default function App() {
           ) : null}
           {activeTab === "Calls" ? <CallsTab calls={activity.calls} insights={activity.insights} /> : null}
           {activeTab === "Insights" ? <InsightsTab insights={activity.insights} /> : null}
+          {activeTab === "More" ? <MoreTab onSelect={setActiveTab} settings={settings} activity={activity} /> : null}
 
           {loading ? <ActivityIndicator color="#7d4dff" /> : null}
           <Text style={styles.status}>{status}</Text>
@@ -445,11 +479,12 @@ export default function App() {
 }
 
 function BottomTabs({ activeTab, onSelect }) {
+  const activePrimary = primaryTabs.some((tab) => tab.name === activeTab) ? activeTab : "More";
   return (
-    <LinearGradient colors={["rgba(255, 255, 255, 0.96)", "rgba(255, 255, 255, 0.78)"]} style={styles.tabWrap}>
+    <LinearGradient colors={["rgba(20, 18, 42, 0.96)", "rgba(49, 31, 72, 0.92)"]} style={styles.tabWrap}>
       <View style={styles.tabContent}>
-        {tabs.map((tab) => {
-          const active = activeTab === tab.name;
+        {primaryTabs.map((tab) => {
+          const active = activePrimary === tab.name;
           return (
             <Pressable
               key={tab.name}
@@ -472,7 +507,7 @@ function BottomTabs({ activeTab, onSelect }) {
 
 function Header({ business, editMode, settings }) {
   return (
-    <LinearGradient colors={["rgba(255, 255, 255, 0.96)", "rgba(255, 255, 255, 0.78)"]} style={styles.header}>
+    <LinearGradient colors={["rgba(29, 22, 58, 0.98)", "rgba(28, 48, 75, 0.94)", "rgba(76, 33, 91, 0.96)"]} style={styles.header}>
       <View style={styles.brandRow}>
         <LinearGradient colors={["#ffffff", "#fff0fa"]} style={styles.logoFrame}>
           <Image source={require("./assets/icon.png")} style={styles.logo} />
@@ -522,6 +557,8 @@ function HomeTab({
   const weeklyBookings = activity?.insights?.sections?.weekly?.bookings ?? 0;
   const hasAdminPin = Boolean(String(adminPin || "").trim());
   const isSignedIn = Boolean(signedInStaff?.ok);
+  const routeMode = settings.humanRouting?.mode || "ai_then_humans";
+  const routeLabel = routeMode === "humans" ? "Ring team" : routeMode === "ai" ? "AI only" : "AI + backup";
   return (
     <>
       <Card title="Admin login">
@@ -578,14 +615,40 @@ function HomeTab({
         </View>
       </Card>
 
-      <Card title="Answering">
-        <SwitchRow
+      <Card title="Answering mode">
+        <View style={styles.routeHeader}>
+          <View style={styles.flexText}>
+            <Text style={styles.accessTitle}>{routeLabel}</Text>
+            <Text style={styles.muted}>
+              {routeMode === "humans"
+                ? "Skip the AI and ring saved team numbers to save AI usage."
+                : routeMode === "ai"
+                  ? "AI handles calls without trying the team unless logic sends a fallback."
+                  : "AI answers first, then can ring the team when needed."}
+            </Text>
+          </View>
+          <Switch disabled={!editMode} onValueChange={(enabled) => setSettings((current) => ({ ...current, enabled }))} value={settings.enabled} />
+        </View>
+        <SegmentedOptions
           disabled={!editMode}
-          label="AI answers new calls"
-          note={settings.enabled ? "Live for callers routed to Twilio." : "Paused until turned back on."}
-          value={settings.enabled}
-          onValueChange={(enabled) => setSettings((current) => ({ ...current, enabled }))}
+          options={[
+            { id: "ai_then_humans", label: "AI + backup" },
+            { id: "ai", label: "AI only" },
+            { id: "humans", label: "Ring team" }
+          ]}
+          selected={routeMode}
+          onSelect={(mode) =>
+            setSettings((current) => ({
+              ...current,
+              enabled: mode === "humans" ? false : current.enabled,
+              humanRouting: { ...current.humanRouting, mode }
+            }))
+          }
         />
+        <View style={styles.summaryGrid}>
+          <SummaryTile label="Team nums" value={settings.humanRouting?.numbers?.length || 0} />
+          <SummaryTile label="Timeout" value={`${settings.humanRouting?.timeoutSeconds || 22}s`} />
+        </View>
         <View style={styles.buttonRow}>
           <ActionButton label={editMode ? "Lock settings" : "Edit settings"} onPress={() => setEditMode((current) => !current)} />
           <ActionButton disabled={saving || loading || !editMode} label={saving ? "Saving..." : "Save now"} onPress={onSaveSettings} variant="light" />
@@ -606,6 +669,35 @@ function HomeTab({
           <ActionButton label="Test alert" onPress={onSendTestNotification} variant="light" />
         </View>
         <Text style={styles.muted}>Alerts cover new calls, missed/busy calls, customer texts, bookings, and QA follow-ups after the iPhone build is installed.</Text>
+      </Card>
+
+      <Card title="Alert settings">
+        <View style={styles.twoColumnToggles}>
+          {[
+            ["newCalls", "New calls"],
+            ["missedCalls", "Missed calls"],
+            ["bookings", "Bookings"],
+            ["texts", "Texts"],
+            ["qaIssues", "Needs review"],
+            ["dailySummary", "Daily"],
+            ["weeklySummary", "Weekly"],
+            ["monthlySummary", "Monthly"]
+          ].map(([key, label]) => (
+            <SwitchRow
+              key={key}
+              disabled={!editMode}
+              label={label}
+              note=""
+              value={settings.notificationPreferences?.[key] !== false}
+              onValueChange={(value) =>
+                setSettings((current) => ({
+                  ...current,
+                  notificationPreferences: { ...current.notificationPreferences, [key]: value }
+                }))
+              }
+            />
+          ))}
+        </View>
       </Card>
 
       <Card title="Run costs">
@@ -633,6 +725,33 @@ function HomeTab({
 
       <Card title="Setup status">
         {setup ? <SetupBadges setup={setup} /> : <Text style={styles.muted}>Setup status will appear after refresh.</Text>}
+      </Card>
+    </>
+  );
+}
+
+function MoreTab({ activity, onSelect, settings }) {
+  return (
+    <>
+      <Card title="More controls">
+        <Text style={styles.muted}>Less clutter up front. Use these when you want to tune how the receptionist talks, asks questions, texts, and learns.</Text>
+        <View style={styles.moreGrid}>
+          {advancedTabs.map((tab) => (
+            <Pressable key={tab.name} onPress={() => onSelect(tab.name)} style={styles.moreTile}>
+              <LinearGradient colors={[tab.color, "#16b8ff"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.moreTileGradient}>
+                <Text style={styles.moreTileText}>{tab.label || tab.name}</Text>
+              </LinearGradient>
+            </Pressable>
+          ))}
+        </View>
+      </Card>
+      <Card title="Right now">
+        <View style={styles.summaryGrid}>
+          <SummaryTile label="AI mode" value={(settings.humanRouting?.mode || "ai").replaceAll("_", " ")} />
+          <SummaryTile label="Texts" value={activity?.conversations?.length || 0} />
+          <SummaryTile label="Calls" value={activity?.calls?.length || 0} />
+          <SummaryTile label="Voice" value={settings.voice || "marin"} />
+        </View>
       </Card>
     </>
   );
@@ -698,6 +817,69 @@ function VoiceTab({ editMode, previewing, settings, setSettings, onPreviewVoice 
           value={settings.noiseHandling?.notes || ""}
         />
       </Card>
+      <Card title="Sound preferences">
+        <SwitchRow
+          disabled={!editMode}
+          label="Non-annoying thinking phrase"
+          note="Use a short phrase instead of keyboard sounds or long filler."
+          value={settings.soundPreferences?.thinkingSound !== false}
+          onValueChange={(thinkingSound) =>
+            setSettings((current) => ({ ...current, soundPreferences: { ...current.soundPreferences, thinkingSound } }))
+          }
+        />
+        <Field
+          editable={editMode}
+          label="Thinking phrase"
+          onChangeText={(thinkingPhrase) =>
+            setSettings((current) => ({ ...current, soundPreferences: { ...current.soundPreferences, thinkingPhrase } }))
+          }
+          value={settings.soundPreferences?.thinkingPhrase || ""}
+        />
+        <SegmentedOptions
+          disabled={!editMode}
+          options={[
+            { id: "off", label: "No music" },
+            { id: "licensed-music", label: "Licensed" },
+            { id: "office", label: "Office" }
+          ]}
+          selected={settings.soundPreferences?.backgroundAudio?.mode || "off"}
+          onSelect={(mode) =>
+            setSettings((current) => ({
+              ...current,
+              soundPreferences: {
+                ...current.soundPreferences,
+                backgroundAudio: {
+                  ...current.soundPreferences?.backgroundAudio,
+                  enabled: mode !== "off",
+                  mode
+                }
+              }
+            }))
+          }
+        />
+        <Field
+          editable={editMode}
+          label="Background label"
+          onChangeText={(label) =>
+            setSettings((current) => ({
+              ...current,
+              soundPreferences: { ...current.soundPreferences, backgroundAudio: { ...current.soundPreferences?.backgroundAudio, label } }
+            }))
+          }
+          value={settings.soundPreferences?.backgroundAudio?.label || ""}
+        />
+        <Field
+          editable={editMode}
+          label="Licensed audio URL"
+          onChangeText={(url) =>
+            setSettings((current) => ({
+              ...current,
+              soundPreferences: { ...current.soundPreferences, backgroundAudio: { ...current.soundPreferences?.backgroundAudio, url } }
+            }))
+          }
+          value={settings.soundPreferences?.backgroundAudio?.url || ""}
+        />
+      </Card>
     </>
   );
 }
@@ -731,10 +913,18 @@ function FlowsTab({ editMode, settings, setSettings }) {
       <Card title="Caller handling">
         <Field editable={editMode} label="Service area" multiline onChangeText={(serviceArea) => setSettings((current) => ({ ...current, serviceArea }))} value={settings.serviceArea} />
         <Field editable={editMode} label="Qualifying services" multiline onChangeText={(qualifyingServicesText) => setSettings((current) => ({ ...current, qualifyingServicesText }))} value={settings.qualifyingServicesText} />
+        <Field editable={editMode} label="Services DDD does" multiline onChangeText={(offeredServices) => setSettings((current) => ({ ...current, offeredServices }))} value={settings.offeredServices} />
+        <Field editable={editMode} label="Services DDD does not do" multiline onChangeText={(notOfferedServices) => setSettings((current) => ({ ...current, notOfferedServices }))} value={settings.notOfferedServices} />
         <Field editable={editMode} label="Out-of-scope handling" multiline onChangeText={(outOfScopeHandling) => setSettings((current) => ({ ...current, outOfScopeHandling }))} value={settings.outOfScopeHandling} />
+        <SwitchRow disabled={!editMode} label="Referral text for unsupported work" note="Optional safe link for shops/mobile mechanics later." value={settings.directoryReferral?.enabled === true} onValueChange={(enabled) => setSettings((current) => ({ ...current, directoryReferral: { ...current.directoryReferral, enabled } }))} />
+        <Field editable={editMode} label="Referral URL" onChangeText={(url) => setSettings((current) => ({ ...current, directoryReferral: { ...current.directoryReferral, url } }))} value={settings.directoryReferral?.url || ""} />
+        <Field editable={editMode} label="Referral wording" multiline onChangeText={(message) => setSettings((current) => ({ ...current, directoryReferral: { ...current.directoryReferral, message } }))} value={settings.directoryReferral?.message || ""} />
         <Field editable={editMode} label="Pricing and payment rules" multiline onChangeText={(pricingNotes) => setSettings((current) => ({ ...current, pricingNotes }))} value={settings.pricingNotes} />
         <Field editable={editMode} label="Emergency handling" multiline onChangeText={(emergencyInstructions) => setSettings((current) => ({ ...current, emergencyInstructions }))} value={settings.emergencyInstructions} />
         <Field editable={editMode} label="Human handoff" multiline onChangeText={(humanHandoffRules) => setSettings((current) => ({ ...current, humanHandoffRules }))} value={settings.humanHandoffRules} />
+        <Field editable={editMode} label="Call outcome rules" multiline onChangeText={(callOutcomeRules) => setSettings((current) => ({ ...current, callOutcomeRules }))} value={settings.callOutcomeRules} />
+        <Field editable={editMode} label="Missed-call fallback rules" multiline onChangeText={(fallbackRules) => setSettings((current) => ({ ...current, fallbackRules }))} value={settings.fallbackRules} />
+        <Field editable={editMode} label="After-hours instructions" multiline onChangeText={(afterHoursInstructions) => setSettings((current) => ({ ...current, afterHoursInstructions }))} value={settings.afterHoursInstructions} />
         <Field editable={editMode} label="Complaints and escalations" multiline onChangeText={(complaintInstructions) => setSettings((current) => ({ ...current, complaintInstructions }))} value={settings.complaintInstructions} />
         <Field editable={editMode} label="Apply-to-work handling" multiline onChangeText={(applyInstructions) => setSettings((current) => ({ ...current, applyInstructions }))} value={settings.applyInstructions} />
       </Card>
@@ -756,6 +946,14 @@ function FlowsTab({ editMode, settings, setSettings }) {
 
       <Card title="DDD links">
         <Field editable={editMode} label="Booking, app, web, and apply links" multiline onChangeText={(bookingDestinationsText) => setSettings((current) => ({ ...current, bookingDestinationsText }))} value={settings.bookingDestinationsText} />
+      </Card>
+
+      <Card title="Human routing">
+        <Field editable={editMode} label="Human route numbers" multiline onChangeText={(value) => setSettings((current) => ({ ...current, humanRouting: { ...current.humanRouting, numbers: parseHumanRouteNumbers(value) } }))} value={formatHumanRouteNumbers(settings.humanRouting?.numbers || [])} />
+        <Field editable={editMode} keyboardType="number-pad" label="Ring timeout seconds" onChangeText={(timeoutSeconds) => setSettings((current) => ({ ...current, humanRouting: { ...current.humanRouting, timeoutSeconds: Number(timeoutSeconds) || 22 } }))} value={settings.humanRouting?.timeoutSeconds || 22} />
+        <Field editable={editMode} label="Transfer triggers" multiline onChangeText={(value) => setSettings((current) => ({ ...current, humanRouting: { ...current.humanRouting, transferTriggers: value.split("\n").map((item) => item.trim()).filter(Boolean) } }))} value={(settings.humanRouting?.transferTriggers || []).join("\n")} />
+        <Field editable={editMode} label="Caller hold message" onChangeText={(callerMessage) => setSettings((current) => ({ ...current, humanRouting: { ...current.humanRouting, callerMessage } }))} value={settings.humanRouting?.callerMessage || ""} />
+        <Field editable={editMode} label="No-answer message" multiline onChangeText={(fallbackMessage) => setSettings((current) => ({ ...current, humanRouting: { ...current.humanRouting, fallbackMessage } }))} value={settings.humanRouting?.fallbackMessage || ""} />
       </Card>
     </>
   );
@@ -900,6 +1098,25 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
     }
   }
 
+  async function archiveConversation(customerPhone) {
+    const to = normalizeE164(customerPhone);
+    if (!to) {
+      setStatus("Could not archive: missing customer phone.");
+      return;
+    }
+    setWorkingThread(`archive:${to}`);
+    try {
+      await apiDelete(apiBaseUrl, `/api/conversations/${encodeURIComponent(to)}`, adminPin);
+      setStatus(`${formatPhone(to)} archived. It is hidden from the active inbox but still saved in history.`);
+      setSelectedPhone("");
+      onRefresh();
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setWorkingThread("");
+    }
+  }
+
   return (
     <>
       <Card title="Shared inbox">
@@ -909,7 +1126,7 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
           <SummaryTile label="Threads" value={activeConversations.length} />
           <SummaryTile label="Open texts" value={activeConversations.filter((item) => item.messages?.length).length} />
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.conversationPicker}>
+        <View style={styles.conversationPicker}>
           {activeConversations.map((conversation, index) => {
             const customerPhone = getConversationCustomer(conversation);
             const normalized = normalizeE164(customerPhone);
@@ -932,13 +1149,14 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
               </Pressable>
             );
           })}
-        </ScrollView>
+        </View>
       </Card>
       {selectedConversation ? (
         <Card title="Conversation">
           <ConversationCard
             conversation={selectedConversation}
             draft={drafts[normalizeE164(getConversationCustomer(selectedConversation))] || ""}
+            onArchive={archiveConversation}
             onCall={callCustomer}
             onDraftChange={(customerPhone, message) => {
               const to = normalizeE164(customerPhone);
@@ -957,12 +1175,14 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
   );
 }
 
-function ConversationCard({ conversation, draft, onCall, onDraftChange, onSend, workingThread }) {
+function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChange, onSend, workingThread }) {
   const customerPhone = getConversationCustomer(conversation);
   const normalizedPhone = normalizeE164(customerPhone);
   const recentMessages = conversation.messages || [];
   const smsBusy = workingThread === `sms:${normalizedPhone}`;
   const callBusy = workingThread === `call:${normalizedPhone}`;
+  const archiveBusy = workingThread === `archive:${normalizedPhone}`;
+  const quickReplies = buildQuickReplies(conversation);
   return (
     <LinearGradient colors={["#fffaff", "#f7fffb"]} style={styles.conversationBox}>
       <View style={styles.listHeader}>
@@ -982,6 +1202,13 @@ function ConversationCard({ conversation, draft, onCall, onDraftChange, onSend, 
           </View>
         )) : <Text style={styles.record} numberOfLines={3}>{getConversationPreview(conversation)}</Text>}
       </ScrollView>
+      <View style={styles.quickReplyGrid}>
+        {quickReplies.map((reply) => (
+          <Pressable key={reply.label} onPress={() => onDraftChange(customerPhone, reply.text)} style={styles.quickReplyButton}>
+            <Text style={styles.quickReplyText}>{reply.label}</Text>
+          </Pressable>
+        ))}
+      </View>
       <Field
         label="Reply from DDD"
         multiline
@@ -991,6 +1218,7 @@ function ConversationCard({ conversation, draft, onCall, onDraftChange, onSend, 
       <View style={styles.buttonRow}>
         <ActionButton disabled={smsBusy} label={smsBusy ? "Sending..." : "Send text"} onPress={() => onSend(customerPhone)} />
         <ActionButton disabled={callBusy} label={callBusy ? "Calling..." : "Call customer"} onPress={() => onCall(customerPhone)} variant="light" />
+        <ActionButton disabled={archiveBusy} label={archiveBusy ? "Archiving..." : "Archive"} onPress={() => onArchive(customerPhone)} variant="light" />
       </View>
     </LinearGradient>
   );
@@ -1292,6 +1520,18 @@ async function apiPost(baseUrl, path, payload, adminPin = "") {
   return response.json();
 }
 
+async function apiDelete(baseUrl, path, adminPin = "") {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "DELETE",
+    headers: adminPin ? { "x-admin-pin": adminPin } : {}
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Could not delete ${path}.`);
+  }
+  return response.json();
+}
+
 function toFormSettings(settings) {
   return {
     ...blankSettings,
@@ -1305,11 +1545,25 @@ function toFormSettings(settings) {
     },
     soundPreferences: {
       ...blankSettings.soundPreferences,
-      ...(settings.soundPreferences || {})
+      ...(settings.soundPreferences || {}),
+      backgroundAudio: {
+        ...blankSettings.soundPreferences.backgroundAudio,
+        ...(settings.soundPreferences?.backgroundAudio || {})
+      }
     },
     noiseHandling: {
       ...blankSettings.noiseHandling,
       ...(settings.noiseHandling || {})
+    },
+    directoryReferral: {
+      ...blankSettings.directoryReferral,
+      ...(settings.directoryReferral || {})
+    },
+    humanRouting: {
+      ...blankSettings.humanRouting,
+      ...(settings.humanRouting || {}),
+      numbers: Array.isArray(settings.humanRouting?.numbers) ? settings.humanRouting.numbers : [],
+      transferTriggers: Array.isArray(settings.humanRouting?.transferTriggers) ? settings.humanRouting.transferTriggers : []
     },
     smsFollowUp: {
       ...blankSettings.smsFollowUp,
@@ -1318,6 +1572,10 @@ function toFormSettings(settings) {
     reviewFollowUp: {
       ...blankSettings.reviewFollowUp,
       ...(settings.reviewFollowUp || {})
+    },
+    notificationPreferences: {
+      ...blankSettings.notificationPreferences,
+      ...(settings.notificationPreferences || {})
     },
     staffAccessCodes: Array.isArray(settings.staffAccessCodes) ? settings.staffAccessCodes : [],
     voiceOptions: settings.voiceOptions || []
@@ -1339,6 +1597,12 @@ function fromFormSettings(settings) {
     humanHandoffRules: settings.humanHandoffRules,
     complaintInstructions: settings.complaintInstructions,
     applyInstructions: settings.applyInstructions,
+    offeredServices: settings.offeredServices,
+    notOfferedServices: settings.notOfferedServices,
+    directoryReferral: settings.directoryReferral,
+    afterHoursInstructions: settings.afterHoursInstructions,
+    callOutcomeRules: settings.callOutcomeRules,
+    fallbackRules: settings.fallbackRules,
     qualifyingServices: settings.qualifyingServicesText,
     followUpStyle: settings.followUpStyle,
     outOfScopeHandling: settings.outOfScopeHandling,
@@ -1350,6 +1614,13 @@ function fromFormSettings(settings) {
     },
     smsFollowUp: settings.smsFollowUp,
     reviewFollowUp: settings.reviewFollowUp,
+    humanRouting: {
+      ...settings.humanRouting,
+      timeoutSeconds: Number(settings.humanRouting?.timeoutSeconds || 22),
+      numbers: normalizeHumanRouteNumbers(settings.humanRouting?.numbers || []),
+      transferTriggers: Array.isArray(settings.humanRouting?.transferTriggers) ? settings.humanRouting.transferTriggers : []
+    },
+    notificationPreferences: settings.notificationPreferences,
     staffAccessCodes: normalizeStaffAccessCodes(settings.staffAccessCodes),
     bookingDestinations: parseBookingDestinations(settings.bookingDestinationsText)
   };
@@ -1390,6 +1661,33 @@ function parseBookingDestinations(value) {
     .filter((destination) => destination.label && destination.url && destination.useWhen);
 }
 
+function formatHumanRouteNumbers(numbers = []) {
+  return (Array.isArray(numbers) ? numbers : [])
+    .map((entry) => `${entry.label || entry.name || "DDD team"} | ${formatPhone(entry.phone || "")}`)
+    .join("\n");
+}
+
+function parseHumanRouteNumbers(value) {
+  return String(value || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [label = "DDD team", phone = ""] = line.split("|").map((part) => part.trim());
+      return { label, phone: normalizeE164(phone) || phone };
+    })
+    .filter((entry) => entry.label && normalizeE164(entry.phone));
+}
+
+function normalizeHumanRouteNumbers(numbers = []) {
+  return (Array.isArray(numbers) ? numbers : [])
+    .map((entry) => ({
+      label: String(entry.label || entry.name || "DDD team").trim(),
+      phone: normalizeE164(entry.phone || "")
+    }))
+    .filter((entry) => entry.label && entry.phone);
+}
+
 function clampSpeed(value) {
   return Math.min(1.5, Math.max(0.5, Math.round(Number(value) * 100) / 100));
 }
@@ -1426,6 +1724,47 @@ function getConversationPreview(conversation = {}) {
 function getConversationTime(conversation = {}) {
   const last = conversation.messages?.at?.(-1);
   return conversation.updatedAt || conversation.lastAt || last?.createdAt || last?.at || "";
+}
+
+function buildQuickReplies(conversation = {}) {
+  const text = `${conversation.lastBody || ""} ${(conversation.messages || []).map((message) => message.body || message.text || "").join(" ")}`.toLowerCase();
+  const base = [
+    {
+      label: "Professional follow-up",
+      text: "Hi, this is DDD. Thanks for reaching out. What service do you need, what vehicle is it for, and what is the service location? Reply STOP to stop."
+    },
+    {
+      label: "Booking link",
+      text: "No problem. You can book/manage service here: https://dddcincy.com/book-service/ iPhone users can use DDD Mobile: https://apps.apple.com/app/id6762315831 Reply STOP to stop."
+    },
+    {
+      label: "Get location",
+      text: "Can you send the exact address or nearest cross streets, plus the vehicle color? That helps us route the request faster. Reply STOP to stop."
+    },
+    {
+      label: "On it",
+      text: "Got it. We received your request and will follow up with the next step shortly. Reply STOP to stop."
+    }
+  ];
+  if (/complain|refund|damage|upset|manager|bad/i.test(text)) {
+    return [
+      {
+        label: "Complaint",
+        text: "I'm sorry that happened. Please send your name, service date, what happened, and the best callback number. You can also email support@dddcincy.com. Reply STOP to stop."
+      },
+      ...base.slice(0, 3)
+    ];
+  }
+  if (/oil|brake|rotor|hub|battery|tire|flat|plug|spare/i.test(text)) {
+    return [
+      {
+        label: "Parts/details",
+        text: "Thanks. Do you already have the needed parts/materials, or do you need DDD to confirm them? For tire/brake work, please include quantity or position. Reply STOP to stop."
+      },
+      ...base
+    ];
+  }
+  return base;
 }
 
 function formatPercent(value) {
@@ -1478,8 +1817,8 @@ function buildScriptPreview(settings) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#fff7fb" },
-  shell: { flex: 1, backgroundColor: "#fff7fb" },
+  safeArea: { flex: 1, backgroundColor: "#140f2a" },
+  shell: { flex: 1, backgroundColor: "#140f2a" },
   header: {
     marginHorizontal: 12,
     marginTop: 6,
@@ -1509,9 +1848,9 @@ const styles = StyleSheet.create({
   },
   logo: { width: 38, height: 38, borderRadius: 13 },
   brandCopy: { flex: 1, minWidth: 0 },
-  eyebrow: { color: "#b7218f", fontSize: 10, fontWeight: "900", textTransform: "uppercase" },
-  title: { color: "#161827", fontSize: 18, fontWeight: "900" },
-  subtitle: { color: "#5d6178", fontSize: 11, fontWeight: "800", lineHeight: 15, marginTop: 4 },
+  eyebrow: { color: "#ff8bd6", fontSize: 10, fontWeight: "900", textTransform: "uppercase" },
+  title: { color: "#ffffff", fontSize: 18, fontWeight: "900" },
+  subtitle: { color: "#e8e4ff", fontSize: 11, fontWeight: "800", lineHeight: 15, marginTop: 4 },
   modePill: {
     overflow: "hidden",
     borderRadius: 999,
@@ -1596,16 +1935,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5
   },
   tabDot: { width: 7, height: 7, borderRadius: 999 },
-  tabText: { color: "#34364d", fontSize: 10.5, fontWeight: "900", textAlign: "center" },
+  tabText: { color: "#ffffff", fontSize: 10.5, fontWeight: "900", textAlign: "center" },
   tabTextActive: { color: "#ffffff" },
   content: { gap: 12, padding: 14, paddingBottom: 104 },
   card: {
     gap: 12,
     overflow: "hidden",
-    borderColor: "rgba(118, 87, 255, 0.18)",
+    borderColor: "rgba(255, 62, 165, 0.34)",
     borderRadius: 22,
     borderWidth: 1,
-    backgroundColor: "#ffffff",
+    backgroundColor: "rgba(255, 255, 255, 0.92)",
     padding: 15,
     shadowColor: "#3b2267",
     shadowOffset: { width: 0, height: 14 },
@@ -1615,6 +1954,22 @@ const styles = StyleSheet.create({
   },
   cardBar: { height: 5, borderRadius: 999, backgroundColor: "#16b8ff" },
   cardTitle: { color: "#161827", fontSize: 20, fontWeight: "900" },
+  routeHeader: { alignItems: "center", flexDirection: "row", gap: 12 },
+  twoColumnToggles: { gap: 10 },
+  moreGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  moreTile: {
+    width: "48%",
+    minHeight: 82,
+    borderRadius: 20,
+    overflow: "hidden",
+    shadowColor: "#ff3ea5",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
+    elevation: 4
+  },
+  moreTileGradient: { flex: 1, justifyContent: "center", padding: 14 },
+  moreTileText: { color: "#ffffff", fontSize: 17, fontWeight: "900" },
   flexText: { flex: 1, minWidth: 0, paddingRight: 10 },
   statusRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", gap: 12 },
   buttonRow: { flexDirection: "row", flexWrap: "wrap", gap: 9 },
@@ -1733,8 +2088,7 @@ const styles = StyleSheet.create({
   smallChipWarn: { backgroundColor: "#fff7ed", color: "#9a3412" },
   conversationPicker: { gap: 8, paddingVertical: 2 },
   conversationChoice: {
-    width: 168,
-    minHeight: 86,
+    minHeight: 76,
     borderColor: "rgba(118, 87, 255, 0.18)",
     borderRadius: 18,
     borderWidth: 1,
@@ -1766,6 +2120,16 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.7)"
   },
   messageThreadContent: { gap: 8, padding: 10 },
+  quickReplyGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  quickReplyButton: {
+    borderColor: "rgba(22, 184, 255, 0.18)",
+    borderRadius: 999,
+    borderWidth: 1,
+    backgroundColor: "#f0fbff",
+    paddingHorizontal: 10,
+    paddingVertical: 8
+  },
+  quickReplyText: { color: "#086e9e", fontSize: 12, fontWeight: "900" },
   tinyStatusDot: {
     width: 14,
     height: 14,

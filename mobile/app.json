@@ -30,6 +30,9 @@
         "projectId": "1cb2854e-bd1b-48ab-9b00-85f1d7259ccc"
       }
     },
-    "owner": "dddcincy"
+    "owner": "dddcincy",
+    "plugins": [
+      "expo-status-bar"
+    ]
   }
 }
