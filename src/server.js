@@ -150,7 +150,7 @@ const appReviewInsights = {
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Admin-Pin,x-admin-pin");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Admin-Pin,x-admin-pin,X-Staff-Code,x-staff-code");
   if (req.method === "OPTIONS") {
     res.sendStatus(204);
     return;
