@@ -288,7 +288,11 @@ app.get("/api/setup-status", async (_req, res, next) => {
       brandedPhotoUpload: Boolean(process.env.DDD_PHOTO_UPLOAD_BASE_URL),
       platformPhotoSync: Boolean(process.env.DDD_PHOTO_UPLOAD_WEBHOOK_URL || process.env.DDD_PHOTO_WEBHOOK_URL),
       platformCustomerHistory: Boolean(process.env.DDD_CUSTOMER_HISTORY_URL),
-      emailAlerts: emailAlertsReady()
+      emailAlerts: emailAlertsReady(),
+      browserPush: Boolean((await listPushTokens(100)).some((token) => token.platform === "web" && token.subscription?.endpoint)),
+      appPush: Boolean((await listPushTokens(100)).some((token) => token.platform === "expo" && token.token)),
+      callStartText: process.env.CALL_START_SMS_ENABLED !== "false",
+      missedCallText: process.env.MISSED_CALL_SMS_ENABLED !== "false"
     };
 
     res.json({
@@ -391,7 +395,7 @@ app.post("/api/twilio/sms", express.urlencoded({ extended: false }), async (req,
     queueTeamNotification({
       title: "New DDD text",
       body: `${formatPhoneForAlert(record.from)}: ${record.body || "New customer message"}`.slice(0, 160),
-      data: { type: "sms", from: record.from || "" }
+      data: { type: "sms", from: record.from || "", to: record.to || "", message: record.body || "" }
     }, "incoming-sms");
     res.type("text/xml").send("<Response></Response>");
   } catch (error) {
@@ -791,12 +795,12 @@ async function handleTwilioVoice(req, res, next) {
         ]
       }
     });
+    queueCallStartSms(req.body?.From || req.query?.From || "");
     await withNotificationDeadline(notifyTeamTracked({
       title: "New DDD call",
       body: `${formatPhoneForAlert(req.body?.From || req.query?.From)} is calling DDD AI Dispatch.`,
       data: { type: "call", callId: req.body?.CallSid || req.query?.CallSid || "", from: req.body?.From || req.query?.From || "" }
     }, "incoming-call"), "incoming-call");
-    queueCallStartSms(req.body?.From || req.query?.From || "");
 
     if (routeMode === "humans" || settings.enabled === false) {
       res.type("text/xml").send(buildHumanDialTwiml(settings, { recordingCallback, statusCallback }));
@@ -1977,9 +1981,24 @@ async function sendMissedCallSms(to, status = "") {
 }
 
 function queueCallStartSms(to) {
-  sendCallStartSmsIfNeeded(to).catch((error) => {
-    console.warn(`Call-start SMS crashed: ${error.message}`);
-  });
+  sendCallStartSmsIfNeeded(to)
+    .then((delivery) => {
+      if (delivery?.ok === false && !delivery?.skipped) {
+        queueTeamNotification({
+          title: "DDD follow-up text failed",
+          body: `Could not send the call-start self-service text to ${formatPhoneForAlert(to)}.`,
+          data: { type: "sms-failed", from: to || "", reason: delivery.error || delivery.reason || "call-start SMS failed" }
+        }, "call-start-sms-failed");
+      }
+    })
+    .catch((error) => {
+      console.warn(`Call-start SMS crashed: ${error.message}`);
+      queueTeamNotification({
+        title: "DDD follow-up text crashed",
+        body: `Call-start text crashed for ${formatPhoneForAlert(to)}: ${error.message}`,
+        data: { type: "sms-failed", from: to || "", reason: error.message }
+      }, "call-start-sms-crashed");
+    });
 }
 
 async function sendCallStartSmsIfNeeded(to) {
@@ -2007,7 +2026,7 @@ async function sendCallStartSmsIfNeeded(to) {
   const message = appendStopFooter(
     callSelfServiceSmsMessage(
       process.env.CALL_START_SMS_MESSAGE,
-      `Thanks for calling DDD. No worries if you do not want to stay on the AI call. You can reply here with your service, vehicle, and location, or book/manage service here: iPhone users can use DDD Mobile ${iosAppUrl()} ; non-iPhone users can book at ${bookingUrl()}`
+      `Thanks for calling DDD. No worries if you do not want to stay on the AI call. Reply here with your service, vehicle, and location, or book/manage service here: iPhone users can use DDD Mobile ${iosAppUrl()} ; non-iPhone users can book at ${bookingUrl()}`
     )
   );
   const delivery = await sendTwilioSms(normalizedTo, message);
@@ -2124,6 +2143,7 @@ async function sendAlertEmail({ title = "DDD AI Dispatch alert", body = "", data
     data.status ? `Status: ${data.status}` : "",
     data.durationSeconds ? `Duration: ${data.durationSeconds}s` : "",
     data.reason ? `Reason: ${data.reason}` : "",
+    data.message ? `Message: ${String(data.message).slice(0, 600)}` : "",
     "",
     "Next step:",
     data.type === "sms"

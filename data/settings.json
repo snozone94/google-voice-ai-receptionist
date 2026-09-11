@@ -58,7 +58,7 @@
   "smsFollowUp": {
     "enabled": true,
     "askPermission": true,
-    "message": "Thanks for calling DDD. Your request was received: {{link}}. iPhone users: open the DDD Mobile app link and log in with the same phone number used for booking. Non-iPhone users: log in at {{webLoginLink}} with the same phone number to see booking updates. Reply here if anything changes."
+    "message": "Thanks for calling DDD. No worries if you do not want to stay on the AI call. Reply here with your service, vehicle, and location, or book/manage service here: iPhone users can use DDD Mobile https://apps.apple.com/app/id6762315831 ; non-iPhone users can book at https://dddcincy.com/book-service/. Reply STOP to stop."
   },
   "reviewFollowUp": {
     "enabled": true,

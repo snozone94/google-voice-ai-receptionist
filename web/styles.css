@@ -4829,3 +4829,370 @@ body[data-access="reviewer"] .sticky-access-bar input {
     padding: 12px;
   }
 }
+
+/* Operations-console pass: keep the live tools usable first. */
+main {
+  max-width: 1180px;
+  padding-bottom: 36px;
+}
+
+.hero-panel {
+  padding: 22px;
+}
+
+.brand-header {
+  align-items: center;
+}
+
+.brand-logo {
+  box-shadow: 0 14px 34px rgba(255, 62, 165, 0.28), 0 0 0 3px rgba(255, 255, 255, 0.72);
+}
+
+body[data-access="admin"] .login-card > div p,
+body[data-access="staff"] .login-card > div p,
+body[data-access="backup"] .login-card > div p,
+body[data-access="reviewer"] .login-card > div p {
+  display: none;
+}
+
+body[data-access="admin"] .login-card,
+body[data-access="staff"] .login-card,
+body[data-access="backup"] .login-card,
+body[data-access="reviewer"] .login-card {
+  min-height: 0;
+}
+
+body[data-access="admin"] .login-card .pin-field,
+body[data-access="staff"] .login-card .pin-field,
+body[data-access="backup"] .login-card .pin-field,
+body[data-access="reviewer"] .login-card .pin-field {
+  display: none;
+}
+
+.simplified-tabbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  background:
+    linear-gradient(135deg, rgba(13, 18, 36, 0.94), rgba(50, 26, 68, 0.9)) padding-box,
+    var(--rainbow) border-box;
+}
+
+.simplified-tabbar .tab-button:nth-child(1).active { background: linear-gradient(135deg, #ff3ea5, #ff7a3d); }
+.simplified-tabbar .tab-button:nth-child(2).active { background: linear-gradient(135deg, #ff7a3d, #ffc83d); }
+.simplified-tabbar .tab-button:nth-child(3).active { background: linear-gradient(135deg, #ffc83d, #23c779); }
+.simplified-tabbar .tab-button:nth-child(4).active { background: linear-gradient(135deg, #23c779, #16b8ff); }
+.simplified-tabbar .tab-button:nth-child(5).active { background: linear-gradient(135deg, #16b8ff, #7657ff, #ff3ea5); }
+
+.sticky-access-bar {
+  position: sticky;
+  top: 54px;
+  z-index: 25;
+  background:
+    linear-gradient(135deg, rgba(18, 27, 48, 0.92), rgba(62, 28, 82, 0.88)) padding-box,
+    linear-gradient(90deg, #ff3ea5, #ff7a3d, #ffc83d, #23c779, #16b8ff, #7657ff) border-box;
+}
+
+.inbox-shell,
+.call-log-shell {
+  display: grid;
+  grid-template-columns: minmax(250px, 340px) minmax(0, 1fr);
+  min-height: min(760px, calc(100vh - 260px));
+  max-height: none;
+  overflow: hidden;
+}
+
+.conversation-list,
+.call-log-list {
+  max-height: min(760px, calc(100vh - 290px));
+  overflow: auto;
+  padding: 14px;
+}
+
+.conversation-panel,
+.call-detail {
+  min-width: 0;
+  max-height: min(760px, calc(100vh - 290px));
+  overflow: auto;
+}
+
+.conversation-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(240px, 1fr) auto auto auto;
+}
+
+.conversation-header,
+.call-detail-header,
+.call-outcome-summary,
+.call-section,
+.reply-form {
+  border-radius: 18px;
+}
+
+.message-list {
+  min-height: 280px;
+  max-height: none;
+  overflow: auto;
+}
+
+.quick-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-replies button {
+  flex: 1 1 138px;
+  min-height: 40px;
+}
+
+.conversation-archive-button {
+  min-width: 88px;
+}
+
+.call-detail .call-section,
+.call-detail .call-facts,
+.call-detail .call-metrics {
+  margin-bottom: 14px;
+}
+
+.call-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.call-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.transcript-box {
+  max-height: 420px;
+  overflow: auto;
+}
+
+.transcript-conversation {
+  display: grid;
+  gap: 10px;
+}
+
+.transcript-row {
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+
+.insight-focus-strip,
+.insight-highlights,
+.insight-mini-grid,
+.qa-grid,
+.activity-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.insight-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.insight-card {
+  overflow: hidden;
+}
+
+.insight-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.activity-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.activity-timeline {
+  display: grid;
+  gap: 10px;
+}
+
+.activity-item {
+  list-style: none;
+  border-radius: 16px;
+  padding: 14px;
+}
+
+@media (max-width: 720px) {
+  main {
+    padding: 8px 8px calc(82px + env(safe-area-inset-bottom));
+  }
+
+  .hero-panel {
+    padding: 12px;
+  }
+
+  .brand-header {
+    grid-template-columns: 54px 1fr;
+    gap: 10px;
+  }
+
+  .brand-logo {
+    width: 54px;
+    height: 54px;
+  }
+
+  .hero-copy h1 {
+    font-size: 1.55rem;
+  }
+
+  .hero-copy .summary,
+  .compact-numbers {
+    display: none;
+  }
+
+  .quick-control-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .simplified-tabbar {
+    position: fixed;
+    inset: auto 8px max(8px, env(safe-area-inset-bottom)) 8px;
+    top: auto;
+    z-index: 80;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-auto-rows: 44px;
+    max-height: 56px;
+    padding: 6px;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 -10px 30px rgba(4, 8, 22, 0.36), 0 0 22px rgba(255, 62, 165, 0.18);
+  }
+
+  .simplified-tabbar.show-advanced {
+    max-height: min(218px, 44vh);
+    overflow-y: auto;
+  }
+
+  .simplified-tabbar .tab-button {
+    min-height: 44px;
+    height: 44px;
+    padding: 0 5px;
+    border-radius: 14px;
+    font-size: 0.72rem;
+  }
+
+  .sticky-access-bar {
+    top: 0;
+    z-index: 50;
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 42px;
+    margin: 6px 0 10px;
+  }
+
+  .sticky-access-bar p {
+    font-size: 0.72rem;
+    line-height: 1.25;
+  }
+
+  body[data-access="admin"] .sticky-access-bar,
+  body[data-access="staff"] .sticky-access-bar,
+  body[data-access="backup"] .sticky-access-bar,
+  body[data-access="reviewer"] .sticky-access-bar {
+    padding: 8px 10px;
+  }
+
+  .inbox-shell,
+  .call-log-shell {
+    grid-template-columns: 1fr;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .conversation-list,
+  .call-log-list {
+    display: flex;
+    gap: 10px;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 10px 2px 12px;
+    scroll-snap-type: x proximity;
+  }
+
+  .conversation-swipe,
+  .call-log-item {
+    flex: 0 0 min(82vw, 300px);
+    scroll-snap-align: start;
+  }
+
+  .conversation-archive-button {
+    flex: 0 0 86px;
+  }
+
+  .conversation-panel,
+  .call-detail {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .conversation-panel {
+    grid-template-rows: auto auto minmax(260px, auto) auto auto auto;
+  }
+
+  .conversation-details,
+  .call-metrics,
+  .call-facts,
+  .insight-focus-strip,
+  .insight-highlights,
+  .insight-mini-grid,
+  .qa-grid,
+  .activity-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .message-list {
+    min-height: 300px;
+    max-height: 52vh;
+  }
+
+  .reply-form {
+    position: sticky;
+    bottom: calc(66px + env(safe-area-inset-bottom));
+    z-index: 20;
+    box-shadow: 0 -12px 30px rgba(8, 12, 30, 0.2);
+  }
+
+  .reply-form textarea {
+    min-height: 84px;
+  }
+
+  .quick-replies button {
+    flex-basis: calc(50% - 5px);
+    min-height: 38px;
+    font-size: 0.72rem;
+  }
+
+  .call-detail-header {
+    align-items: flex-start;
+  }
+
+  .transcript-box {
+    max-height: 54vh;
+  }
+
+  .activity-filter-row {
+    display: flex;
+    overflow-x: auto;
+    gap: 8px;
+  }
+
+  .activity-filter {
+    flex: 0 0 auto;
+  }
+}

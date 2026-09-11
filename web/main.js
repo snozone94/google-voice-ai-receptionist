@@ -2505,7 +2505,7 @@ replyForm.addEventListener("submit", async (event) => {
 async function refreshActivity() {
   if (activityTimeline) activityTimeline.innerHTML = `<li class="activity-item empty-state">Loading activity...</li>`;
   const [callsResponse, leadsResponse, summariesResponse, bookingsResponse] = await Promise.all([
-    fetch("/api/call-log?limit=75", { headers: adminHeaders() }),
+    fetch("/api/call-log?limit=75", { headers: pushAuthHeaders() }),
     fetch("/api/leads"),
     fetch("/api/summaries"),
     fetch("/api/bookings")
@@ -2606,7 +2606,7 @@ function renderActivityTimeline() {
 
 async function refreshCallLog() {
   callLogStatus.textContent = "Loading call log...";
-  const response = await fetch("/api/call-log?limit=75", { headers: adminHeaders() });
+  const response = await fetch("/api/call-log?limit=75", { headers: pushAuthHeaders() });
   if (response.status === 403) {
     callLog = [];
     selectedCallId = "";

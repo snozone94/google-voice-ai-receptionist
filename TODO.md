@@ -1,5 +1,16 @@
 # DDD AI Dispatch TODO
 
+## Current 3-Phase Plan
+
+- [x] Phase 1: Harden the live backend/site first while the iOS app stays in review.
+  - [x] Send the customer self-service SMS earlier when a call starts so early hangups still get the app/booking links.
+  - [x] Alert the team if that call-start follow-up text fails or crashes.
+  - [x] Include the actual inbound text body in email alerts so Gmail alerts are useful without opening the admin first.
+  - [x] Let saved tech/admin access unlock Calls and Activity consistently, not just Inbox.
+  - [x] Clean the web admin into a darker rainbow operations console with Inbox/Calls usable first.
+- [ ] Phase 2: After the reviewed app is safe, sync the app UI with the stable web admin.
+- [ ] Phase 3: Package the sellable version: onboarding, per-business accounts, automated number setup, billing, usage controls, and brand customization.
+
 ## Production Now
 
 - [x] Upgrade the Render service from Free to Starter so the persistent disk can attach.
