@@ -2,7 +2,7 @@
   "expo": {
     "name": "DDD AI Dispatch",
     "slug": "ddd-ai-dispatch",
-    "version": "0.1.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -32,7 +32,15 @@
     },
     "owner": "dddcincy",
     "plugins": [
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#ff3ea5",
+          "defaultChannel": "ddd-dispatch"
+        }
+      ]
     ]
   }
 }

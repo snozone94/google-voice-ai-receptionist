@@ -167,6 +167,25 @@ export default function App() {
 
   const cleanBaseUrl = useMemo(() => normalizeBaseUrl(apiBaseUrl), [apiBaseUrl]);
 
+  const refreshOperations = useCallback(async (baseUrl = cleanBaseUrl, accessPin = adminPin) => {
+    const targetBaseUrl = normalizeBaseUrl(baseUrl);
+    if (!accessPin) return;
+    const [callsResponse, conversationsResponse, insightsResponse] = await Promise.all([
+      apiGet(targetBaseUrl, "/api/call-log?limit=75", accessPin).catch(() => ({ calls: [] })),
+      apiGet(targetBaseUrl, "/api/conversations", accessPin).catch(() => ({ conversations: [] })),
+      apiGet(targetBaseUrl, "/api/insights", accessPin).catch(() => null)
+    ]);
+    setActivity((current) => ({
+      ...current,
+      calls: callsResponse.calls || current.calls || [],
+      conversations: conversationsResponse.conversations || current.conversations || [],
+      insights: insightsResponse || current.insights || null
+    }));
+    if (conversationsResponse.staff?.ok) {
+      setSignedInStaff(conversationsResponse.staff);
+    }
+  }, [adminPin, cleanBaseUrl]);
+
   const loadAll = useCallback(async (baseUrl = cleanBaseUrl, accessPin = adminPin) => {
     const targetBaseUrl = normalizeBaseUrl(baseUrl);
     setLoading(true);
@@ -239,6 +258,14 @@ export default function App() {
       saveSettings("auto").catch(() => {});
     }, 900);
   }, [settings, editMode, loading]);
+
+  useEffect(() => {
+    if (!adminPin || editMode || saving) return undefined;
+    const interval = setInterval(() => {
+      refreshOperations(cleanBaseUrl, adminPin).catch(() => {});
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [adminPin, cleanBaseUrl, editMode, refreshOperations, saving]);
 
   async function saveBaseUrl() {
     const next = normalizeBaseUrl(apiBaseUrl);
@@ -392,7 +419,7 @@ export default function App() {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
       <LinearGradient colors={["#140f2a", "#102d3b", "#33133d"]} style={styles.shell}>
-        <Header business={business} settings={settings} editMode={editMode} />
+        <Header business={business} settings={settings} editMode={editMode} signedInStaff={signedInStaff} />
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           {activeTab === "Home" ? (
@@ -505,7 +532,7 @@ function BottomTabs({ activeTab, onSelect }) {
   );
 }
 
-function Header({ business, editMode, settings }) {
+function Header({ business, editMode, settings, signedInStaff }) {
   return (
     <LinearGradient colors={["rgba(29, 22, 58, 0.98)", "rgba(28, 48, 75, 0.94)", "rgba(76, 33, 91, 0.96)"]} style={styles.header}>
       <View style={styles.brandRow}>
@@ -520,7 +547,9 @@ function Header({ business, editMode, settings }) {
           {settings.enabled ? "Live" : "Paused"}
         </Text>
       </View>
-      <Text style={styles.subtitle} numberOfLines={1}>{editMode ? "Editing settings" : "Locked"} - calls, texts, bookings, insights</Text>
+      <Text style={styles.subtitle} numberOfLines={1}>
+        {signedInStaff?.ok ? `Signed in as ${signedInStaff.name || "DDD team"}` : "Enter code on Home"} - inbox, calls, texts, dispatch
+      </Text>
       <LinearGradient colors={rainbowColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.heroGlow} />
     </LinearGradient>
   );
@@ -561,16 +590,16 @@ function HomeTab({
   const routeLabel = routeMode === "humans" ? "Ring team" : routeMode === "ai" ? "AI only" : "AI + backup";
   return (
     <>
-      <Card title="Admin login">
+      <Card title="Sign in once">
         <View style={styles.accessBanner}>
           <View style={styles.flexText}>
             <Text style={styles.accessTitle}>{isSignedIn ? `Signed in as ${signedInStaff.name || "DDD team"}` : hasAdminPin ? "Code saved" : "Locked"}</Text>
             <Text style={styles.muted}>
               {isSignedIn
-                ? `${signedInStaff.role || "staff"} access is active on this phone.`
+                ? `${signedInStaff.role || "staff"} access is active. Inbox and calls refresh on their own.`
                 : hasAdminPin
-                  ? "Tap Unlock to verify this admin or tech code."
-                  : "Enter the admin or tech code, then unlock to load protected areas."}
+                  ? "Tap Unlock once. The app keeps this code on this phone."
+                  : "Enter admin or tech code once to load inbox, calls, replies, and alerts."}
             </Text>
           </View>
           <Text style={[styles.accessPill, hasAdminPin ? styles.accessPillReady : styles.accessPillLocked]}>
@@ -593,7 +622,7 @@ function HomeTab({
             <ActionButton disabled={loading || !hasAdminPin} label={loading ? "Checking..." : "Unlock"} onPress={onUnlockAdmin} />
           </View>
         </View>
-        <Text style={styles.muted}>Use the real admin code for settings and Team edits. Tech codes can open inbox, replies, callback bridge, and status after admin saves them in Team.</Text>
+        <Text style={styles.muted}>Admin can edit settings and Team. Tech codes can open Inbox, Calls, replies, callback bridge, and status.</Text>
         <Field
           keyboardType="phone-pad"
           label="Your call-back phone"
@@ -603,7 +632,7 @@ function HomeTab({
           }}
           value={staffPhone}
         />
-        <Text style={styles.muted}>Outbound calls ring this phone first, then connect the customer with DDD as caller ID.</Text>
+        <Text style={styles.muted}>Outbound calls ring this phone first, then connect the customer with DDD caller ID.</Text>
       </Card>
 
       <Card title="At a glance">
@@ -1120,13 +1149,16 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
   return (
     <>
       <Card title="Shared inbox">
-        {!hasPin ? <Text style={styles.warningText}>Enter your admin or tech access code on Home, then tap Refresh to load protected inbox messages.</Text> : null}
+        {!hasPin ? <Text style={styles.warningText}>Enter your admin or tech access code on Home once to load protected inbox messages.</Text> : null}
         {!normalizeE164(staffPhone) ? <Text style={styles.warningText}>Add your call-back phone on Home before using Call Customer.</Text> : null}
         <View style={styles.summaryGrid}>
           <SummaryTile label="Threads" value={activeConversations.length} />
           <SummaryTile label="Open texts" value={activeConversations.filter((item) => item.messages?.length).length} />
         </View>
-        <View style={styles.conversationPicker}>
+        <View style={styles.buttonRow}>
+          <ActionButton label="Refresh inbox" onPress={onRefresh} />
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.conversationPicker}>
           {activeConversations.map((conversation, index) => {
             const customerPhone = getConversationCustomer(conversation);
             const normalized = normalizeE164(customerPhone);
@@ -1149,7 +1181,7 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
               </Pressable>
             );
           })}
-        </View>
+        </ScrollView>
       </Card>
       {selectedConversation ? (
         <Card title="Conversation">
@@ -1215,6 +1247,7 @@ function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChang
         onChangeText={(message) => onDraftChange(customerPhone, message)}
         value={draft}
       />
+      <Text style={styles.muted}>Replies send from DDD and include STOP language automatically if needed.</Text>
       <View style={styles.buttonRow}>
         <ActionButton disabled={smsBusy} label={smsBusy ? "Sending..." : "Send text"} onPress={() => onSend(customerPhone)} />
         <ActionButton disabled={callBusy} label={callBusy ? "Calling..." : "Call customer"} onPress={() => onCall(customerPhone)} variant="light" />
@@ -1280,7 +1313,7 @@ function CallCard({ call }) {
       {missing.length ? <Text style={styles.warningText}>Needs: {missing.join(", ")}</Text> : null}
       <View style={styles.transcriptBox}>
         <Text style={styles.linkLabel}>Transcript</Text>
-        <Text style={styles.record} numberOfLines={9}>{transcript || "Transcript will appear after the call is processed."}</Text>
+        <Text style={styles.record} numberOfLines={12}>{transcript || "Transcript will appear after the call is processed."}</Text>
       </View>
     </LinearGradient>
   );
@@ -1501,7 +1534,7 @@ function normalizeBaseUrl(value) {
 
 async function apiGet(baseUrl, path, adminPin = "") {
   const response = await fetch(`${baseUrl}${path}`, {
-    headers: adminPin ? { "x-admin-pin": adminPin } : {}
+    headers: accessHeaders(adminPin)
   });
   if (!response.ok) throw new Error(`Could not load ${path}.`);
   return response.json();
@@ -1510,7 +1543,7 @@ async function apiGet(baseUrl, path, adminPin = "") {
 async function apiPost(baseUrl, path, payload, adminPin = "") {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(adminPin ? { "x-admin-pin": adminPin } : {}) },
+    headers: { "Content-Type": "application/json", ...accessHeaders(adminPin) },
     body: JSON.stringify(payload)
   });
   if (!response.ok) {
@@ -1523,13 +1556,18 @@ async function apiPost(baseUrl, path, payload, adminPin = "") {
 async function apiDelete(baseUrl, path, adminPin = "") {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "DELETE",
-    headers: adminPin ? { "x-admin-pin": adminPin } : {}
+    headers: accessHeaders(adminPin)
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error || `Could not delete ${path}.`);
   }
   return response.json();
+}
+
+function accessHeaders(code = "") {
+  const clean = String(code || "").trim();
+  return clean ? { "x-admin-pin": clean, "x-staff-code": clean } : {};
 }
 
 function toFormSettings(settings) {
@@ -1817,39 +1855,41 @@ function buildScriptPreview(settings) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#140f2a" },
-  shell: { flex: 1, backgroundColor: "#140f2a" },
+  safeArea: { flex: 1, backgroundColor: "#0d1024" },
+  shell: { flex: 1, backgroundColor: "#0d1024" },
   header: {
-    marginHorizontal: 12,
-    marginTop: 6,
+    marginHorizontal: 10,
+    marginTop: 4,
     overflow: "hidden",
-    borderRadius: 20,
-    backgroundColor: "#ffffff",
-    padding: 10,
-    shadowColor: "#3b2267",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 18,
+    borderColor: "rgba(255, 62, 165, 0.32)",
+    borderRadius: 18,
+    borderWidth: 1,
+    backgroundColor: "#171a32",
+    padding: 9,
+    shadowColor: "#ff3ea5",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
     elevation: 5
   },
-  heroGlow: { height: 4, borderRadius: 999, backgroundColor: "#ff3ea5", marginTop: 8 },
+  heroGlow: { height: 3, borderRadius: 999, backgroundColor: "#ff3ea5", marginTop: 7 },
   brandRow: { alignItems: "center", flexDirection: "row", gap: 10 },
   logoFrame: {
     alignItems: "center",
     justifyContent: "center",
-    width: 44,
-    height: 44,
-    borderRadius: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 14,
     shadowColor: "#e640a5",
     shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.14,
     shadowRadius: 12,
     elevation: 3
   },
-  logo: { width: 38, height: 38, borderRadius: 13 },
+  logo: { width: 33, height: 33, borderRadius: 12 },
   brandCopy: { flex: 1, minWidth: 0 },
   eyebrow: { color: "#ff8bd6", fontSize: 10, fontWeight: "900", textTransform: "uppercase" },
-  title: { color: "#ffffff", fontSize: 18, fontWeight: "900" },
+  title: { color: "#ffffff", fontSize: 17, fontWeight: "900" },
   subtitle: { color: "#e8e4ff", fontSize: 11, fontWeight: "800", lineHeight: 15, marginTop: 4 },
   modePill: {
     overflow: "hidden",
@@ -1901,13 +1941,13 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 10,
     right: 10,
-    bottom: 10,
-    borderColor: "rgba(118, 87, 255, 0.16)",
-    borderRadius: 24,
+    bottom: 8,
+    borderColor: "rgba(255, 62, 165, 0.28)",
+    borderRadius: 22,
     borderWidth: 1,
     overflow: "hidden",
-    paddingVertical: 7,
-    shadowColor: "#3b2267",
+    paddingVertical: 6,
+    shadowColor: "#ff3ea5",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.13,
     shadowRadius: 18,
@@ -1915,41 +1955,41 @@ const styles = StyleSheet.create({
   },
   tabContent: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 5,
+    flexWrap: "nowrap",
+    gap: 4,
     justifyContent: "center",
-    paddingHorizontal: 7
+    paddingHorizontal: 6
   },
   tabButton: {
     alignItems: "center",
-    width: "23.7%",
-    minHeight: 31,
-    flexDirection: "row",
-    gap: 4,
+    flex: 1,
+    minHeight: 48,
+    flexDirection: "column",
+    gap: 3,
     justifyContent: "center",
-    borderColor: "rgba(118, 87, 255, 0.12)",
-    borderRadius: 999,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    borderRadius: 16,
     borderWidth: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.74)",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     overflow: "hidden",
-    paddingHorizontal: 5
+    paddingHorizontal: 4
   },
-  tabDot: { width: 7, height: 7, borderRadius: 999 },
-  tabText: { color: "#ffffff", fontSize: 10.5, fontWeight: "900", textAlign: "center" },
+  tabDot: { width: 8, height: 8, borderRadius: 999 },
+  tabText: { color: "#e8e4ff", fontSize: 10, fontWeight: "900", textAlign: "center" },
   tabTextActive: { color: "#ffffff" },
-  content: { gap: 12, padding: 14, paddingBottom: 104 },
+  content: { gap: 11, padding: 12, paddingBottom: 82 },
   card: {
-    gap: 12,
+    gap: 11,
     overflow: "hidden",
-    borderColor: "rgba(255, 62, 165, 0.34)",
-    borderRadius: 22,
+    borderColor: "rgba(255, 62, 165, 0.28)",
+    borderRadius: 20,
     borderWidth: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.92)",
-    padding: 15,
-    shadowColor: "#3b2267",
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.88)",
+    padding: 13,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.16,
+    shadowRadius: 22,
     elevation: 6
   },
   cardBar: { height: 5, borderRadius: 999, backgroundColor: "#16b8ff" },
@@ -1972,7 +2012,7 @@ const styles = StyleSheet.create({
   moreTileText: { color: "#ffffff", fontSize: 17, fontWeight: "900" },
   flexText: { flex: 1, minWidth: 0, paddingRight: 10 },
   statusRow: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", gap: 12 },
-  buttonRow: { flexDirection: "row", flexWrap: "wrap", gap: 9 },
+  buttonRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   field: { gap: 6 },
   label: { color: "#34364a", fontSize: 13, fontWeight: "900" },
   input: {
@@ -1990,7 +2030,7 @@ const styles = StyleSheet.create({
   button: {
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 46,
+    minHeight: 44,
     borderRadius: 999,
     backgroundColor: "#7657ff",
     overflow: "hidden",
@@ -2003,8 +2043,8 @@ const styles = StyleSheet.create({
   buttonGradient: {
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 46,
-    paddingHorizontal: 16,
+    minHeight: 44,
+    paddingHorizontal: 15,
     paddingVertical: 10
   },
   lightButton: { backgroundColor: "#fff0fa", paddingHorizontal: 16, paddingVertical: 10 },
@@ -2086,8 +2126,9 @@ const styles = StyleSheet.create({
   },
   smallChipOk: { backgroundColor: "#e9fff3", color: "#12824d" },
   smallChipWarn: { backgroundColor: "#fff7ed", color: "#9a3412" },
-  conversationPicker: { gap: 8, paddingVertical: 2 },
+  conversationPicker: { gap: 8, paddingVertical: 2, paddingRight: 2 },
   conversationChoice: {
+    width: 178,
     minHeight: 76,
     borderColor: "rgba(118, 87, 255, 0.18)",
     borderRadius: 18,
@@ -2113,14 +2154,14 @@ const styles = StyleSheet.create({
     padding: 12
   },
   messageThread: {
-    maxHeight: 340,
+    maxHeight: 310,
     borderColor: "rgba(118, 87, 255, 0.12)",
     borderRadius: 18,
     borderWidth: 1,
     backgroundColor: "rgba(255, 255, 255, 0.7)"
   },
   messageThreadContent: { gap: 8, padding: 10 },
-  quickReplyGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  quickReplyGrid: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
   quickReplyButton: {
     borderColor: "rgba(22, 184, 255, 0.18)",
     borderRadius: 999,
