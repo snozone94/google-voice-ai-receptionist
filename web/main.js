@@ -2251,6 +2251,7 @@ function renderQuickReplies(conversation, booking, confidence) {
 
   addReply("On it", "Thanks. DDD has this and will follow up with the next step shortly.");
   addReply("Booking link", "You can book or manage service here: https://dddcincy.com/book-service/");
+  addReply("Google review", buildGoogleReviewReply());
   addReply("Call back soon", "Thanks for reaching out. DDD may be helping another customer right now, but we have your message and will follow up as soon as possible.");
 
   quickReplies.innerHTML = replies
@@ -2263,6 +2264,23 @@ function renderQuickReplies(conversation, booking, confidence) {
       replyMessageInput.focus();
     });
   }
+}
+
+function buildGoogleReviewReply() {
+  const reviewLink = (reviewFollowUpUrlInput?.value || "https://g.page/r/CfVinSqxHOIDEAE/review").trim();
+  const template =
+    (reviewFollowUpMessageInput?.value || "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}").trim();
+  const message = template.includes("{{reviewLink}}")
+    ? template.replaceAll("{{reviewLink}}", reviewLink)
+    : `${template} ${reviewLink}`.trim();
+  return ensureSmsStopLanguage(message);
+}
+
+function ensureSmsStopLanguage(message) {
+  const cleaned = String(message || "").trim();
+  if (!cleaned) return "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: https://g.page/r/CfVinSqxHOIDEAE/review. Reply STOP to stop.";
+  if (/\breply stop\b|\bstop to stop\b|\btext stop\b/i.test(cleaned)) return cleaned;
+  return `${cleaned} Reply STOP to stop.`;
 }
 
 function escapeHtml(value) {

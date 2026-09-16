@@ -1195,6 +1195,7 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
               setDrafts((current) => ({ ...current, [to]: message }));
             }}
             onSend={sendReply}
+            settings={settings}
             workingThread={workingThread}
           />
         </Card>
@@ -1207,14 +1208,14 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
   );
 }
 
-function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChange, onSend, workingThread }) {
+function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChange, onSend, settings, workingThread }) {
   const customerPhone = getConversationCustomer(conversation);
   const normalizedPhone = normalizeE164(customerPhone);
   const recentMessages = conversation.messages || [];
   const smsBusy = workingThread === `sms:${normalizedPhone}`;
   const callBusy = workingThread === `call:${normalizedPhone}`;
   const archiveBusy = workingThread === `archive:${normalizedPhone}`;
-  const quickReplies = buildQuickReplies(conversation);
+  const quickReplies = buildQuickReplies(conversation, settings);
   return (
     <LinearGradient colors={["#fffaff", "#f7fffb"]} style={styles.conversationBox}>
       <View style={styles.listHeader}>
@@ -1764,7 +1765,7 @@ function getConversationTime(conversation = {}) {
   return conversation.updatedAt || conversation.lastAt || last?.createdAt || last?.at || "";
 }
 
-function buildQuickReplies(conversation = {}) {
+function buildQuickReplies(conversation = {}, settings = blankSettings) {
   const text = `${conversation.lastBody || ""} ${(conversation.messages || []).map((message) => message.body || message.text || "").join(" ")}`.toLowerCase();
   const base = [
     {
@@ -1774,6 +1775,10 @@ function buildQuickReplies(conversation = {}) {
     {
       label: "Booking link",
       text: "No problem. You can book/manage service here: https://dddcincy.com/book-service/ iPhone users can use DDD Mobile: https://apps.apple.com/app/id6762315831 Reply STOP to stop."
+    },
+    {
+      label: "Google review",
+      text: buildGoogleReviewReply(settings)
     },
     {
       label: "Get location",
@@ -1803,6 +1808,26 @@ function buildQuickReplies(conversation = {}) {
     ];
   }
   return base;
+}
+
+function buildGoogleReviewReply(settings = blankSettings) {
+  const reviewLink = String(settings.reviewFollowUp?.url || blankSettings.reviewFollowUp.url || "https://g.page/r/CfVinSqxHOIDEAE/review").trim();
+  const template = String(
+    settings.reviewFollowUp?.message ||
+      blankSettings.reviewFollowUp.message ||
+      "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}"
+  ).trim();
+  const message = template.includes("{{reviewLink}}")
+    ? template.replaceAll("{{reviewLink}}", reviewLink)
+    : `${template} ${reviewLink}`.trim();
+  return ensureSmsStopLanguage(message);
+}
+
+function ensureSmsStopLanguage(message) {
+  const cleaned = String(message || "").trim();
+  if (!cleaned) return "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: https://g.page/r/CfVinSqxHOIDEAE/review. Reply STOP to stop.";
+  if (/\breply stop\b|\bstop to stop\b|\btext stop\b/i.test(cleaned)) return cleaned;
+  return `${cleaned} Reply STOP to stop.`;
 }
 
 function formatPercent(value) {
