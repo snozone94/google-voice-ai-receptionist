@@ -13,6 +13,12 @@ const callLogStatus = document.querySelector("#callLogStatus");
 const refreshActivityButton = document.querySelector("#refreshActivityButton");
 const refreshCallLogButton = document.querySelector("#refreshCallLogButton");
 const refreshInsightsButton = document.querySelector("#refreshInsightsButton");
+const refreshUsageButton = document.querySelector("#refreshUsageButton");
+const usageCards = document.querySelector("#usageCards");
+const usageStatus = document.querySelector("#usageStatus");
+const usageNextActions = document.querySelector("#usageNextActions");
+const usageTopupLinks = document.querySelector("#usageTopupLinks");
+const usageRouteMode = document.querySelector("#usageRouteMode");
 const insightHighlights = document.querySelector("#insightHighlights");
 const insightFocusStrip = document.querySelector("#insightFocusStrip");
 const insightSuggestionsList = document.querySelector("#insightSuggestionsList");
@@ -246,6 +252,12 @@ function setActiveTab(tabName) {
       insightsStatus.textContent = error.message;
     });
   }
+  if (tabName === "usage" && accessCodeValue()) {
+    verifyAccessCode({ quiet: true, refresh: false }).catch(() => {});
+    refreshUsage().catch((error) => {
+      if (usageStatus) usageStatus.textContent = error.message;
+    });
+  }
 }
 
 fetch("/api/business")
@@ -297,6 +309,7 @@ if (accessCodeValue()) {
   verifyAccessCode({ quiet: true, refresh: true }).catch(() => {});
   refreshInbox().catch((error) => setInboxStatus(error.message));
   refreshPresence().catch(() => {});
+  refreshUsage().catch(() => {});
 }
 
 function setStatus(message) {
@@ -1029,6 +1042,94 @@ async function refreshInsights() {
   renderInsightCard("weekly", payload.sections?.weekly);
   renderInsightCard("monthly", payload.sections?.monthly);
   insightsStatus.textContent = `Insights updated ${formatTime(payload.generatedAt)}.`;
+}
+
+async function refreshUsage() {
+  if (!usageCards || !usageStatus) return;
+  if (!accessCodeValue()) {
+    usageCards.innerHTML = "";
+    if (usageNextActions) usageNextActions.innerHTML = "";
+    if (usageTopupLinks) usageTopupLinks.innerHTML = "";
+    if (usageRouteMode) usageRouteMode.textContent = "Not loaded";
+    usageStatus.textContent = "Enter the real admin access code to load usage and balances.";
+    return;
+  }
+  usageStatus.textContent = "Checking balances and service health...";
+  const response = await fetch("/api/admin/usage", { headers: adminHeaders() });
+  if (response.status === 403) {
+    usageCards.innerHTML = "";
+    if (usageNextActions) usageNextActions.innerHTML = "";
+    if (usageTopupLinks) usageTopupLinks.innerHTML = "";
+    if (usageRouteMode) usageRouteMode.textContent = "Admin locked";
+    usageStatus.textContent = "Admin access is needed for live usage and billing links.";
+    return;
+  }
+  if (!response.ok) throw new Error("Could not load usage dashboard.");
+  const payload = await response.json();
+  renderUsage(payload);
+}
+
+function renderUsage(payload = {}) {
+  const services = payload.services || [];
+  const statusLabels = {
+    good: "Ready",
+    warning: "Watch",
+    critical: "Fix now",
+    neutral: "Info"
+  };
+  usageCards.innerHTML = services
+    .map(
+      (service) => `
+        <article class="usage-card ${escapeAttribute(service.status || "neutral")}">
+          <div class="usage-card-top">
+            <span class="usage-dot" aria-hidden="true"></span>
+            <span>${escapeHtml(statusLabels[service.status] || service.statusLabel || "Info")}</span>
+          </div>
+          <h3>${escapeHtml(service.label || "Service")}</h3>
+          <strong>${escapeHtml(service.value || service.statusLabel || "")}</strong>
+          <p>${escapeHtml(service.detail || "")}</p>
+          <div class="usage-card-links">
+            ${(service.links || [])
+              .map(
+                (link) =>
+                  `<a href="${escapeAttribute(link.url || "#")}" target="_blank" rel="noreferrer">${escapeHtml(link.label || "Open")}</a>`
+              )
+              .join("")}
+          </div>
+        </article>
+      `
+    )
+    .join("");
+  if (usageRouteMode) {
+    usageRouteMode.textContent = `${payload.aiEnabled ? "AI on" : "AI off"} · ${formatRouteMode(payload.routeMode)}`;
+  }
+  const generatedAt = payload.generatedAt ? formatTime(payload.generatedAt) : "now";
+  usageStatus.textContent = payload.ok
+    ? `All critical systems look usable. Last checked ${generatedAt}.`
+    : `Needs attention: ${(payload.critical || []).join(", ") || "review warnings"}. Last checked ${generatedAt}.`;
+  if (usageNextActions) {
+    usageNextActions.innerHTML = (payload.nextActions || []).length
+      ? payload.nextActions.map((action) => `<li>${escapeHtml(action)}</li>`).join("")
+      : `<li>No urgent moves right now.</li>`;
+  }
+  if (usageTopupLinks) {
+    const seen = new Set();
+    const links = services.flatMap((service) => service.links || []).filter((link) => {
+      const key = `${link.label}|${link.url}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return link.url;
+    });
+    usageTopupLinks.innerHTML = links
+      .map((link) => `<a href="${escapeAttribute(link.url)}" target="_blank" rel="noreferrer">${escapeHtml(link.label)}</a>`)
+      .join("");
+  }
+}
+
+function formatRouteMode(mode) {
+  if (mode === "ai") return "AI only";
+  if (mode === "humans") return "Ring team only";
+  return "AI + backup";
 }
 
 function renderLearningPreview(payload = {}) {
@@ -3024,6 +3125,12 @@ for (const button of activityFilterButtons) {
 refreshInsightsButton?.addEventListener("click", () => {
   refreshInsights().catch((error) => {
     insightsStatus.textContent = error.message;
+  });
+});
+
+refreshUsageButton?.addEventListener("click", () => {
+  refreshUsage().catch((error) => {
+    usageStatus.textContent = error.message;
   });
 });
 

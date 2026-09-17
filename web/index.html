@@ -160,6 +160,7 @@
         <button class="tab-button active" type="button" data-tab-target="inbox">Inbox</button>
         <button class="tab-button" type="button" data-tab-target="calls">Calls</button>
         <button class="tab-button" type="button" data-tab-target="overview">Home</button>
+        <button class="tab-button" type="button" data-tab-target="usage">Usage</button>
         <button class="tab-button" type="button" data-tab-target="team">Team</button>
         <button id="advancedMenuButton" class="tab-button more-tab-button" type="button" aria-expanded="false">More</button>
         <button class="tab-button advanced-tab" type="button" data-tab-target="voice">Voice</button>
@@ -230,6 +231,37 @@
               <button type="button" data-test-scenario="Can you tow my car to a shop?">Not offered</button>
             </div>
             <textarea id="testScriptOutput" rows="6" readonly></textarea>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel tab-panel" data-tab-panel="usage">
+        <div class="section-title-row">
+          <div>
+            <p class="eyebrow">Live cost guard</p>
+            <h2>Usage & Balance</h2>
+          </div>
+          <button id="refreshUsageButton" type="button">Refresh usage</button>
+        </div>
+        <div class="usage-hero">
+          <div>
+            <p id="usageStatus">Enter the real admin access code to load balances and top-up links.</p>
+            <p class="usage-note">This watches the things that keep DDD AI running: Twilio calls/texts, OpenAI, Render hosting, DDD platform sync, and alert delivery.</p>
+          </div>
+          <div class="usage-route-pill">
+            <span>Call route</span>
+            <strong id="usageRouteMode">Not loaded</strong>
+          </div>
+        </div>
+        <div id="usageCards" class="usage-grid"></div>
+        <div class="usage-actions">
+          <div>
+            <h3>What to do next</h3>
+            <ol id="usageNextActions" class="usage-action-list"></ol>
+          </div>
+          <div>
+            <h3>Fast links</h3>
+            <div id="usageTopupLinks" class="usage-link-grid"></div>
           </div>
         </div>
       </section>

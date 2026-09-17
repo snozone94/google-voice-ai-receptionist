@@ -322,6 +322,18 @@ app.get("/api/setup-status", async (_req, res, next) => {
   }
 });
 
+app.get("/api/admin/usage", async (req, res, next) => {
+  try {
+    if (!hasAdminAccess(req)) {
+      res.status(403).json({ ok: false, error: "Forbidden" });
+      return;
+    }
+    res.json(await buildAdminUsageReport());
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/business", async (_req, res, next) => {
   try {
     const business = await loadBusiness();
@@ -1940,6 +1952,192 @@ async function sendTwilioSms(to, message) {
     to: payload.to,
     from: payload.from
   };
+}
+
+async function buildAdminUsageReport() {
+  const [twilioBalance, settings, pushTokens] = await Promise.all([
+    fetchTwilioBalance(),
+    loadReceptionistSettings(),
+    listPushTokens(100).catch(() => [])
+  ]);
+  const lowBalance = parseMoneyThreshold(process.env.TWILIO_LOW_BALANCE_USD, 5);
+  const criticalBalance = parseMoneyThreshold(process.env.TWILIO_CRITICAL_BALANCE_USD, 2);
+  const openAiBudget = parseOptionalMoney(process.env.OPENAI_MONTHLY_BUDGET_USD);
+  const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+  const renderServiceUrl =
+    process.env.RENDER_SERVICE_DASHBOARD_URL || "https://dashboard.render.com/web/srv-da7ko42d0e5s73f6nqh0";
+  const openAiReady = Boolean(process.env.OPENAI_API_KEY);
+  const renderReady = Boolean(publicBaseUrl && !publicBaseUrl.includes("your-domain"));
+  const browserPushReady = pushTokens.some((token) => token.platform === "web" && token.subscription?.endpoint);
+  const appPushReady = pushTokens.some((token) => token.platform === "expo" && token.token);
+
+  const services = [
+    {
+      id: "twilio",
+      label: "Twilio phone + texts",
+      status: twilioBalance.status,
+      statusLabel: twilioBalance.statusLabel,
+      value: twilioBalance.value,
+      detail: twilioBalance.detail,
+      updatedAt: twilioBalance.updatedAt,
+      links: [
+        { label: "Top up Twilio", url: "https://console.twilio.com/us1/billing" },
+        { label: "Phone numbers", url: "https://console.twilio.com/us1/develop/phone-numbers/manage/incoming" }
+      ],
+      nextAction: twilioBalance.nextAction
+    },
+    {
+      id: "openai",
+      label: "OpenAI voice brain",
+      status: openAiReady ? "good" : "critical",
+      statusLabel: openAiReady ? "Ready" : "Needs API key",
+      value: openAiBudget ? `Budget watch: $${openAiBudget.toFixed(2)}/mo` : "Billing link",
+      detail: openAiBudget
+        ? "OpenAI live spend is checked in their dashboard; this app stores the budget target so you know what to compare against."
+        : "OpenAI billing balance is checked from their dashboard for now. Use the direct usage link for the live spend graph.",
+      links: [
+        { label: "OpenAI billing", url: "https://platform.openai.com/settings/organization/billing/overview" },
+        { label: "OpenAI usage", url: "https://platform.openai.com/usage" }
+      ],
+      nextAction: openAiReady ? "Check weekly usage so surprise spend does not sneak up." : "Add OPENAI_API_KEY on Render."
+    },
+    {
+      id: "render",
+      label: "Render hosting",
+      status: renderReady ? "good" : "critical",
+      statusLabel: renderReady ? "Live" : "Missing public URL",
+      value: renderReady ? "Admin/API online" : "Not live",
+      detail: renderReady
+        ? `Public app URL is ${publicBaseUrl}. Render billing is still topped up in Render.`
+        : "Set PUBLIC_BASE_URL so Twilio, uploads, and admin links point to the live app.",
+      links: [
+        { label: "Render service", url: renderServiceUrl },
+        { label: "Render billing", url: process.env.RENDER_BILLING_URL || "https://dashboard.render.com/billing" }
+      ],
+      nextAction: renderReady ? "Keep the Render service active." : "Set PUBLIC_BASE_URL on Render."
+    },
+    {
+      id: "ddd-platform",
+      label: "DDD Platform sync",
+      status:
+        process.env.DDD_TECH_TEAM_URL && process.env.DDD_TECH_TEAM_TOKEN && process.env.DDD_CUSTOMER_HISTORY_URL
+          ? "good"
+          : "warning",
+      statusLabel: "Connected checks",
+      value: [
+        process.env.DDD_TECH_TEAM_URL && process.env.DDD_TECH_TEAM_TOKEN ? "Team sync" : "Team sync missing",
+        process.env.DDD_CUSTOMER_HISTORY_URL ? "History" : "History missing",
+        process.env.DDD_PHOTO_UPLOAD_WEBHOOK_URL || process.env.DDD_PHOTO_WEBHOOK_URL ? "Photo sync" : "Photo sync missing"
+      ].join(" · "),
+      detail: "This covers tech codes, customer history, branded photo upload, and booking record sync.",
+      links: [{ label: "DDD website", url: "https://dddcincy.com/wp-admin/" }],
+      nextAction:
+        process.env.DDD_TECH_TEAM_URL && process.env.DDD_TECH_TEAM_TOKEN
+          ? "Platform sync is available; watch history/photo items if needed."
+          : "Add the DDD platform team token if tech code sync stops."
+    },
+    {
+      id: "alerts",
+      label: "Alerts + notifications",
+      status: emailAlertsReady() && (browserPushReady || appPushReady) ? "good" : emailAlertsReady() ? "warning" : "critical",
+      statusLabel: emailAlertsReady() ? "Email ready" : "Email missing",
+      value: [
+        emailAlertsReady() ? "Email alerts" : "No email alerts",
+        browserPushReady ? "Chrome push" : "Chrome push not registered",
+        appPushReady ? "iOS push" : "iOS push not registered"
+      ].join(" · "),
+      detail: "Email is the fallback for missed calls/texts. Browser and iOS push depend on device permission and a saved token.",
+      links: [{ label: "Open admin", url: publicBaseUrl || "/" }],
+      nextAction: emailAlertsReady() ? "Keep email fallback on for calls/texts." : "Set Gmail app password/SMTP env vars."
+    }
+  ];
+
+  const warnings = services.filter((service) => service.status === "warning").map((service) => service.label);
+  const critical = services.filter((service) => service.status === "critical").map((service) => service.label);
+  return {
+    ok: critical.length === 0,
+    generatedAt: new Date().toISOString(),
+    routeMode: settings.humanRouting?.mode || "ai_then_humans",
+    aiEnabled: settings.enabled !== false,
+    lowBalance,
+    criticalBalance,
+    services,
+    warnings,
+    critical,
+    nextActions: services
+      .filter((service) => service.status !== "good" || service.id === "twilio")
+      .map((service) => service.nextAction)
+      .filter(Boolean)
+  };
+}
+
+async function fetchTwilioBalance() {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  if (!accountSid || !authToken) {
+    return {
+      status: "critical",
+      statusLabel: "Not connected",
+      value: "Missing credentials",
+      detail: "Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN on Render to show live balance.",
+      nextAction: "Add Twilio credentials or check Render environment variables."
+    };
+  }
+
+  try {
+    const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Balance.json`, {
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`
+      }
+    });
+    const payload = await response.json().catch(async () => ({
+      message: await response.text().catch(() => "Twilio returned an unreadable response.")
+    }));
+    if (!response.ok) {
+      return {
+        status: "warning",
+        statusLabel: "Check failed",
+        value: "Balance unavailable",
+        detail: payload.message || "Twilio did not return a balance.",
+        nextAction: "Open Twilio billing and confirm the account is active."
+      };
+    }
+
+    const balance = Math.abs(Number(payload.balance || 0));
+    const currency = payload.currency || "USD";
+    const lowBalance = parseMoneyThreshold(process.env.TWILIO_LOW_BALANCE_USD, 5);
+    const criticalBalance = parseMoneyThreshold(process.env.TWILIO_CRITICAL_BALANCE_USD, 2);
+    const status = balance <= criticalBalance ? "critical" : balance <= lowBalance ? "warning" : "good";
+    return {
+      status,
+      statusLabel: status === "good" ? "Funded" : status === "warning" ? "Low balance" : "Top up now",
+      value: `${currency} $${balance.toFixed(2)}`,
+      detail: `Warns below $${lowBalance.toFixed(2)} and turns critical below $${criticalBalance.toFixed(2)}.`,
+      updatedAt: new Date().toISOString(),
+      nextAction:
+        status === "good"
+          ? "Balance is okay right now."
+          : `Top up Twilio before calls/texts fail. Current balance is ${currency} $${balance.toFixed(2)}.`
+    };
+  } catch (error) {
+    return {
+      status: "warning",
+      statusLabel: "Check failed",
+      value: "Balance unavailable",
+      detail: error.message || "Could not reach Twilio balance API.",
+      nextAction: "Open Twilio billing and confirm balance manually."
+    };
+  }
+}
+
+function parseMoneyThreshold(value, fallback) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function parseOptionalMoney(value) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 async function sendMissedCallSms(to, status = "") {
