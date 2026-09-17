@@ -19,6 +19,12 @@ const usageStatus = document.querySelector("#usageStatus");
 const usageNextActions = document.querySelector("#usageNextActions");
 const usageTopupLinks = document.querySelector("#usageTopupLinks");
 const usageRouteMode = document.querySelector("#usageRouteMode");
+const openAiBalanceInput = document.querySelector("#openAiBalanceInput");
+const openAiMonthlyCostInput = document.querySelector("#openAiMonthlyCostInput");
+const renderBalanceInput = document.querySelector("#renderBalanceInput");
+const renderMonthlyCostInput = document.querySelector("#renderMonthlyCostInput");
+const dddPlatformBalanceInput = document.querySelector("#dddPlatformBalanceInput");
+const dddPlatformMonthlyCostInput = document.querySelector("#dddPlatformMonthlyCostInput");
 const insightHighlights = document.querySelector("#insightHighlights");
 const insightFocusStrip = document.querySelector("#insightFocusStrip");
 const insightSuggestionsList = document.querySelector("#insightSuggestionsList");
@@ -419,6 +425,12 @@ function applySettings(settings) {
   learnTopLocationsToggle.checked = settings.insightLearning?.useTopLocations !== false;
   learnQaIssuesToggle.checked = settings.insightLearning?.useQaIssues !== false;
   learnSpeedToggle.checked = settings.insightLearning?.useSpeedSuggestions !== false;
+  openAiBalanceInput.value = formatMoneyInput(settings.costTrackers?.openai?.balance);
+  openAiMonthlyCostInput.value = formatMoneyInput(settings.costTrackers?.openai?.monthlyCost || settings.costTrackers?.openai?.monthlyBudget);
+  renderBalanceInput.value = formatMoneyInput(settings.costTrackers?.render?.balance);
+  renderMonthlyCostInput.value = formatMoneyInput(settings.costTrackers?.render?.monthlyCost);
+  dddPlatformBalanceInput.value = formatMoneyInput(settings.costTrackers?.dddPlatform?.balance);
+  dddPlatformMonthlyCostInput.value = formatMoneyInput(settings.costTrackers?.dddPlatform?.monthlyCost);
   customInstructionsInput.value = settings.customInstructions || "";
 }
 
@@ -544,6 +556,20 @@ async function saveSettings(reason = "auto") {
           useQaIssues: learnQaIssuesToggle.checked,
           useSpeedSuggestions: learnSpeedToggle.checked
         },
+        costTrackers: {
+          openai: {
+            balance: parseMoneyInput(openAiBalanceInput.value),
+            monthlyCost: parseMoneyInput(openAiMonthlyCostInput.value)
+          },
+          render: {
+            balance: parseMoneyInput(renderBalanceInput.value),
+            monthlyCost: parseMoneyInput(renderMonthlyCostInput.value)
+          },
+          dddPlatform: {
+            balance: parseMoneyInput(dddPlatformBalanceInput.value),
+            monthlyCost: parseMoneyInput(dddPlatformMonthlyCostInput.value)
+          }
+        },
         qaChecklist: qaChecklistInput.value,
         customInstructions: customInstructionsInput.value
       })
@@ -666,6 +692,12 @@ for (const input of [
   learnTopLocationsToggle,
   learnQaIssuesToggle,
   learnSpeedToggle,
+  openAiBalanceInput,
+  openAiMonthlyCostInput,
+  renderBalanceInput,
+  renderMonthlyCostInput,
+  dddPlatformBalanceInput,
+  dddPlatformMonthlyCostInput,
   staffAccessCodesInput,
   qaChecklistInput,
   customInstructionsInput
@@ -689,6 +721,16 @@ function handleSettingsChange() {
   saveTimer = setTimeout(() => {
     saveSettings("auto").catch(() => {});
   }, 900);
+}
+
+function parseMoneyInput(value) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function formatMoneyInput(value) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed.toFixed(2) : "";
 }
 
 function handleStaffCodesChange() {
@@ -772,6 +814,12 @@ function setEditMode(nextEditMode) {
     learnTopLocationsToggle,
     learnQaIssuesToggle,
     learnSpeedToggle,
+    openAiBalanceInput,
+    openAiMonthlyCostInput,
+    renderBalanceInput,
+    renderMonthlyCostInput,
+    dddPlatformBalanceInput,
+    dddPlatformMonthlyCostInput,
     staffAccessCodesInput,
     qaChecklistInput,
     customInstructionsInput

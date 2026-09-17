@@ -256,6 +256,36 @@
         <div id="usageCards" class="usage-grid"></div>
         <div class="usage-actions">
           <div>
+            <h3>Tracked balances</h3>
+            <div class="usage-balance-editor">
+              <label>
+                OpenAI balance
+                <input id="openAiBalanceInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+              <label>
+                OpenAI monthly budget
+                <input id="openAiMonthlyCostInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+              <label>
+                Render balance
+                <input id="renderBalanceInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+              <label>
+                Render monthly cost
+                <input id="renderMonthlyCostInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+              <label>
+                DDD site/platform balance
+                <input id="dddPlatformBalanceInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+              <label>
+                DDD site/platform monthly
+                <input id="dddPlatformMonthlyCostInput" type="number" min="0" step="0.01" placeholder="0.00" />
+              </label>
+            </div>
+            <p class="usage-note">Tap Edit, update balances after you top up, then the cards warn you when they get low.</p>
+          </div>
+          <div>
             <h3>What to do next</h3>
             <ol id="usageNextActions" class="usage-action-list"></ol>
           </div>

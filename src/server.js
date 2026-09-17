@@ -1955,8 +1955,9 @@ async function sendTwilioSms(to, message) {
 }
 
 async function buildAdminUsageReport() {
-  const [twilioBalance, settings, pushTokens] = await Promise.all([
+  const [twilioBalance, openAiCosts, settings, pushTokens] = await Promise.all([
     fetchTwilioBalance(),
+    fetchOpenAiMonthCosts(),
     loadReceptionistSettings(),
     listPushTokens(100).catch(() => [])
   ]);
@@ -1970,6 +1971,54 @@ async function buildAdminUsageReport() {
   const renderReady = Boolean(publicBaseUrl && !publicBaseUrl.includes("your-domain"));
   const browserPushReady = pushTokens.some((token) => token.platform === "web" && token.subscription?.endpoint);
   const appPushReady = pushTokens.some((token) => token.platform === "expo" && token.token);
+  const costTrackers = settings.costTrackers || {};
+  const openAiTracker = buildBalanceTracker({
+    id: "openai",
+    label: "OpenAI voice brain",
+    ready: openAiReady,
+    balance: firstMoneyValue(costTrackers.openai?.balance, process.env.OPENAI_CREDIT_BALANCE_USD, process.env.OPENAI_BALANCE_USD),
+    lowBalance: parseMoneyThreshold(process.env.OPENAI_LOW_BALANCE_USD, 10),
+    criticalBalance: parseMoneyThreshold(process.env.OPENAI_CRITICAL_BALANCE_USD, 3),
+    monthlyCost: firstMoneyValue(costTrackers.openai?.monthlyCost, costTrackers.openai?.monthlyBudget, openAiBudget),
+    spentThisMonth: openAiCosts.amount,
+    spentLabel: openAiCosts.ok ? "month-to-date API spend" : "usage check unavailable",
+    missingDetail: "Add OPENAI_CREDIT_BALANCE_USD on Render so this card can estimate when to top up.",
+    readyMissingDetail: "Add OPENAI_API_KEY on Render.",
+    links: [
+      { label: "Top up OpenAI", url: "https://platform.openai.com/settings/organization/billing/overview" },
+      { label: "OpenAI usage", url: "https://platform.openai.com/usage" }
+    ]
+  });
+  const renderTracker = buildBalanceTracker({
+    id: "render",
+    label: "Render hosting",
+    ready: renderReady,
+    balance: firstMoneyValue(costTrackers.render?.balance, process.env.RENDER_ACCOUNT_BALANCE_USD, process.env.RENDER_BALANCE_USD),
+    lowBalance: parseMoneyThreshold(process.env.RENDER_LOW_BALANCE_USD, 7),
+    criticalBalance: parseMoneyThreshold(process.env.RENDER_CRITICAL_BALANCE_USD, 3),
+    monthlyCost: firstMoneyValue(costTrackers.render?.monthlyCost, process.env.RENDER_MONTHLY_COST_USD, process.env.RENDER_ESTIMATED_MONTHLY_USD),
+    missingDetail: "Render does not expose a simple billing balance here. Add RENDER_ACCOUNT_BALANCE_USD and RENDER_MONTHLY_COST_USD on Render to track it.",
+    readyMissingDetail: "Set PUBLIC_BASE_URL so Twilio and admin links point to the live app.",
+    links: [
+      { label: "Render service", url: renderServiceUrl },
+      { label: "Render billing", url: process.env.RENDER_BILLING_URL || "https://dashboard.render.com/billing" }
+    ]
+  });
+  const dddPlatformTracker = buildBalanceTracker({
+    id: "ddd-platform",
+    label: "DDD site/platform",
+    ready: Boolean(process.env.DDD_TECH_TEAM_URL && process.env.DDD_TECH_TEAM_TOKEN),
+    balance: firstMoneyValue(costTrackers.dddPlatform?.balance, process.env.DDD_PLATFORM_BALANCE_USD, process.env.DDD_SITE_BALANCE_USD),
+    lowBalance: parseMoneyThreshold(process.env.DDD_PLATFORM_LOW_BALANCE_USD, 10),
+    criticalBalance: parseMoneyThreshold(process.env.DDD_PLATFORM_CRITICAL_BALANCE_USD, 3),
+    monthlyCost: firstMoneyValue(costTrackers.dddPlatform?.monthlyCost, process.env.DDD_PLATFORM_MONTHLY_COST_USD, process.env.DDD_SITE_MONTHLY_COST_USD),
+    missingDetail: "Add DDD_PLATFORM_BALANCE_USD and DDD_PLATFORM_MONTHLY_COST_USD if you want the DDD website/platform balance tracked here too.",
+    readyMissingDetail: "Add the DDD platform team token if tech code sync stops.",
+    links: [
+      { label: "DDD website admin", url: "https://dddcincy.com/wp-admin/" },
+      { label: "DDD website", url: "https://dddcincy.com/" }
+    ]
+  });
 
   const services = [
     {
@@ -1987,55 +2036,13 @@ async function buildAdminUsageReport() {
       nextAction: twilioBalance.nextAction
     },
     {
-      id: "openai",
-      label: "OpenAI voice brain",
-      status: openAiReady ? "good" : "critical",
-      statusLabel: openAiReady ? "Ready" : "Needs API key",
-      value: openAiBudget ? `Budget watch: $${openAiBudget.toFixed(2)}/mo` : "Billing link",
-      detail: openAiBudget
-        ? "OpenAI live spend is checked in their dashboard; this app stores the budget target so you know what to compare against."
-        : "OpenAI billing balance is checked from their dashboard for now. Use the direct usage link for the live spend graph.",
-      links: [
-        { label: "OpenAI billing", url: "https://platform.openai.com/settings/organization/billing/overview" },
-        { label: "OpenAI usage", url: "https://platform.openai.com/usage" }
-      ],
-      nextAction: openAiReady ? "Check weekly usage so surprise spend does not sneak up." : "Add OPENAI_API_KEY on Render."
+      ...openAiTracker,
+      detail: openAiCosts.ok
+        ? `${openAiTracker.detail} OpenAI API spend this month is about $${openAiCosts.amount.toFixed(2)}.`
+        : `${openAiTracker.detail} ${openAiCosts.detail}`
     },
-    {
-      id: "render",
-      label: "Render hosting",
-      status: renderReady ? "good" : "critical",
-      statusLabel: renderReady ? "Live" : "Missing public URL",
-      value: renderReady ? "Admin/API online" : "Not live",
-      detail: renderReady
-        ? `Public app URL is ${publicBaseUrl}. Render billing is still topped up in Render.`
-        : "Set PUBLIC_BASE_URL so Twilio, uploads, and admin links point to the live app.",
-      links: [
-        { label: "Render service", url: renderServiceUrl },
-        { label: "Render billing", url: process.env.RENDER_BILLING_URL || "https://dashboard.render.com/billing" }
-      ],
-      nextAction: renderReady ? "Keep the Render service active." : "Set PUBLIC_BASE_URL on Render."
-    },
-    {
-      id: "ddd-platform",
-      label: "DDD Platform sync",
-      status:
-        process.env.DDD_TECH_TEAM_URL && process.env.DDD_TECH_TEAM_TOKEN && process.env.DDD_CUSTOMER_HISTORY_URL
-          ? "good"
-          : "warning",
-      statusLabel: "Connected checks",
-      value: [
-        process.env.DDD_TECH_TEAM_URL && process.env.DDD_TECH_TEAM_TOKEN ? "Team sync" : "Team sync missing",
-        process.env.DDD_CUSTOMER_HISTORY_URL ? "History" : "History missing",
-        process.env.DDD_PHOTO_UPLOAD_WEBHOOK_URL || process.env.DDD_PHOTO_WEBHOOK_URL ? "Photo sync" : "Photo sync missing"
-      ].join(" · "),
-      detail: "This covers tech codes, customer history, branded photo upload, and booking record sync.",
-      links: [{ label: "DDD website", url: "https://dddcincy.com/wp-admin/" }],
-      nextAction:
-        process.env.DDD_TECH_TEAM_URL && process.env.DDD_TECH_TEAM_TOKEN
-          ? "Platform sync is available; watch history/photo items if needed."
-          : "Add the DDD platform team token if tech code sync stops."
-    },
+    renderTracker,
+    dddPlatformTracker,
     {
       id: "alerts",
       label: "Alerts + notifications",
@@ -2128,6 +2135,126 @@ async function fetchTwilioBalance() {
       nextAction: "Open Twilio billing and confirm balance manually."
     };
   }
+}
+
+async function fetchOpenAiMonthCosts() {
+  if (!process.env.OPENAI_API_KEY) {
+    return { ok: false, amount: 0, detail: "OpenAI API key is not configured." };
+  }
+  const now = new Date();
+  const start = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
+  try {
+    const response = await fetch(`https://api.openai.com/v1/organization/costs?start_time=${start}&limit=31`, {
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+      }
+    });
+    const payload = await response.json().catch(async () => ({
+      error: { message: await response.text().catch(() => "OpenAI returned an unreadable response.") }
+    }));
+    if (!response.ok) {
+      return {
+        ok: false,
+        amount: 0,
+        detail: payload.error?.message || "OpenAI costs could not be loaded with this key."
+      };
+    }
+    return { ok: true, amount: sumOpenAiCosts(payload), detail: "Loaded from OpenAI costs API." };
+  } catch (error) {
+    return { ok: false, amount: 0, detail: error.message || "Could not reach OpenAI costs API." };
+  }
+}
+
+function sumOpenAiCosts(payload = {}) {
+  const buckets = Array.isArray(payload.data) ? payload.data : [];
+  let total = 0;
+  for (const bucket of buckets) {
+    const results = Array.isArray(bucket.results) ? bucket.results : [];
+    for (const result of results) {
+      const amount = result.amount || result.line_item?.amount || {};
+      const value = Number(amount.value ?? amount.total ?? result.cost ?? result.amount_usd ?? 0);
+      if (Number.isFinite(value)) total += value;
+    }
+  }
+  return total;
+}
+
+function buildBalanceTracker({
+  id,
+  label,
+  ready,
+  balance,
+  lowBalance,
+  criticalBalance,
+  monthlyCost,
+  spentThisMonth,
+  spentLabel = "spent this month",
+  missingDetail,
+  readyMissingDetail,
+  links = []
+}) {
+  if (!ready) {
+    return {
+      id,
+      label,
+      status: "critical",
+      statusLabel: "Setup missing",
+      value: "Not ready",
+      detail: readyMissingDetail,
+      links,
+      nextAction: readyMissingDetail
+    };
+  }
+  const hasBalance = Number.isFinite(balance);
+  const hasMonthlyCost = Number.isFinite(monthlyCost) && monthlyCost > 0;
+  const balanceText = hasBalance ? `$${balance.toFixed(2)} balance` : "Balance not set";
+  const spendText = Number.isFinite(spentThisMonth) ? `$${spentThisMonth.toFixed(2)} ${spentLabel}` : "";
+  if (!hasBalance) {
+    return {
+      id,
+      label,
+      status: "warning",
+      statusLabel: "Add balance",
+      value: spendText || balanceText,
+      detail: missingDetail,
+      links,
+      nextAction: missingDetail
+    };
+  }
+  const status = balance <= criticalBalance ? "critical" : balance <= lowBalance ? "warning" : "good";
+  const daysRemaining = hasMonthlyCost ? Math.floor(balance / (monthlyCost / 30)) : null;
+  const runwayText = Number.isFinite(daysRemaining) ? ` About ${Math.max(0, daysRemaining)} day${daysRemaining === 1 ? "" : "s"} of runway at $${monthlyCost.toFixed(2)}/mo.` : "";
+  const detailParts = [
+    `Top-up warning below $${lowBalance.toFixed(2)} and critical below $${criticalBalance.toFixed(2)}.`,
+    runwayText.trim(),
+    spendText
+  ].filter(Boolean);
+  return {
+    id,
+    label,
+    status,
+    statusLabel: status === "good" ? "Funded" : status === "warning" ? "Low balance" : "Top up now",
+    value: balanceText,
+    detail: detailParts.join(" "),
+    links,
+    nextAction:
+      status === "good"
+        ? `${label} balance looks okay right now.`
+        : `Top up ${label}. Current tracked balance is $${balance.toFixed(2)}.`
+  };
+}
+
+function firstMoneyValue(...values) {
+  for (const value of values) {
+    const parsed = parseMoneyValue(value);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+}
+
+function parseMoneyValue(value) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function parseMoneyThreshold(value, fallback) {

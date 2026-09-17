@@ -4023,6 +4023,32 @@ h1 {
   color: rgba(255, 255, 255, 0.88);
 }
 
+.usage-balance-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.usage-balance-editor label {
+  display: grid;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.usage-balance-editor input {
+  min-height: 42px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.92);
+  color: #16182d;
+  font-size: 1rem;
+  font-weight: 900;
+  padding: 0 12px;
+}
+
 @media (min-width: 721px) {
   .simplified-tabbar {
     flex-wrap: wrap;
@@ -4097,6 +4123,10 @@ h1 {
 
   .usage-card {
     min-height: 0;
+  }
+
+  .usage-balance-editor {
+    grid-template-columns: 1fr;
   }
 
   .simplified-tabbar {
