@@ -3873,6 +3873,10 @@ h1 {
   margin: 16px 0;
 }
 
+.usage-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .usage-hero,
 .usage-actions,
 .usage-card {
@@ -3890,10 +3894,18 @@ h1 {
   padding: 18px;
 }
 
+.usage-hero > *,
+.usage-actions > *,
+.usage-card,
+.usage-route-pill {
+  min-width: 0;
+}
+
 .usage-hero p,
 .usage-actions p,
 .usage-card p {
   color: rgba(255, 255, 255, 0.82);
+  overflow-wrap: anywhere;
 }
 
 .usage-note {
@@ -3933,7 +3945,9 @@ h1 {
 
 .usage-card {
   padding: 18px;
-  min-height: 220px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .usage-card.good {
@@ -3982,13 +3996,16 @@ h1 {
 .usage-actions h3 {
   margin: 0 0 10px;
   color: #fff;
+  overflow-wrap: anywhere;
 }
 
 .usage-card strong {
   display: block;
   margin: 0 0 10px;
   color: #fff;
-  font-size: 1.35rem;
+  font-size: clamp(1.05rem, 2vw, 1.35rem);
+  line-height: 1.1;
+  overflow-wrap: anywhere;
 }
 
 .usage-card-links,
@@ -3996,7 +4013,8 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: auto;
+  padding-top: 14px;
 }
 
 .usage-card-links a,
@@ -4011,6 +4029,9 @@ h1 {
   color: #16182d;
   font-weight: 900;
   text-decoration: none;
+  max-width: 100%;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .usage-action-list {
@@ -4025,7 +4046,7 @@ h1 {
 
 .usage-balance-editor {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
 }
 
@@ -4039,6 +4060,8 @@ h1 {
 }
 
 .usage-balance-editor input {
+  width: 100%;
+  min-width: 0;
   min-height: 42px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.22);
