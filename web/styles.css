@@ -3874,7 +3874,21 @@ h1 {
 }
 
 .usage-actions {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.usage-actions > div {
+  min-width: 0;
+  align-self: stretch;
+  border-radius: 18px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.usage-actions > div:first-child {
+  grid-column: 1 / -1;
 }
 
 .usage-hero,
@@ -3910,6 +3924,7 @@ h1 {
 
 .usage-note {
   margin: 8px 0 0;
+  max-width: 72ch;
 }
 
 .usage-route-pill {
@@ -4046,8 +4061,8 @@ h1 {
 
 .usage-balance-editor {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
 }
 
 .usage-balance-editor label {
@@ -4057,6 +4072,9 @@ h1 {
   font-size: 0.76rem;
   font-weight: 900;
   text-transform: uppercase;
+  line-height: 1.15;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .usage-balance-editor input {
