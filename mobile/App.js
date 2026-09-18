@@ -493,7 +493,14 @@ export default function App() {
             />
           ) : null}
           {activeTab === "Calls" ? <CallsTab calls={activity.calls} insights={activity.insights} /> : null}
-          {activeTab === "Insights" ? <InsightsTab insights={activity.insights} /> : null}
+          {activeTab === "Insights" ? (
+            <InsightsTab
+              calls={activity.calls}
+              hasPin={Boolean(adminPin)}
+              insights={activity.insights}
+              onRefresh={() => loadAll(cleanBaseUrl, adminPin)}
+            />
+          ) : null}
           {activeTab === "More" ? <MoreTab onSelect={setActiveTab} settings={settings} activity={activity} /> : null}
 
           {loading ? <ActivityIndicator color="#7d4dff" /> : null}
@@ -1339,27 +1346,39 @@ function PeriodInsight({ label, period = {} }) {
   );
 }
 
-function InsightsTab({ insights }) {
-  const daily = insights?.sections?.daily || {};
-  const activeDay = insights?.sections?.latestActiveDay || daily;
-  const weekly = insights?.sections?.weekly || {};
-  const monthly = insights?.sections?.monthly || {};
+function InsightsTab({ calls = [], hasPin, insights, onRefresh }) {
+  const report = useMemo(() => normalizeInsightReport(insights, calls), [calls, insights]);
+  const daily = report.sections.daily || {};
+  const activeDay = report.sections.latestActiveDay || daily;
+  const weekly = report.sections.weekly || {};
+  const monthly = report.sections.monthly || {};
+  const hasRealInsights = Boolean(insights?.sections);
   return (
     <>
       <Card title="Business brain">
+        <View style={styles.listHeader}>
+          <Text style={styles.muted}>
+            {hasPin
+              ? hasRealInsights
+                ? "Live reports loaded from DDD AI."
+                : "Showing backup reports from recent call logs."
+              : "Enter your admin code on Home to unlock live reports."}
+          </Text>
+          <ActionButton label="Refresh" onPress={onRefresh} variant="light" />
+        </View>
         <View style={styles.summaryGrid}>
           <SummaryTile label={activeDay.label === daily.label ? "Today" : "Latest"} value={activeDay.calls || 0} />
           <SummaryTile label="Week" value={weekly.calls || 0} />
           <SummaryTile label="Month" value={monthly.calls || 0} />
           <SummaryTile label="SMS" value={formatPercent(weekly.smsCoverageRate || activeDay.smsCoverageRate)} />
         </View>
-        {(insights?.suggestions || []).slice(0, 5).map((suggestion, index) => (
+        {(report.suggestions || []).slice(0, 5).map((suggestion, index) => (
           <LinearGradient key={`${suggestion}-${index}`} colors={["#fffaff", "#f7fffb"]} style={styles.listCard}>
             <Text style={styles.linkLabel}>Suggestion {index + 1}</Text>
             <Text style={styles.record} numberOfLines={4}>{suggestion}</Text>
           </LinearGradient>
         ))}
-        {insights?.suggestions?.length ? null : <Text style={styles.muted}>Suggestions will appear after more calls and transcripts.</Text>}
+        {report.suggestions?.length ? null : <Text style={styles.muted}>Suggestions will appear after more calls and transcripts.</Text>}
       </Card>
       <Card title="What changed">
         <InsightRow label="Bookings" value={`${weekly.bookings || 0} weekly / ${monthly.bookings || 0} monthly`} />
@@ -1847,6 +1866,96 @@ function cleanCallDetail(value) {
   const text = String(value || "");
   if (/sip|routing|twilio reported/i.test(text)) return "The call is logged for review.";
   return text;
+}
+
+function normalizeInsightReport(insights, calls = []) {
+  if (insights?.sections) {
+    return {
+      generatedAt: insights.generatedAt || new Date().toISOString(),
+      sections: {
+        daily: insights.sections.daily || {},
+        latestActiveDay: insights.sections.latestActiveDay || insights.sections.daily || {},
+        weekly: insights.sections.weekly || {},
+        monthly: insights.sections.monthly || {}
+      },
+      suggestions: insights.suggestions || []
+    };
+  }
+  return buildFallbackInsights(calls);
+}
+
+function buildFallbackInsights(calls = []) {
+  const now = new Date();
+  const dayStart = new Date(now);
+  dayStart.setHours(0, 0, 0, 0);
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - 7);
+  const monthStart = new Date(now);
+  monthStart.setDate(now.getDate() - 30);
+  const datedCalls = (calls || [])
+    .map((call) => ({ ...call, _date: parseCallDate(call) }))
+    .filter((call) => call._date);
+  const dailyCalls = datedCalls.filter((call) => call._date >= dayStart);
+  const weeklyCalls = datedCalls.filter((call) => call._date >= weekStart);
+  const monthlyCalls = datedCalls.filter((call) => call._date >= monthStart);
+  const sections = {
+    daily: summarizeCallPeriod(dailyCalls, "Today"),
+    latestActiveDay: summarizeCallPeriod(dailyCalls.length ? dailyCalls : datedCalls.slice(0, 10), dailyCalls.length ? "Today" : "Latest"),
+    weekly: summarizeCallPeriod(weeklyCalls, "Last 7 days"),
+    monthly: summarizeCallPeriod(monthlyCalls, "Last 30 days")
+  };
+  const suggestions = [];
+  if (sections.weekly.missed > 0) suggestions.push("Missed or early-hangup calls are showing up. Keep the fast follow-up text on so customers can book without staying on the AI call.");
+  if ((sections.weekly.smsCoverageRate || 0) < 0.9 && sections.weekly.calls > 0) suggestions.push("Some recent calls do not show SMS sent. Check follow-up texting so every caller gets booking links.");
+  if (sections.weekly.topServices?.[0]?.label) suggestions.push(`${sections.weekly.topServices[0].label} is the top recent request. Keep that intake path short and direct.`);
+  if (!suggestions.length && datedCalls.length) suggestions.push("Calls are being logged. As more transcripts come in, DDD AI will show stronger daily, weekly, and monthly patterns.");
+  return { generatedAt: now.toISOString(), sections, suggestions };
+}
+
+function summarizeCallPeriod(calls = [], label = "") {
+  const bookings = calls.filter((call) => call.completion === "complete" || call.bookings?.length).length;
+  const missed = calls.filter((call) => call.completion === "incomplete" || call.outcome?.hungUpEarly || call.displayStatus?.toLowerCase?.().includes("hung up")).length;
+  const needsReview = calls.filter((call) => call.completion === "needs-review" || call.smsStatus === "failed").length;
+  const durations = calls.map((call) => Number(call.durationSeconds || 0)).filter((value) => value > 0);
+  const smsSent = calls.filter((call) => call.smsStatus === "sent").length;
+  return {
+    label,
+    calls: calls.length,
+    bookings,
+    missed,
+    needsReview,
+    averageDurationSeconds: durations.length ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length) : 0,
+    smsCoverageRate: calls.length ? smsSent / calls.length : 0,
+    topServices: topCounts(calls.map(extractCallService)),
+    topLocations: topCounts(calls.map(extractCallLocation)),
+    callerTypes: topCounts(calls.map((call) => call.customerType || call.callerType || "Customer"))
+  };
+}
+
+function topCounts(values = []) {
+  const counts = new Map();
+  values
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .forEach((value) => counts.set(value, (counts.get(value) || 0) + 1));
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([label, count]) => ({ label, count }));
+}
+
+function extractCallService(call) {
+  return call.bookings?.[0]?.service || call.leads?.[0]?.service || call.service || call.intent || call.outcome?.service || "";
+}
+
+function extractCallLocation(call) {
+  return call.bookings?.[0]?.location || call.leads?.[0]?.location || call.location || call.outcome?.location || "";
+}
+
+function parseCallDate(call) {
+  const raw = call.startedAt || call.createdAt || call.endedAt || call.timestamp || call.date;
+  const parsed = raw ? new Date(raw) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
 }
 
 function buildScriptPreview(settings) {
