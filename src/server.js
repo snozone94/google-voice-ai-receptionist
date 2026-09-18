@@ -2351,7 +2351,7 @@ async function sendCallStartSmsIfNeeded(to) {
   const message = appendStopFooter(
     callSelfServiceSmsMessage(
       process.env.CALL_START_SMS_MESSAGE,
-      `Thanks for calling DDD. No worries if you do not want to stay on the AI call. Reply here with your service, vehicle, and location, or book/manage service here: iPhone users can use DDD Mobile ${iosAppUrl()} ; non-iPhone users can book at ${bookingUrl()}`
+      `Thanks for calling DDD. No worries if you do not want to stay on the AI call. Reply here with your service, vehicle, and location, or book/manage service here: iPhone users can use DDD Mobile ${iosAppUrl()} ; Android users can use DDD Mobile ${androidAppUrl()} ; or book on the website at ${bookingUrl()}`
     )
   );
   const delivery = await sendTwilioSms(normalizedTo, message);
@@ -2393,7 +2393,7 @@ async function sendCompletedCallSmsIfNeeded(to, status = "") {
   const message = appendStopFooter(
     callSelfServiceSmsMessage(
       process.env.COMPLETED_CALL_SMS_MESSAGE,
-      `Thanks for calling DDD. Reply here with any updates or details and our team can text you back. Book or manage service here: ${bookingUrl()}. iPhone users can use DDD Mobile: ${iosAppUrl()}.`
+      `Thanks for calling DDD. Reply here with any updates or details and our team can text you back. Book or manage service here: ${bookingUrl()}. iPhone users can use DDD Mobile: ${iosAppUrl()}. Android users can use DDD Mobile: ${androidAppUrl()}.`
     )
   );
   const delivery = await sendTwilioSms(normalizedTo, message);
@@ -2601,8 +2601,12 @@ function iosAppUrl() {
   return process.env.DDD_IOS_APP_URL || "https://apps.apple.com/app/id6762315831";
 }
 
+function androidAppUrl() {
+  return process.env.DDD_ANDROID_APP_URL || "https://play.google.com/store/apps/details?id=com.dddroadside.mobile";
+}
+
 function defaultCallerSelfServiceSms() {
-  return `Thanks for calling DDD. No worries if you do not want to stay on the AI call. You can reply here with your service, vehicle, and location. iPhone users can use DDD Mobile: ${iosAppUrl()}. Non-iPhone users can book/manage service here: ${bookingUrl()}.`;
+  return `Thanks for calling DDD. No worries if you do not want to stay on the AI call. You can reply here with your service, vehicle, and location. iPhone users can use DDD Mobile: ${iosAppUrl()}. Android users can use DDD Mobile: ${androidAppUrl()}. Website booking: ${bookingUrl()}.`;
 }
 
 function callSelfServiceSmsMessage(customMessage = "", fallbackMessage = defaultCallerSelfServiceSms()) {

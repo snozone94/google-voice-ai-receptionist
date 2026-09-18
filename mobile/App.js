@@ -103,7 +103,7 @@ const blankSettings = {
   smsFollowUp: {
     enabled: true,
     message:
-      "Thanks for calling DDD. Your request was received: {{link}}. iPhone users: open the DDD Mobile app link and log in with the same phone number used for booking. Non-iPhone users: log in at {{webLoginLink}} with the same phone number to see booking updates. Reply here if anything changes. Reply STOP to stop."
+      "Thanks for calling DDD. Your request was received: {{link}}. iPhone users: open DDD Mobile in the App Store and log in with the same phone number used for booking. Android users: open DDD Mobile in Google Play and log in with the same phone number. Website backup: {{webLoginLink}}. Reply here if anything changes. Reply STOP to stop."
   },
   reviewFollowUp: {
     enabled: true,
@@ -1774,7 +1774,7 @@ function buildQuickReplies(conversation = {}, settings = blankSettings) {
     },
     {
       label: "Booking link",
-      text: "No problem. You can book/manage service here: https://dddcincy.com/book-service/ iPhone users can use DDD Mobile: https://apps.apple.com/app/id6762315831 Reply STOP to stop."
+      text: "No problem. You can book/manage service here: https://dddcincy.com/book-service/ iPhone users can use DDD Mobile: https://apps.apple.com/app/id6762315831 Android users can use DDD Mobile: https://play.google.com/store/apps/details?id=com.dddroadside.mobile Reply STOP to stop."
     },
     {
       label: "Google review",
