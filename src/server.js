@@ -35,9 +35,7 @@ import {
   saveBookingRequest,
   saveLead,
   savePushToken,
-  saveReceptionistSettings,
-  normalizeStaffAccessCodes,
-  parseStaffAccessCodes
+  saveReceptionistSettings
 } from "./receptionist.js";
 import { monitorRealtimeCall } from "./realtime-tools.js";
 
@@ -352,12 +350,12 @@ app.get("/api/business", async (_req, res, next) => {
 app.get("/api/settings", async (_req, res, next) => {
   try {
     const settings = await loadReceptionistSettings();
+    const { staffAccessCodes: _staffAccessCodes, ...safeSettings } = settings;
     if (hasAdminAccess(_req)) {
-      res.json(settings);
+      res.json(safeSettings);
       return;
     }
-    const { staffAccessCodes: _staffAccessCodes, ...publicSettings } = settings;
-    res.json(publicSettings);
+    res.json(safeSettings);
   } catch (error) {
     next(error);
   }
@@ -385,7 +383,7 @@ app.get("/api/access-check", async (req, res, next) => {
     if (!staff.ok) {
       res.status(403).json({
         ok: false,
-        error: "Code not recognized. Use the DDD TechAssist setup code/token, real admin code, or a backup code from Team."
+        error: "Code not recognized. Use the DDD TechAssist setup code/token or the real admin code."
       });
       return;
     }
@@ -1142,9 +1140,7 @@ app.get("/api/qa-dashboard", async (req, res, next) => {
         teamInfo.source !== "unconfigured" && teamInfo.team.length > 0,
         teamInfo.source === "ddd-platform"
           ? `${teamInfo.team.length} team members loaded from DDD platform.`
-          : teamInfo.source === "manual"
-            ? `${teamInfo.team.length} emergency backup team members loaded.`
-            : "DDD platform team sync is not configured yet."
+          : "DDD platform team sync is not configured yet."
       )
     ];
 
@@ -1736,12 +1732,8 @@ async function getStaffDirectoryForAuth() {
 }
 
 async function getStaffDirectory() {
-  const settings = await loadReceptionistSettings();
-  const manualCodes = normalizeStaffAccessCodes(settings.staffAccessCodes?.length ? settings.staffAccessCodes : parseStaffAccessCodes(process.env.STAFF_ACCESS_CODES || ""))
-    .map((entry) => ({ ...entry, role: "backup", active: true, source: "manual" }));
   const platformTeam = await fetchDddPlatformTeam();
   if (platformTeam.team.length) return { source: "ddd-platform", team: dedupeTeam(platformTeam.team) };
-  if (manualCodes.length) return { source: "manual", team: manualCodes };
   return { source: platformTeam.configured ? "ddd-platform-empty" : "unconfigured", team: [] };
 }
 

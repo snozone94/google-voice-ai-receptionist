@@ -137,7 +137,6 @@ const blankSettings = {
     weeklySummary: true,
     monthlySummary: true
   },
-  staffAccessCodes: [],
   voiceOptions: []
 };
 
@@ -277,10 +276,6 @@ export default function App() {
   }
 
   async function saveSettings(reason = "manual") {
-    if (hasIncompleteStaffCodes(settings.staffAccessCodes)) {
-      setStatus("Finish each tech name and code before saving Team changes.");
-      return;
-    }
     setSaving(true);
     try {
       const saved = await apiPost(cleanBaseUrl, "/api/settings", fromFormSettings(settings), adminPin);
@@ -995,33 +990,7 @@ function FlowsTab({ editMode, settings, setSettings }) {
   );
 }
 
-function TeamTab({ adminPin, editMode, saving, settings, setEditMode, setSettings, signedInStaff, onSaveSettings }) {
-  const codes = settings.staffAccessCodes?.length ? settings.staffAccessCodes : [{ name: "", code: "" }];
-  const incomplete = hasIncompleteStaffCodes(codes);
-  const canEdit = editMode && signedInStaff?.role === "admin";
-
-  function updateCode(index, patch) {
-    setSettings((current) => {
-      const nextCodes = [...(current.staffAccessCodes?.length ? current.staffAccessCodes : [{ name: "", code: "" }])];
-      nextCodes[index] = { ...nextCodes[index], ...patch };
-      return { ...current, staffAccessCodes: nextCodes };
-    });
-  }
-
-  function addTech() {
-    setSettings((current) => ({
-      ...current,
-      staffAccessCodes: [...(current.staffAccessCodes || []), { name: "", code: "" }]
-    }));
-  }
-
-  function removeTech(index) {
-    setSettings((current) => {
-      const nextCodes = (current.staffAccessCodes || []).filter((_, itemIndex) => itemIndex !== index);
-      return { ...current, staffAccessCodes: nextCodes.length ? nextCodes : [{ name: "", code: "" }] };
-    });
-  }
-
+function TeamTab({ adminPin, editMode, saving, setEditMode, signedInStaff, onSaveSettings }) {
   return (
     <>
       <Card title="Team access">
@@ -1030,49 +999,20 @@ function TeamTab({ adminPin, editMode, saving, settings, setEditMode, setSetting
             <Text style={styles.accessTitle}>{signedInStaff?.ok ? `${signedInStaff.name || "DDD team"} is signed in` : "Code not verified"}</Text>
             <Text style={styles.muted}>
               {signedInStaff?.role === "admin"
-                ? "Admin can edit global tech codes saved on the backend."
-                : "Tech codes can use inbox, replies, callback bridge, and live status after admin saves them."}
+                ? "Admin settings are unlocked. Tech access comes from DDD Platform / TechAssist."
+                : "Tech codes use DDD Platform / TechAssist for inbox, replies, callback bridge, and live status."}
             </Text>
           </View>
           <Text style={[styles.accessPill, signedInStaff?.ok ? styles.accessPillReady : styles.accessPillLocked]}>
             {signedInStaff?.role || (adminPin ? "Check code" : "Locked")}
           </Text>
         </View>
-        <Text style={styles.muted}>Master admin code is kept in Render's ADMIN_PIN secret. This tab edits tech codes only, so you cannot lock yourself out from the app.</Text>
+        <Text style={styles.muted}>Master admin code stays in Render's ADMIN_PIN secret. Tech codes are managed in the DDD platform/TechAssist, so this app does not keep separate backup tech codes.</Text>
         <View style={styles.buttonRow}>
           <ActionButton label={editMode ? "Lock settings" : "Edit settings"} onPress={() => setEditMode((current) => !current)} />
-          <ActionButton disabled={saving || !canEdit || incomplete} label={saving ? "Saving..." : "Save team"} onPress={onSaveSettings} variant="light" />
+          <ActionButton disabled={saving || signedInStaff?.role !== "admin"} label={saving ? "Saving..." : "Save settings"} onPress={onSaveSettings} variant="light" />
         </View>
-        {signedInStaff?.role !== "admin" ? <Text style={styles.warningText}>Sign in with the real admin code on Home to edit team codes.</Text> : null}
-        {incomplete ? <Text style={styles.warningText}>Finish each tech name and code before saving.</Text> : null}
-      </Card>
-
-      <Card title="Editable tech logins">
-        {codes.map((entry, index) => (
-          <LinearGradient key={`staff-code-${index}`} colors={["#fffaff", "#f7fffb"]} style={styles.teamCodeCard}>
-            <View style={styles.listHeader}>
-              <Text style={styles.linkLabel}>Tech {index + 1}</Text>
-              <Pressable disabled={!canEdit} onPress={() => removeTech(index)} style={[styles.removeButton, !canEdit && styles.disabledButton]}>
-                <Text style={styles.removeButtonText}>Remove</Text>
-              </Pressable>
-            </View>
-            <Field
-              editable={canEdit}
-              label="Name"
-              onChangeText={(name) => updateCode(index, { name })}
-              value={entry.name || ""}
-            />
-            <Field
-              editable={canEdit}
-              keyboardType="number-pad"
-              label="Code"
-              onChangeText={(code) => updateCode(index, { code: String(code || "").replace(/\s+/g, "") })}
-              value={entry.code || ""}
-            />
-          </LinearGradient>
-        ))}
-        <ActionButton disabled={!canEdit} label="Add tech" onPress={addTech} />
-        <Text style={styles.muted}>After saving, each tech enters their own code on Home. Their inbox and replies use DDD's Twilio number, not their personal number.</Text>
+        {signedInStaff?.role !== "admin" ? <Text style={styles.warningText}>Sign in with the real admin code on Home to change admin settings. Techs keep using their DDD Platform / TechAssist code.</Text> : null}
       </Card>
     </>
   );
@@ -1635,7 +1575,6 @@ function toFormSettings(settings) {
       ...blankSettings.notificationPreferences,
       ...(settings.notificationPreferences || {})
     },
-    staffAccessCodes: Array.isArray(settings.staffAccessCodes) ? settings.staffAccessCodes : [],
     voiceOptions: settings.voiceOptions || []
   };
 }
@@ -1679,26 +1618,8 @@ function fromFormSettings(settings) {
       transferTriggers: Array.isArray(settings.humanRouting?.transferTriggers) ? settings.humanRouting.transferTriggers : []
     },
     notificationPreferences: settings.notificationPreferences,
-    staffAccessCodes: normalizeStaffAccessCodes(settings.staffAccessCodes),
     bookingDestinations: parseBookingDestinations(settings.bookingDestinationsText)
   };
-}
-
-function normalizeStaffAccessCodes(codes = []) {
-  return (Array.isArray(codes) ? codes : [])
-    .map((entry) => ({
-      name: String(entry.name || "").trim(),
-      code: String(entry.code || "").replace(/\s+/g, "")
-    }))
-    .filter((entry) => entry.name && entry.code);
-}
-
-function hasIncompleteStaffCodes(codes = []) {
-  return (Array.isArray(codes) ? codes : []).some((entry) => {
-    const name = String(entry.name || "").trim();
-    const code = String(entry.code || "").replace(/\s+/g, "");
-    return Boolean(name || code) && !(name && code);
-  });
 }
 
 function formatBookingDestinations(destinations) {

@@ -141,9 +141,6 @@ const refreshTeamButton = document.querySelector("#refreshTeamButton");
 const staffPinInput = document.querySelector("#staffPinInput");
 const staffNameInput = document.querySelector("#staffNameInput");
 const staffStatusSelect = document.querySelector("#staffStatusSelect");
-const staffAccessCodesInput = document.querySelector("#staffAccessCodesInput");
-const staffCodeRows = document.querySelector("#staffCodeRows");
-const addStaffCodeButton = document.querySelector("#addStaffCodeButton");
 const teamCurrentCodeStatus = document.querySelector("#teamCurrentCodeStatus");
 const teamCurrentStatus = document.querySelector("#teamCurrentStatus");
 const conversationList = document.querySelector("#conversationList");
@@ -409,8 +406,6 @@ function applySettings(settings) {
   reviewFollowUpMessageInput.value =
     settings.reviewFollowUp?.message ||
     "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}";
-  staffAccessCodesInput.value = formatStaffAccessCodes(settings.staffAccessCodes || []);
-  renderStaffCodeRows(settings.staffAccessCodes || []);
   qaChecklistInput.value = settings.qaChecklist || "";
   notifyNewCallsToggle.checked = settings.notificationPreferences?.newCalls !== false;
   notifyMissedCallsToggle.checked = settings.notificationPreferences?.missedCalls !== false;
@@ -457,13 +452,6 @@ saveSettingsButton.addEventListener("click", () => {
 async function saveSettings(reason = "auto") {
   if (isSavingSettings) return;
   clearTimeout(saveTimer);
-  syncStaffCodesFromRows();
-  if (hasIncompleteStaffCodeRows()) {
-    hasUnsavedSettings = true;
-    updateSaveControls("Finish each tech name and code before saving Team changes.");
-    if (reason === "manual") throw new Error("Finish each tech name and code before saving Team changes.");
-    return;
-  }
   isSavingSettings = true;
   voiceSelect.disabled = true;
   updateSaveControls(reason === "auto" ? "Autosaving..." : "Saving receptionist settings...");
@@ -538,7 +526,6 @@ async function saveSettings(reason = "auto") {
           url: reviewFollowUpUrlInput.value,
           message: reviewFollowUpMessageInput.value
         },
-        staffAccessCodes: parseStaffAccessCodesInput(staffAccessCodesInput.value),
         notificationPreferences: {
           newCalls: notifyNewCallsToggle.checked,
           missedCalls: notifyMissedCallsToggle.checked,
@@ -698,7 +685,6 @@ for (const input of [
   renderMonthlyCostInput,
   dddPlatformBalanceInput,
   dddPlatformMonthlyCostInput,
-  staffAccessCodesInput,
   qaChecklistInput,
   customInstructionsInput
 ]) {
@@ -731,22 +717,6 @@ function parseMoneyInput(value) {
 function formatMoneyInput(value) {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed.toFixed(2) : "";
-}
-
-function handleStaffCodesChange() {
-  syncStaffCodesFromRows();
-  updateScriptPreview();
-  if (!editMode || isLoadingSettings) return;
-  hasUnsavedSettings = true;
-  clearTimeout(saveTimer);
-  if (hasIncompleteStaffCodeRows()) {
-    updateSaveControls("Finish the tech name and code, then Save changes.");
-    return;
-  }
-  updateSaveControls("Team codes changed. Autosaving soon...");
-  saveTimer = setTimeout(() => {
-    saveSettings("auto").catch(() => {});
-  }, 1100);
 }
 
 function setEditMode(nextEditMode) {
@@ -820,16 +790,11 @@ function setEditMode(nextEditMode) {
     renderMonthlyCostInput,
     dddPlatformBalanceInput,
     dddPlatformMonthlyCostInput,
-    staffAccessCodesInput,
     qaChecklistInput,
     customInstructionsInput
   ]) {
     setSettingsControlLock(input, !editMode || isSavingSettings);
   }
-  for (const control of staffCodeRows?.querySelectorAll("input,button") || []) {
-    setSettingsControlLock(control, !editMode || isSavingSettings);
-  }
-  if (addStaffCodeButton) setSettingsControlLock(addStaffCodeButton, !editMode || isSavingSettings);
   for (const button of routeModeButtons) {
     button.disabled = !editMode || isSavingSettings;
   }
@@ -1434,110 +1399,6 @@ function parseBookingDestinations(value) {
     .filter((destination) => destination.label && destination.url && destination.useWhen);
 }
 
-function formatStaffAccessCodes(codes) {
-  return (codes || [])
-    .map((entry) => `${entry.name || ""} | ${entry.code || ""}`)
-    .filter(Boolean)
-    .join("\n");
-}
-
-function syncStaffCodesFromRows() {
-  if (!staffCodeRows || !staffAccessCodesInput) return;
-  const rows = [...staffCodeRows.querySelectorAll(".staff-code-row")];
-  staffAccessCodesInput.value = rows
-    .map((row) => {
-      const name = row.querySelector("[data-staff-name]")?.value.trim() || "";
-      const code = row.querySelector("[data-staff-code]")?.value.replace(/\s+/g, "") || "";
-      return name && code ? `${name} | ${code}` : "";
-    })
-    .filter(Boolean)
-    .join("\n");
-}
-
-function hasIncompleteStaffCodeRows() {
-  if (!staffCodeRows) return false;
-  return [...staffCodeRows.querySelectorAll(".staff-code-row")].some((row) => {
-    const name = row.querySelector("[data-staff-name]")?.value.trim() || "";
-    const code = row.querySelector("[data-staff-code]")?.value.replace(/\s+/g, "") || "";
-    return Boolean(name || code) && !(name && code);
-  });
-}
-
-function renderStaffCodeRows(codes = []) {
-  if (!staffCodeRows) return;
-  staffCodeRows.innerHTML = "";
-  const rows = codes.length ? codes : [{ name: "", code: "" }];
-  rows.forEach((entry) => appendStaffCodeRow(entry));
-  syncStaffCodesFromRows();
-}
-
-function appendStaffCodeRow(entry = {}) {
-  if (!staffCodeRows) return;
-  const row = document.createElement("div");
-  row.className = "staff-code-row";
-
-  const nameLabel = document.createElement("label");
-  const nameText = document.createElement("span");
-  const nameInput = document.createElement("input");
-  nameText.textContent = "Name";
-  nameInput.dataset.staffName = "true";
-  nameInput.type = "text";
-  nameInput.autocomplete = "off";
-  nameInput.placeholder = "Tech name";
-  nameInput.value = entry.name || "";
-  nameLabel.append(nameText, nameInput);
-
-  const codeLabel = document.createElement("label");
-  const codeText = document.createElement("span");
-  const codeInput = document.createElement("input");
-  codeText.textContent = "Code";
-  codeInput.dataset.staffCode = "true";
-  codeInput.type = "text";
-  codeInput.inputMode = "numeric";
-  codeInput.autocomplete = "off";
-  codeInput.placeholder = "4-6 digits";
-  codeInput.value = entry.code || "";
-  codeLabel.append(codeText, codeInput);
-
-  const removeButton = document.createElement("button");
-  removeButton.type = "button";
-  removeButton.dataset.removeStaffCode = "true";
-  removeButton.textContent = "Remove";
-  removeButton.addEventListener("click", () => {
-    row.remove();
-    if (!staffCodeRows.querySelector(".staff-code-row")) appendStaffCodeRow();
-    handleStaffCodesChange();
-  });
-
-  row.append(nameLabel, codeLabel, removeButton);
-  staffCodeRows.append(row);
-  for (const input of [nameInput, codeInput]) {
-    setSettingsControlLock(input, !editMode || isSavingSettings);
-    input.addEventListener("input", () => {
-      handleStaffCodesChange();
-    });
-    input.addEventListener("change", () => {
-      handleStaffCodesChange();
-    });
-  }
-  setSettingsControlLock(removeButton, !editMode || isSavingSettings);
-}
-
-function parseStaffAccessCodesInput(value) {
-  return String(value || "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [name = "", ...codeParts] = (line.includes("|") ? line.split("|") : line.split(":")).map((part) => part.trim());
-      return {
-        name,
-        code: codeParts.join("|").replace(/\s+/g, "")
-      };
-    })
-    .filter((entry) => entry.name && entry.code);
-}
-
 function renderList(element, records, emptyMessage, formatter) {
   element.innerHTML = "";
   if (!records.length) {
@@ -1694,7 +1555,7 @@ async function verifyAccessCode({ quiet = false, refresh = true } = {}) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.ok) {
       setSignedInStaff(null);
-      if (!quiet) setInboxStatus(payload.error || "Code not recognized. Use a DDD TechAssist setup code/token, the real admin code, or an emergency backup code from Team.");
+      if (!quiet) setInboxStatus(payload.error || "Code not recognized. Use a DDD TechAssist setup code/token or the real admin code.");
       return null;
     }
     setSignedInStaff(payload);
@@ -2117,9 +1978,8 @@ function renderTeamPresence() {
   if (teamSourceStatus) {
     const labels = {
       "ddd-platform": "Team source: DDD platform / Tech Assist",
-      manual: "Team source: emergency backup codes",
       "ddd-platform-empty": "Team source: DDD platform connected, no active techs returned",
-      unconfigured: "Team source: backup codes until DDD platform sync is configured"
+      unconfigured: "Team source: connect DDD platform / TechAssist sync"
     };
     teamSourceStatus.textContent = labels[teamSource] || "Team source: checking...";
   }
@@ -2460,7 +2320,7 @@ async function refreshInbox() {
   }
   const staff = await verifyAccessCode({ quiet: true, refresh: false });
   if (!staff) {
-    setInboxStatus("Code not recognized. Use a DDD TechAssist setup code/token, the real admin code, demo code 4444, or an emergency backup code from Team.");
+    setInboxStatus("Code not recognized. Use a DDD TechAssist setup code/token, the real admin code, or demo code 4444.");
     conversations = [];
     inboxSeenMessageKeys = new Set();
     inboxSeenInitialized = false;
@@ -2472,7 +2332,7 @@ async function refreshInbox() {
   if (response.status === 403) {
     setSignedInStaff(null);
     updateTeamCurrentCard();
-    setInboxStatus("Code not recognized. Use a DDD TechAssist setup code/token, the real admin code, demo code 4444, or an emergency backup code from Team.");
+    setInboxStatus("Code not recognized. Use a DDD TechAssist setup code/token, the real admin code, or demo code 4444.");
     conversations = [];
     inboxSeenMessageKeys = new Set();
     inboxSeenInitialized = false;
@@ -2571,11 +2431,6 @@ refreshTeamButton?.addEventListener("click", () => {
   verifyAccessCode({ quiet: true, refresh: false }).catch(() => {});
   refreshPresence().catch(() => {});
   sendPresence().catch(() => {});
-});
-
-addStaffCodeButton?.addEventListener("click", () => {
-  appendStaffCodeRow();
-  updateSaveControls("New tech row added. Enter a name and code, then Save changes.");
 });
 
 function handleAccessInputChange(sourceInput) {
