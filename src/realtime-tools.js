@@ -42,7 +42,7 @@ class CallMonitor {
           JSON.stringify({
             type: "response.create",
             response: {
-              instructions: `Start speaking now. Say exactly: "${greeting}" Then wait for the caller.`
+              instructions: `Start speaking now. Say exactly: "${greeting}" Finish the full greeting even if you hear breathing, road noise, phone rustle, background voices, or a tiny sound from the caller side. Do not restart the greeting. After the greeting is complete, wait for the caller.`
             }
           })
         );

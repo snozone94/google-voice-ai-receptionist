@@ -823,7 +823,8 @@ function VoiceTab({ editMode, previewing, settings, setSettings, onPreviewVoice 
               noiseHandling: {
                 ...current.noiseHandling,
                 mode,
-                eagerness: mode === "fast" ? "medium" : "low"
+                eagerness: mode === "fast" ? "medium" : "low",
+                interruptResponse: mode === "fast" && current.noiseHandling?.interruptResponse === true
               }
             }))
           }
@@ -831,12 +832,12 @@ function VoiceTab({ editMode, previewing, settings, setSettings, onPreviewVoice 
         <SwitchRow
           disabled={!editMode}
           label="Caller can interrupt mid-sentence"
-          note="Keep off for noisy roadside calls."
+          note="Only use with Fast mode. Keep off for noisy roadside calls."
           value={settings.noiseHandling?.interruptResponse === true}
           onValueChange={(interruptResponse) =>
             setSettings((current) => ({
               ...current,
-              noiseHandling: { ...current.noiseHandling, interruptResponse }
+              noiseHandling: { ...current.noiseHandling, interruptResponse: current.noiseHandling?.mode === "fast" && interruptResponse }
             }))
           }
         />
@@ -1607,7 +1608,8 @@ function fromFormSettings(settings) {
     soundPreferences: settings.soundPreferences,
     noiseHandling: {
       ...settings.noiseHandling,
-      eagerness: settings.noiseHandling?.mode === "fast" ? "medium" : "low"
+      eagerness: settings.noiseHandling?.mode === "fast" ? "medium" : "low",
+      interruptResponse: settings.noiseHandling?.mode === "fast" && settings.noiseHandling?.interruptResponse === true
     },
     smsFollowUp: settings.smsFollowUp,
     reviewFollowUp: settings.reviewFollowUp,

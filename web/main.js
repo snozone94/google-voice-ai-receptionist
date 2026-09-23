@@ -361,6 +361,7 @@ function applySettings(settings) {
   voiceDirectionInput.value = settings.voiceDirection || "";
   noiseModeSelect.value = settings.noiseHandling?.mode || "patient";
   interruptResponseToggle.checked = settings.noiseHandling?.interruptResponse === true;
+  updateNoiseControls();
   noiseNotesInput.value =
     settings.noiseHandling?.notes ||
     "Let the receptionist finish short statements before listening. Ignore tiny background noises, road noise, breathing, and quick filler sounds unless the caller is clearly speaking.";
@@ -475,7 +476,7 @@ async function saveSettings(reason = "auto") {
         noiseHandling: {
           mode: noiseModeSelect.value,
           eagerness: noiseModeSelect.value === "fast" ? "medium" : "low",
-          interruptResponse: interruptResponseToggle.checked,
+          interruptResponse: noiseModeSelect.value === "fast" && interruptResponseToggle.checked,
           notes: noiseNotesInput.value
         },
         greeting: greetingInput.value,
@@ -697,6 +698,7 @@ voiceSpeedInput.addEventListener("input", () => {
 });
 
 function handleSettingsChange() {
+  updateNoiseControls();
   updateHumanRouteSummary();
   updateRouteModeCards();
   updateScriptPreview();
@@ -707,6 +709,14 @@ function handleSettingsChange() {
   saveTimer = setTimeout(() => {
     saveSettings("auto").catch(() => {});
   }, 900);
+}
+
+function updateNoiseControls() {
+  if (noiseModeSelect.value !== "fast") {
+    interruptResponseToggle.checked = false;
+  }
+  interruptResponseToggle.disabled = !editMode || noiseModeSelect.value !== "fast";
+  interruptResponseToggle.classList.toggle("locked-field", interruptResponseToggle.disabled);
 }
 
 function parseMoneyInput(value) {
@@ -800,6 +810,7 @@ function setEditMode(nextEditMode) {
   }
   updateSaveControls();
   previewVoiceButton.disabled = false;
+  updateNoiseControls();
   document.body.classList.toggle("edit-mode", editMode);
   if (!editMode) {
     clearTimeout(saveTimer);

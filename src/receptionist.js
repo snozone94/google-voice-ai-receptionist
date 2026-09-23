@@ -127,7 +127,7 @@ const defaultNoiseHandling = {
   eagerness: "low",
   interruptResponse: false,
   notes:
-    "Let the receptionist finish short statements before listening. Ignore tiny background noises, road noise, breathing, and quick filler sounds unless the caller is clearly speaking. Be patient with elderly callers, strong accents, dialect differences, speech delays, and people whose first language is not English. If a caller uses Spanish or another language, keep the call simple, ask whether English is okay, and continue in the caller's language when you can."
+    "Protect the opening greeting: finish the full first greeting without stopping for breathing, phone rustle, road noise, background voices, or tiny filler sounds. After asking a question, listen until the caller clearly finishes. Do not cut yourself off unless the caller is clearly speaking a full interruption. Be patient with elderly callers, strong accents, dialect differences, speech delays, and people whose first language is not English. If a caller uses Spanish or another language, keep the call simple, ask whether English is okay, and continue in the caller's language when you can."
 };
 const defaultNotificationPreferences = {
   newCalls: true,
@@ -1471,6 +1471,7 @@ Sound preferences:
 
 Noise and interruption handling:
 - ${activeSettings.noiseHandling.notes}
+- Opening greeting rule: finish the complete first greeting before reacting to caller audio. Do not restart the greeting from the top if you hear noise.
 - If you hear a tiny noise while speaking, keep finishing the current short sentence. Do not restart from the top.
 - After you ask a question, stay quiet and listen until the caller finishes. If they pause briefly, wait instead of jumping in.
 
@@ -2418,10 +2419,11 @@ function normalizeSoundPreferences(value = {}) {
 function normalizeNoiseHandling(value = {}) {
   const mode = ["fast", "balanced", "patient"].includes(value.mode) ? value.mode : defaultNoiseHandling.mode;
   const eagerness = ["low", "medium", "high", "auto"].includes(value.eagerness) ? value.eagerness : mode === "fast" ? "medium" : "low";
+  const interruptResponse = mode === "fast" && value.interruptResponse === true;
   return {
     mode,
     eagerness,
-    interruptResponse: value.interruptResponse === true,
+    interruptResponse,
     notes: cleanLongText(value.notes, defaultNoiseHandling.notes, 700)
   };
 }
