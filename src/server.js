@@ -537,6 +537,21 @@ app.post("/api/sms/reply", express.json(), async (req, res, next) => {
       status: delivery.status || (delivery.ok ? "sent" : "failed"),
       agentName
     });
+    queueTeamNotification(
+      {
+        title: delivery.ok ? "DDD text sent" : "DDD text failed",
+        body: `${agentName} replied to ${formatPhoneForAlert(to)}.`,
+        data: {
+          type: "staff-text-reply",
+          to,
+          from: to,
+          staff: agentName,
+          staffRole: staff.role || "staff",
+          status: record.status || ""
+        }
+      },
+      "staff-sms-reply"
+    );
     res.status(delivery.ok ? 201 : 502).json({ ok: delivery.ok, delivery, staff, sms: record });
   } catch (error) {
     next(error);
@@ -576,6 +591,22 @@ app.post("/api/calls/outbound", express.json(), async (req, res, next) => {
         from: delivery.from || process.env.TWILIO_VOICE_FROM || process.env.TWILIO_SMS_FROM || process.env.AI_FORWARDING_NUMBER || ""
       }
     });
+    queueTeamNotification(
+      {
+        title: delivery.ok ? "DDD callback started" : "DDD callback failed",
+        body: `${staff.name || "DDD team"} is calling ${formatPhoneForAlert(customerPhone)}.`,
+        data: {
+          type: "staff-outbound-call",
+          to: customerPhone,
+          from: customerPhone,
+          callId: delivery.sid || "",
+          staff: staff.name || "DDD team",
+          staffRole: staff.role || "staff",
+          status: delivery.ok ? "initiated" : "failed"
+        }
+      },
+      "staff-outbound-call"
+    );
     res.status(delivery.ok ? 201 : 502).json({ ok: delivery.ok, delivery, staff });
   } catch (error) {
     next(error);
@@ -1182,11 +1213,13 @@ app.get("/api/qa-dashboard", async (req, res, next) => {
 
 app.get("/api/insights", async (req, res, next) => {
   try {
-    if (!hasAdminAccess(req) && !hasAppReviewAccess(req)) {
+    const reviewAccess = hasAppReviewAccess(req) && !hasAdminAccess(req);
+    const staff = reviewAccess ? appReviewStaff : await getStaffAccess(req);
+    if (!staff.ok) {
       res.status(403).json({ ok: false, error: "Forbidden" });
       return;
     }
-    if (hasAppReviewAccess(req) && !hasAdminAccess(req)) {
+    if (reviewAccess) {
       res.json(appReviewInsights);
       return;
     }

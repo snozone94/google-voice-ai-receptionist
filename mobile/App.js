@@ -24,18 +24,26 @@ const defaultApiBaseUrl = "https://google-voice-ai-receptionist.onrender.com";
 const apiStorageKey = "ddd-ai-dispatch-api-base-url";
 const adminPinStorageKey = "ddd-ai-dispatch-admin-pin";
 const staffPhoneStorageKey = "ddd-ai-dispatch-staff-phone";
-const primaryTabs = [
+const adminPrimaryTabs = [
   { name: "Inbox", color: "#16b8ff" },
   { name: "Calls", color: "#ff7a3d" },
-  { name: "Home", color: "#7657ff" },
-  { name: "Team", color: "#23c779" },
+  { name: "Bookings", color: "#ffc83d" },
+  { name: "Insights", color: "#23c779", label: "Reports" },
   { name: "More", color: "#ff3ea5" }
 ];
-const advancedTabs = [
+const staffPrimaryTabs = [
+  { name: "Inbox", color: "#16b8ff" },
+  { name: "Calls", color: "#ff7a3d" },
+  { name: "Bookings", color: "#ffc83d" },
+  { name: "Insights", color: "#23c779", label: "Reports" },
+  { name: "Home", color: "#7657ff" }
+];
+const adminMoreTabs = [
+  { name: "Home", color: "#7657ff" },
+  { name: "Team", color: "#23c779" },
   { name: "Voice", color: "#ff3ea5" },
   { name: "Script", color: "#ff7a3d", label: "AI Script" },
-  { name: "Flows", color: "#ffc83d", label: "Questions" },
-  { name: "Insights", color: "#23c779", label: "Reports" }
+  { name: "Flows", color: "#ffc83d", label: "Questions" }
 ];
 const rainbowColors = ["#7657ff", "#ff3ea5", "#ff7a3d", "#ffc83d", "#23c779", "#16b8ff", "#7657ff"];
 const softRainbowColors = ["rgba(255, 62, 165, 0.16)", "rgba(255, 200, 61, 0.12)", "rgba(35, 199, 121, 0.12)", "rgba(22, 184, 255, 0.16)", "rgba(118, 87, 255, 0.14)"];
@@ -165,20 +173,28 @@ export default function App() {
   const lastSavedSettingsRef = useRef("");
 
   const cleanBaseUrl = useMemo(() => normalizeBaseUrl(apiBaseUrl), [apiBaseUrl]);
+  const isAdmin = signedInStaff?.role === "admin";
+  const availableTabs = useMemo(() => (isAdmin ? adminPrimaryTabs : staffPrimaryTabs), [isAdmin]);
+  const allowedTabNames = useMemo(
+    () => new Set([...availableTabs, ...(isAdmin ? adminMoreTabs : [])].map((tab) => tab.name)),
+    [availableTabs, isAdmin]
+  );
 
   const refreshOperations = useCallback(async (baseUrl = cleanBaseUrl, accessPin = adminPin) => {
     const targetBaseUrl = normalizeBaseUrl(baseUrl);
     if (!accessPin) return;
-    const [callsResponse, conversationsResponse, insightsResponse] = await Promise.all([
+    const [callsResponse, conversationsResponse, insightsResponse, bookingsResponse] = await Promise.all([
       apiGet(targetBaseUrl, "/api/call-log?limit=75", accessPin).catch(() => ({ calls: [] })),
       apiGet(targetBaseUrl, "/api/conversations", accessPin).catch(() => ({ conversations: [] })),
-      apiGet(targetBaseUrl, "/api/insights", accessPin).catch(() => null)
+      apiGet(targetBaseUrl, "/api/insights", accessPin).catch(() => null),
+      apiGet(targetBaseUrl, "/api/bookings?limit=75").catch(() => ({ bookings: [] }))
     ]);
     setActivity((current) => ({
       ...current,
       calls: callsResponse.calls || current.calls || [],
       conversations: conversationsResponse.conversations || current.conversations || [],
-      insights: insightsResponse || current.insights || null
+      insights: insightsResponse || current.insights || null,
+      bookings: bookingsResponse.bookings || current.bookings || []
     }));
     if (conversationsResponse.staff?.ok) {
       setSignedInStaff(conversationsResponse.staff);
@@ -265,6 +281,12 @@ export default function App() {
     }, 10000);
     return () => clearInterval(interval);
   }, [adminPin, cleanBaseUrl, editMode, refreshOperations, saving]);
+
+  useEffect(() => {
+    if (!allowedTabNames.has(activeTab)) {
+      setActiveTab("Inbox");
+    }
+  }, [activeTab, allowedTabNames]);
 
   async function saveBaseUrl() {
     const next = normalizeBaseUrl(apiBaseUrl);
@@ -437,6 +459,7 @@ export default function App() {
               staffPhone={staffPhone}
               pushStatus={pushStatus}
               pushToken={pushToken}
+              isAdmin={isAdmin}
               onEnablePush={enablePushNotifications}
               onRefresh={() => loadAll(cleanBaseUrl, adminPin)}
               onSaveBaseUrl={saveBaseUrl}
@@ -446,11 +469,11 @@ export default function App() {
             />
           ) : null}
 
-          {activeTab === "Voice" ? (
+          {isAdmin && activeTab === "Voice" ? (
             <VoiceTab editMode={editMode} previewing={previewing} settings={settings} setSettings={setSettings} onPreviewVoice={previewVoice} />
           ) : null}
 
-          {activeTab === "Script" ? (
+          {isAdmin && activeTab === "Script" ? (
             <ScriptTab
               editMode={editMode}
               settings={settings}
@@ -463,8 +486,8 @@ export default function App() {
             />
           ) : null}
 
-          {activeTab === "Flows" ? <FlowsTab editMode={editMode} settings={settings} setSettings={setSettings} /> : null}
-          {activeTab === "Team" ? (
+          {isAdmin && activeTab === "Flows" ? <FlowsTab editMode={editMode} settings={settings} setSettings={setSettings} /> : null}
+          {isAdmin && activeTab === "Team" ? (
             <TeamTab
               adminPin={adminPin}
               editMode={editMode}
@@ -484,10 +507,12 @@ export default function App() {
               hasPin={Boolean(adminPin)}
               onRefresh={() => loadAll(cleanBaseUrl, adminPin)}
               setStatus={setStatus}
+              settings={settings}
               staffPhone={staffPhone}
             />
           ) : null}
           {activeTab === "Calls" ? <CallsTab calls={activity.calls} insights={activity.insights} /> : null}
+          {activeTab === "Bookings" ? <BookingsTab bookings={activity.bookings} /> : null}
           {activeTab === "Insights" ? (
             <InsightsTab
               calls={activity.calls}
@@ -496,23 +521,23 @@ export default function App() {
               onRefresh={() => loadAll(cleanBaseUrl, adminPin)}
             />
           ) : null}
-          {activeTab === "More" ? <MoreTab onSelect={setActiveTab} settings={settings} activity={activity} /> : null}
+          {isAdmin && activeTab === "More" ? <MoreTab onSelect={setActiveTab} settings={settings} activity={activity} /> : null}
 
           {loading ? <ActivityIndicator color="#7d4dff" /> : null}
           <Text style={styles.status}>{status}</Text>
         </ScrollView>
-        <BottomTabs activeTab={activeTab} onSelect={setActiveTab} />
+        <BottomTabs activeTab={activeTab} onSelect={setActiveTab} tabs={availableTabs} />
       </LinearGradient>
     </SafeAreaView>
   );
 }
 
-function BottomTabs({ activeTab, onSelect }) {
-  const activePrimary = primaryTabs.some((tab) => tab.name === activeTab) ? activeTab : "More";
+function BottomTabs({ activeTab, onSelect, tabs = staffPrimaryTabs }) {
+  const activePrimary = tabs.some((tab) => tab.name === activeTab) ? activeTab : tabs[0]?.name || "Inbox";
   return (
     <LinearGradient colors={["rgba(20, 18, 42, 0.96)", "rgba(49, 31, 72, 0.92)"]} style={styles.tabWrap}>
       <View style={styles.tabContent}>
-        {primaryTabs.map((tab) => {
+        {tabs.map((tab) => {
           const active = activePrimary === tab.name;
           return (
             <Pressable
@@ -525,7 +550,7 @@ function BottomTabs({ activeTab, onSelect }) {
               ]}
             >
               <View style={[styles.tabDot, { backgroundColor: tab.color }]} />
-              <Text style={[styles.tabText, active && styles.tabTextActive]}>{tab.name}</Text>
+              <Text style={[styles.tabText, active && styles.tabTextActive]}>{tab.label || tab.name}</Text>
             </Pressable>
           );
         })}
@@ -576,6 +601,7 @@ function HomeTab({
   staffPhone,
   pushStatus,
   pushToken,
+  isAdmin,
   onEnablePush,
   onRefresh,
   onSaveBaseUrl,
@@ -624,7 +650,11 @@ function HomeTab({
             <ActionButton disabled={loading || !hasAdminPin} label={loading ? "Checking..." : "Unlock"} onPress={onUnlockAdmin} />
           </View>
         </View>
-        <Text style={styles.muted}>Admin can edit settings and Team. Tech codes can open Inbox, Calls, replies, callback bridge, and status.</Text>
+        <Text style={styles.muted}>
+          {isAdmin
+            ? "Admin can edit AI settings, routing, team view, and app setup."
+            : "Tech access opens DDD texts, calls, bookings, insights, replies, callback bridge, and your own alerts."}
+        </Text>
         <Field
           keyboardType="phone-pad"
           label="Your call-back phone"
@@ -646,46 +676,48 @@ function HomeTab({
         </View>
       </Card>
 
-      <Card title="Answering mode">
-        <View style={styles.routeHeader}>
-          <View style={styles.flexText}>
-            <Text style={styles.accessTitle}>{routeLabel}</Text>
-            <Text style={styles.muted}>
-              {routeMode === "humans"
-                ? "Skip the AI and ring saved team numbers to save AI usage."
-                : routeMode === "ai"
-                  ? "AI handles calls without trying the team unless logic sends a fallback."
-                  : "AI answers first, then can ring the team when needed."}
-            </Text>
+      {isAdmin ? (
+        <Card title="Answering mode">
+          <View style={styles.routeHeader}>
+            <View style={styles.flexText}>
+              <Text style={styles.accessTitle}>{routeLabel}</Text>
+              <Text style={styles.muted}>
+                {routeMode === "humans"
+                  ? "Skip the AI and ring saved team numbers to save AI usage."
+                  : routeMode === "ai"
+                    ? "AI handles calls without trying the team unless logic sends a fallback."
+                    : "AI answers first, then can ring the team when needed."}
+              </Text>
+            </View>
+            <Switch disabled={!editMode} onValueChange={(enabled) => setSettings((current) => ({ ...current, enabled }))} value={settings.enabled} />
           </View>
-          <Switch disabled={!editMode} onValueChange={(enabled) => setSettings((current) => ({ ...current, enabled }))} value={settings.enabled} />
-        </View>
-        <SegmentedOptions
-          disabled={!editMode}
-          options={[
-            { id: "ai_then_humans", label: "AI + backup" },
-            { id: "ai", label: "AI only" },
-            { id: "humans", label: "Ring team" }
-          ]}
-          selected={routeMode}
-          onSelect={(mode) =>
-            setSettings((current) => ({
-              ...current,
-              enabled: mode === "humans" ? false : current.enabled,
-              humanRouting: { ...current.humanRouting, mode }
-            }))
-          }
-        />
-        <View style={styles.summaryGrid}>
-          <SummaryTile label="Team nums" value={settings.humanRouting?.numbers?.length || 0} />
-          <SummaryTile label="Timeout" value={`${settings.humanRouting?.timeoutSeconds || 22}s`} />
-        </View>
-        <View style={styles.buttonRow}>
-          <ActionButton label={editMode ? "Lock settings" : "Edit settings"} onPress={() => setEditMode((current) => !current)} />
-          <ActionButton disabled={saving || loading || !editMode} label={saving ? "Saving..." : "Save now"} onPress={onSaveSettings} variant="light" />
-          <ActionButton label="Refresh" onPress={onRefresh} variant="light" />
-        </View>
-      </Card>
+          <SegmentedOptions
+            disabled={!editMode}
+            options={[
+              { id: "ai_then_humans", label: "AI + backup" },
+              { id: "ai", label: "AI only" },
+              { id: "humans", label: "Ring team" }
+            ]}
+            selected={routeMode}
+            onSelect={(mode) =>
+              setSettings((current) => ({
+                ...current,
+                enabled: mode === "humans" ? false : current.enabled,
+                humanRouting: { ...current.humanRouting, mode }
+              }))
+            }
+          />
+          <View style={styles.summaryGrid}>
+            <SummaryTile label="Team nums" value={settings.humanRouting?.numbers?.length || 0} />
+            <SummaryTile label="Timeout" value={`${settings.humanRouting?.timeoutSeconds || 22}s`} />
+          </View>
+          <View style={styles.buttonRow}>
+            <ActionButton label={editMode ? "Lock settings" : "Edit settings"} onPress={() => setEditMode((current) => !current)} />
+            <ActionButton disabled={saving || loading || !editMode} label={saving ? "Saving..." : "Save now"} onPress={onSaveSettings} variant="light" />
+            <ActionButton label="Refresh" onPress={onRefresh} variant="light" />
+          </View>
+        </Card>
+      ) : null}
 
       <Card title="Phone alerts">
         <View style={styles.statusRow}>
@@ -702,36 +734,38 @@ function HomeTab({
         <Text style={styles.muted}>Alerts cover new calls, missed/busy calls, customer texts, bookings, and QA follow-ups after the iPhone build is installed.</Text>
       </Card>
 
-      <Card title="Alert settings">
-        <View style={styles.twoColumnToggles}>
-          {[
-            ["newCalls", "New calls"],
-            ["missedCalls", "Missed calls"],
-            ["bookings", "Bookings"],
-            ["texts", "Texts"],
-            ["qaIssues", "Needs review"],
-            ["dailySummary", "Daily"],
-            ["weeklySummary", "Weekly"],
-            ["monthlySummary", "Monthly"]
-          ].map(([key, label]) => (
-            <SwitchRow
-              key={key}
-              disabled={!editMode}
-              label={label}
-              note=""
-              value={settings.notificationPreferences?.[key] !== false}
-              onValueChange={(value) =>
-                setSettings((current) => ({
-                  ...current,
-                  notificationPreferences: { ...current.notificationPreferences, [key]: value }
-                }))
-              }
-            />
-          ))}
-        </View>
-      </Card>
+      {isAdmin ? (
+        <Card title="Alert settings">
+          <View style={styles.twoColumnToggles}>
+            {[
+              ["newCalls", "New calls"],
+              ["missedCalls", "Missed calls"],
+              ["bookings", "Bookings"],
+              ["texts", "Texts"],
+              ["qaIssues", "Needs review"],
+              ["dailySummary", "Daily"],
+              ["weeklySummary", "Weekly"],
+              ["monthlySummary", "Monthly"]
+            ].map(([key, label]) => (
+              <SwitchRow
+                key={key}
+                disabled={!editMode}
+                label={label}
+                note=""
+                value={settings.notificationPreferences?.[key] !== false}
+                onValueChange={(value) =>
+                  setSettings((current) => ({
+                    ...current,
+                    notificationPreferences: { ...current.notificationPreferences, [key]: value }
+                  }))
+                }
+              />
+            ))}
+          </View>
+        </Card>
+      ) : null}
 
-      <Card title="Run costs">
+      {isAdmin ? <Card title="Run costs">
         <Text style={styles.muted}>Quick links for the accounts that keep calls, texts, AI, and hosting running.</Text>
         <View style={styles.linkGrid}>
           {billingLinks.map(([label, detail, url]) => (
@@ -743,20 +777,20 @@ function HomeTab({
             </Pressable>
           ))}
         </View>
-      </Card>
+      </Card> : null}
 
-      <Card title="Backend">
+      {isAdmin ? <Card title="Backend">
         <Field autoCapitalize="none" keyboardType="url" label="Live backend URL" onChangeText={setApiBaseUrl} value={apiBaseUrl} />
         <View style={styles.buttonRow}>
           <ActionButton label="Save URL" onPress={onSaveBaseUrl} />
           <ActionButton label="Open admin web" onPress={() => Linking.openURL(normalizeBaseUrl(apiBaseUrl))} variant="light" />
         </View>
         <Text style={styles.muted}>Using {savedApiBaseUrl}</Text>
-      </Card>
+      </Card> : null}
 
-      <Card title="Setup status">
+      {isAdmin ? <Card title="Setup status">
         {setup ? <SetupBadges setup={setup} /> : <Text style={styles.muted}>Setup status will appear after refresh.</Text>}
-      </Card>
+      </Card> : null}
     </>
   );
 }
@@ -767,7 +801,7 @@ function MoreTab({ activity, onSelect, settings }) {
       <Card title="More controls">
         <Text style={styles.muted}>Less clutter up front. Use these when you want to tune how the receptionist talks, asks questions, texts, and learns.</Text>
         <View style={styles.moreGrid}>
-          {advancedTabs.map((tab) => (
+          {adminMoreTabs.map((tab) => (
             <Pressable key={tab.name} onPress={() => onSelect(tab.name)} style={styles.moreTile}>
               <LinearGradient colors={[tab.color, "#16b8ff"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.moreTileGradient}>
                 <Text style={styles.moreTileText}>{tab.label || tab.name}</Text>
@@ -1019,13 +1053,26 @@ function TeamTab({ adminPin, editMode, saving, setEditMode, signedInStaff, onSav
   );
 }
 
-function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setStatus, staffPhone }) {
+function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setStatus, settings, staffPhone }) {
   const [drafts, setDrafts] = useState({});
+  const [manualPhone, setManualPhone] = useState("");
   const [selectedPhone, setSelectedPhone] = useState("");
   const [workingThread, setWorkingThread] = useState("");
   const activeConversations = (conversations || []).slice(0, 20);
+  const manualNormalizedPhone = normalizeE164(manualPhone);
+  const manualConversation =
+    manualNormalizedPhone && !activeConversations.some((conversation) => normalizeE164(getConversationCustomer(conversation)) === manualNormalizedPhone)
+      ? {
+          phone: manualNormalizedPhone,
+          customerName: "New customer",
+          lastMessageAt: new Date().toISOString(),
+          lastBody: "Start a new DDD text or callback.",
+          messages: []
+        }
+      : null;
   const selectedConversation =
     activeConversations.find((conversation) => normalizeE164(getConversationCustomer(conversation)) === selectedPhone) ||
+    (selectedPhone === manualNormalizedPhone ? manualConversation : null) ||
     activeConversations[0] ||
     null;
   const selectedCustomerPhone = selectedConversation ? getConversationCustomer(selectedConversation) : "";
@@ -1105,6 +1152,45 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
         </View>
         <View style={styles.buttonRow}>
           <ActionButton label="Refresh inbox" onPress={onRefresh} />
+        </View>
+        <View style={styles.manualContactBox}>
+          <Text style={styles.linkLabel}>Text or call any customer</Text>
+          <Field
+            keyboardType="phone-pad"
+            label="Customer number"
+            onChangeText={(value) => {
+              setManualPhone(value);
+              const normalized = normalizeE164(value);
+              if (normalized) setSelectedPhone(normalized);
+            }}
+            value={manualPhone}
+          />
+          <Field
+            editable={Boolean(manualNormalizedPhone)}
+            label="Message"
+            multiline
+            onChangeText={(message) => {
+              if (!manualNormalizedPhone) {
+                setStatus("Enter a valid customer number first.");
+                return;
+              }
+              setDrafts((current) => ({ ...current, [manualNormalizedPhone]: message }));
+            }}
+            value={manualNormalizedPhone ? drafts[manualNormalizedPhone] || "" : ""}
+          />
+          <View style={styles.buttonRow}>
+            <ActionButton
+              disabled={!manualNormalizedPhone || workingThread === `sms:${manualNormalizedPhone}`}
+              label={workingThread === `sms:${manualNormalizedPhone}` ? "Sending..." : "Send text"}
+              onPress={() => sendReply(manualNormalizedPhone)}
+            />
+            <ActionButton
+              disabled={!manualNormalizedPhone || workingThread === `call:${manualNormalizedPhone}`}
+              label={workingThread === `call:${manualNormalizedPhone}` ? "Calling..." : "Call number"}
+              onPress={() => callCustomer(manualNormalizedPhone)}
+              variant="light"
+            />
+          </View>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.conversationPicker}>
           {activeConversations.map((conversation, index) => {
@@ -1206,6 +1292,51 @@ function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChang
   );
 }
 
+function BookingsTab({ bookings = [] }) {
+  const recentBookings = (bookings || []).slice(0, 30);
+  const openBookings = recentBookings.filter((booking) => !/complete|cancel/i.test(String(booking.status || ""))).length;
+  return (
+    <>
+      <Card title="Bookings">
+        <View style={styles.summaryGrid}>
+          <SummaryTile label="Recent" value={recentBookings.length} />
+          <SummaryTile label="Open" value={openBookings} />
+          <SummaryTile label="Today" value={recentBookings.filter((booking) => isSameDay(booking.createdAt, new Date())).length} />
+          <SummaryTile label="Photos" value={recentBookings.filter((booking) => Number(booking.photoCount || 0) > 0).length} />
+        </View>
+      </Card>
+      <Card title="Newest requests">
+        {recentBookings.map((booking, index) => (
+          <BookingCard booking={booking} key={booking.bookingId || booking.id || index} />
+        ))}
+        {recentBookings.length ? null : <Text style={styles.muted}>New bookings will show here with the service time and date.</Text>}
+      </Card>
+    </>
+  );
+}
+
+function BookingCard({ booking = {} }) {
+  const confidence = booking.confidence || {};
+  const missing = Array.isArray(confidence.missing) ? confidence.missing : [];
+  return (
+    <LinearGradient colors={["#fffaff", "#f7fffb"]} style={styles.listCard}>
+      <View style={styles.listHeader}>
+        <Text style={styles.listTitle} numberOfLines={1}>{booking.name || booking.customerName || "Customer"}</Text>
+        <Text style={styles.pill}>{booking.status || "New booking"}</Text>
+      </View>
+      <Text style={styles.record}>{booking.serviceType || booking.service || "Service not set"}</Text>
+      <Text style={styles.record}>{formatPhone(booking.phone || booking.customerPhone || "") || "No phone saved"}</Text>
+      <Text style={styles.record}>{booking.vehicle || "Vehicle not set"}{booking.vehicleColor ? ` (${booking.vehicleColor})` : ""}</Text>
+      <Text style={styles.record}>{booking.location || "Location not set"}</Text>
+      <View style={styles.callChipRow}>
+        <Text style={styles.smallChip}>Requested: {booking.preferredTime || booking.timeWindow || "ASAP / not set"}</Text>
+        <Text style={styles.smallChip}>Saved: {formatDateTime(booking.createdAt)}</Text>
+      </View>
+      {missing.length ? <Text style={styles.warningText}>Needs: {missing.join(", ")}</Text> : null}
+    </LinearGradient>
+  );
+}
+
 function CallsTab({ calls, insights }) {
   const recentCalls = (calls || []).slice(0, 10);
   const completed = recentCalls.filter((call) => call.completion === "complete" || call.bookings?.length).length;
@@ -1303,7 +1434,7 @@ function InsightsTab({ calls = [], hasPin, insights, onRefresh }) {
               ? hasRealInsights
                 ? "Live reports loaded from DDD AI."
                 : "Showing backup reports from recent call logs."
-              : "Enter your admin code on Home to unlock live reports."}
+              : "Enter your DDD access code on Home to unlock live reports."}
           </Text>
           <ActionButton label="Refresh" onPress={onRefresh} variant="light" />
         </View>
@@ -1671,6 +1802,25 @@ function normalizeHumanRouteNumbers(numbers = []) {
 
 function clampSpeed(value) {
   return Math.min(1.5, Math.max(0.5, Math.round(Number(value) * 100) / 100));
+}
+
+function formatDateTime(value) {
+  if (!value) return "Not set";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function isSameDay(value, compareDate) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.toDateString() === compareDate.toDateString();
 }
 
 function formatPhone(value) {
@@ -2183,6 +2333,14 @@ const styles = StyleSheet.create({
   },
   smallChipOk: { backgroundColor: "#e9fff3", color: "#12824d" },
   smallChipWarn: { backgroundColor: "#fff7ed", color: "#9a3412" },
+  manualContactBox: {
+    gap: 9,
+    borderColor: "rgba(255, 62, 165, 0.18)",
+    borderRadius: 18,
+    borderWidth: 1,
+    backgroundColor: "rgba(255, 240, 250, 0.72)",
+    padding: 11
+  },
   conversationPicker: { gap: 8, paddingVertical: 2, paddingRight: 2 },
   conversationChoice: {
     width: 178,
