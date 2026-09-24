@@ -322,7 +322,8 @@ app.get("/api/setup-status", async (_req, res, next) => {
 
 app.get("/api/admin/usage", async (req, res, next) => {
   try {
-    if (!hasAdminAccess(req)) {
+    const admin = await getAdminAccess(req);
+    if (!admin.ok) {
       res.status(403).json({ ok: false, error: "Forbidden" });
       return;
     }
@@ -363,7 +364,8 @@ app.get("/api/settings", async (_req, res, next) => {
 
 app.post("/api/settings", express.json(), async (req, res, next) => {
   try {
-    if (!hasAdminAccess(req)) {
+    const admin = await getAdminAccess(req);
+    if (!admin.ok) {
       res.status(403).json({ ok: false, error: "Forbidden" });
       return;
     }
@@ -691,7 +693,8 @@ app.post("/api/push/test", express.json(), async (req, res, next) => {
 
 app.post("/api/email/test", express.json(), async (req, res, next) => {
   try {
-    if (!hasAdminAccess(req)) {
+    const admin = await getAdminAccess(req);
+    if (!admin.ok) {
       res.status(403).json({ ok: false, error: "Forbidden" });
       return;
     }
@@ -709,7 +712,8 @@ app.post("/api/email/test", express.json(), async (req, res, next) => {
 
 app.post("/api/alerts/audit", express.json(), async (req, res, next) => {
   try {
-    if (!hasAdminAccess(req)) {
+    const admin = await getAdminAccess(req);
+    if (!admin.ok) {
       res.status(403).json({ ok: false, error: "Forbidden" });
       return;
     }
@@ -1126,7 +1130,8 @@ app.post("/api/test-script/score", express.json(), async (req, res, next) => {
 
 app.get("/api/qa-dashboard", async (req, res, next) => {
   try {
-    if (!hasAdminAccess(req)) {
+    const admin = await getAdminAccess(req);
+    if (!admin.ok) {
       res.status(403).json({ ok: false, error: "Forbidden" });
       return;
     }
@@ -1485,13 +1490,14 @@ app.get("/api/call-log", async (req, res, next) => {
 
 app.post("/api/calls/:callId/correction", express.json(), async (req, res, next) => {
   try {
-    if (!hasAdminAccess(req)) {
+    const admin = await getAdminAccess(req);
+    if (!admin.ok) {
       res.status(403).json({ ok: false, error: "Forbidden" });
       return;
     }
     const correction = await updateCallCorrection(req.params.callId, {
       ...req.body,
-      updatedBy: process.env.ADMIN_STAFF_NAME || "Brianna"
+      updatedBy: admin.name || process.env.ADMIN_STAFF_NAME || "Brianna"
     });
     res.json({ ok: true, correction });
   } catch (error) {
@@ -1605,12 +1611,24 @@ async function handleSipWebhook(req, res, next) {
       queueCallStartSms(callerPhone);
       if (!settings.enabled) {
         console.warn("AI receptionist is off. Incoming call was logged but not accepted.");
+        await notifyTeamTracked({
+          title: "DDD AI is off",
+          body: `${formatPhoneForAlert(callerPhone)} called while AI answering was off. Text/call them back from dispatch.`,
+          data: { type: "ai-off-missed-call", callId: callId || "", from: callerPhone, to: calledPhone }
+        }, "ai-off-missed-call");
+        await sendMissedCallSms(callerPhone, "AI answering was off");
         res.sendStatus(200);
         return;
       }
 
       if (!callId) {
         console.warn("Received realtime.call.incoming webhook without a call_id.");
+        await notifyTeamTracked({
+          title: "DDD call needs review",
+          body: `${formatPhoneForAlert(callerPhone)} called, but OpenAI did not send a call id.`,
+          data: { type: "openai-call-id-missing", from: callerPhone, to: calledPhone }
+        }, "openai-call-id-missing");
+        await sendMissedCallSms(callerPhone, "AI call setup failed");
         res.sendStatus(200);
         return;
       }
@@ -1620,6 +1638,12 @@ async function handleSipWebhook(req, res, next) {
         monitorRealtimeCall(callId, callSettings);
       } catch (acceptError) {
         console.error(`Failed to accept realtime call ${callId}: ${acceptError.message}`);
+        await notifyTeamTracked({
+          title: "DDD AI pickup failed",
+          body: `${formatPhoneForAlert(callerPhone)} called, but OpenAI could not accept the call. Text/call them back from dispatch.`,
+          data: { type: "openai-accept-failed", callId, from: callerPhone, to: calledPhone, error: acceptError.message }
+        }, "openai-accept-failed");
+        await sendMissedCallSms(callerPhone, "AI pickup failed");
       }
     }
 
@@ -1714,6 +1738,38 @@ function hasAppReviewAccess(req) {
   return submittedCode === appReviewPin;
 }
 
+function splitEnvList(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isAdminRole(role = "") {
+  const normalized = String(role || "").trim().toLowerCase();
+  return ["admin", "administrator", "owner", "manager", "super_admin", "dispatch_admin"].includes(normalized);
+}
+
+function normalizeStaffRole(role = "", staff = {}) {
+  if (isAdminRole(role)) return "admin";
+  const adminNames = splitEnvList(process.env.ADMIN_STAFF_NAMES || process.env.ADMIN_STAFF_NAME || "Brianna,Bria");
+  const adminEmails = splitEnvList(process.env.ADMIN_STAFF_EMAILS || "");
+  const name = String(staff.name || staff.tech_label || staff.full_name || staff.display_name || "").trim().toLowerCase();
+  const email = String(staff.email || staff.user_email || "").trim().toLowerCase();
+  if (adminNames.some((adminName) => adminName && (name === adminName || name.includes(adminName)))) return "admin";
+  if (adminEmails.includes(email)) return "admin";
+  return String(role || "staff").trim() || "staff";
+}
+
+async function getAdminAccess(req) {
+  if (hasAdminAccess(req)) {
+    return { ok: true, name: process.env.ADMIN_STAFF_NAME || "Brianna", role: "admin" };
+  }
+  const staff = await getStaffAccess(req);
+  if (staff.ok && isAdminRole(staff.role)) return staff;
+  return { ok: false };
+}
+
 async function getStaffAccess(req) {
   const submittedCode = String(req.get("x-staff-code") || req.get("x-admin-pin") || req.query.staffCode || req.query.adminPin || "")
     .trim();
@@ -1735,11 +1791,12 @@ async function getStaffAccess(req) {
   if (!staff) {
     return { ok: false };
   }
-  return { ok: true, name: staff.name, role: "staff" };
+  return { ok: true, id: staff.id || "", name: staff.name, role: normalizeStaffRole(staff.role || "staff", staff), source: staff.source || "ddd-platform" };
 }
 
 async function getVisibleTeamInfo(req) {
-  const admin = hasAdminAccess(req);
+  const staffAccess = await getStaffAccess(req);
+  const admin = hasAdminAccess(req) || (staffAccess.ok && isAdminRole(staffAccess.role));
   const adminPin = String(process.env.ADMIN_PIN || "").trim();
   const directory = await getStaffDirectory();
   const team = [
@@ -1834,7 +1891,7 @@ async function authenticateDddPlatformStaff(code) {
       ok: true,
       id: String(payload.tech_id || ""),
       name: String(payload.tech_label || payload.name || "DDD Tech").replace(/\s+/g, " ").trim().slice(0, 80),
-      role: payload.role || "tech",
+      role: normalizeStaffRole(payload.role || payload.type || "tech", payload),
       availability: payload.availability || "available",
       source: "ddd-platform"
     };
@@ -1881,7 +1938,7 @@ function normalizePlatformTeamMember(member = {}) {
       .slice(0, 80),
     phone: normalizeE164(member.phone || member.mobile_phone || member.phone_number || member.profile?.phone || ""),
     code,
-    role: String(member.role || member.type || "tech")
+    role: normalizeStaffRole(member.role || member.type || "tech", member)
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 40),

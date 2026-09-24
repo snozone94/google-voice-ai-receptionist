@@ -1472,6 +1472,12 @@ function isAccessVerified() {
   return Boolean(signedInStaff?.ok && verifiedAccessCode && verifiedAccessCode === accessCodeValue());
 }
 
+function isAdminStaff(staff = signedInStaff) {
+  const role = String(staff?.role || "").trim().toLowerCase();
+  const name = String(staff?.name || "").trim().toLowerCase();
+  return ["admin", "administrator", "owner", "manager", "super_admin", "dispatch_admin"].includes(role) || name.includes("bria") || name.includes("brianna");
+}
+
 function setSignedInStaff(staff) {
   const code = accessCodeValue();
   signedInStaff = staff ? { ok: true, ...staff } : null;
@@ -1492,7 +1498,7 @@ function updateSignedInUi() {
   let message = "Enter a code to unlock your workspace.";
   if (accessCodeValue() && !verified) {
     message = "Code saved here. Tap Sign in to verify across every tab.";
-  } else if (verified && role === "admin") {
+  } else if (verified && isAdminStaff()) {
     message = `Admin signed in as ${signedInStaff.name || "Brianna"}. All admin tabs are unlocked.`;
   } else if (verified) {
     message = `${signedInStaff.name || "DDD team"} signed in. Inbox, calls, callbacks, and alerts are unlocked.`;
@@ -1501,7 +1507,7 @@ function updateSignedInUi() {
   if (stickyAccessSessionStatus) {
     stickyAccessSessionStatus.textContent = message;
   }
-  if (settingsStatus && verified && role !== "admin") {
+  if (settingsStatus && verified && !isAdminStaff()) {
     settingsStatus.textContent = "Signed in for inbox. Admin code unlocks settings, calls, insights, QA.";
   }
 }
@@ -1512,7 +1518,7 @@ async function refreshAccessScopedData() {
   refreshInbox().catch((error) => setInboxStatus(error.message));
   ensureWebPushRegisteredIfAllowed().catch(() => {});
   updateWebPushDiagnostic().catch(() => {});
-  if (signedInStaff.role === "admin") {
+  if (isAdminStaff()) {
     loadSettings().catch(() => {
       settingsStatus.textContent = "Could not reload admin-only settings.";
     });
@@ -2427,7 +2433,7 @@ inboxLoginButton?.addEventListener("click", async () => {
 
 stickyLoginButton?.addEventListener("click", async () => {
   const staff = await verifyAccessCode({ quiet: false, refresh: true });
-  if (staff?.role !== "admin" && ["insights", "qa"].some((tab) => tabPanels.find((panel) => panel.dataset.tabPanel === tab)?.classList.contains("active"))) {
+  if (!isAdminStaff(staff) && ["insights", "qa"].some((tab) => tabPanels.find((panel) => panel.dataset.tabPanel === tab)?.classList.contains("active"))) {
     setInboxStatus("Tech code is signed in. Use the admin code for Insights and QA.");
   }
 });
@@ -2712,7 +2718,7 @@ function renderSelectedCall() {
   const transcriptHtml = renderGroupedTranscript(call.transcript || []);
   const synopsis = buildCallSynopsis(call);
   const correction = call.correction || {};
-  const canCorrectCall = signedInStaff?.role === "admin";
+  const canCorrectCall = isAdminStaff();
   callDetail.innerHTML = `
     <div class="call-detail-header">
       <div>

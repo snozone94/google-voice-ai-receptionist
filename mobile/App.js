@@ -173,7 +173,7 @@ export default function App() {
   const lastSavedSettingsRef = useRef("");
 
   const cleanBaseUrl = useMemo(() => normalizeBaseUrl(apiBaseUrl), [apiBaseUrl]);
-  const isAdmin = signedInStaff?.role === "admin";
+  const isAdmin = isAdminStaff(signedInStaff);
   const availableTabs = useMemo(() => (isAdmin ? adminPrimaryTabs : staffPrimaryTabs), [isAdmin]);
   const allowedTabNames = useMemo(
     () => new Set([...availableTabs, ...(isAdmin ? adminMoreTabs : [])].map((tab) => tab.name)),
@@ -511,7 +511,17 @@ export default function App() {
               staffPhone={staffPhone}
             />
           ) : null}
-          {activeTab === "Calls" ? <CallsTab calls={activity.calls} insights={activity.insights} /> : null}
+          {activeTab === "Calls" ? (
+            <CallsTab
+              adminPin={adminPin}
+              apiBaseUrl={cleanBaseUrl}
+              calls={activity.calls}
+              insights={activity.insights}
+              setStatus={setStatus}
+              setStaffPhone={setStaffPhone}
+              staffPhone={staffPhone}
+            />
+          ) : null}
           {activeTab === "Bookings" ? <BookingsTab bookings={activity.bookings} /> : null}
           {activeTab === "Insights" ? (
             <InsightsTab
@@ -1033,7 +1043,7 @@ function TeamTab({ adminPin, editMode, saving, setEditMode, signedInStaff, onSav
           <View style={styles.flexText}>
             <Text style={styles.accessTitle}>{signedInStaff?.ok ? `${signedInStaff.name || "DDD team"} is signed in` : "Code not verified"}</Text>
             <Text style={styles.muted}>
-              {signedInStaff?.role === "admin"
+              {isAdminStaff(signedInStaff)
                 ? "Admin settings are unlocked. Tech access comes from DDD Platform / TechAssist."
                 : "Tech codes use DDD Platform / TechAssist for inbox, replies, callback bridge, and live status."}
             </Text>
@@ -1045,9 +1055,9 @@ function TeamTab({ adminPin, editMode, saving, setEditMode, signedInStaff, onSav
         <Text style={styles.muted}>Master admin code stays in Render's ADMIN_PIN secret. Tech codes are managed in the DDD platform/TechAssist, so this app does not keep separate backup tech codes.</Text>
         <View style={styles.buttonRow}>
           <ActionButton label={editMode ? "Lock settings" : "Edit settings"} onPress={() => setEditMode((current) => !current)} />
-          <ActionButton disabled={saving || signedInStaff?.role !== "admin"} label={saving ? "Saving..." : "Save settings"} onPress={onSaveSettings} variant="light" />
+          <ActionButton disabled={saving || !isAdminStaff(signedInStaff)} label={saving ? "Saving..." : "Save settings"} onPress={onSaveSettings} variant="light" />
         </View>
-        {signedInStaff?.role !== "admin" ? <Text style={styles.warningText}>Sign in with the real admin code on Home to change admin settings. Techs keep using their DDD Platform / TechAssist code.</Text> : null}
+        {!isAdminStaff(signedInStaff) ? <Text style={styles.warningText}>Sign in with the real admin code on Home to change admin settings. Techs keep using their DDD Platform / TechAssist code.</Text> : null}
       </Card>
     </>
   );
@@ -1143,21 +1153,13 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
 
   return (
     <>
-      <Card title="Shared inbox">
-        {!hasPin ? <Text style={styles.warningText}>Enter your admin or tech access code on Home once to load protected inbox messages.</Text> : null}
-        {!normalizeE164(staffPhone) ? <Text style={styles.warningText}>Add your call-back phone on Home before using Call Customer.</Text> : null}
-        <View style={styles.summaryGrid}>
-          <SummaryTile label="Threads" value={activeConversations.length} />
-          <SummaryTile label="Open texts" value={activeConversations.filter((item) => item.messages?.length).length} />
-        </View>
-        <View style={styles.buttonRow}>
-          <ActionButton label="Refresh inbox" onPress={onRefresh} />
-        </View>
+      <Card title="New text or call">
+        <Text style={styles.muted}>Start a thread or outbound callback with any customer number. Replies still send from DDD.</Text>
         <View style={styles.manualContactBox}>
-          <Text style={styles.linkLabel}>Text or call any customer</Text>
+          <Text style={styles.linkLabel}>Customer number</Text>
           <Field
             keyboardType="phone-pad"
-            label="Customer number"
+            label="Phone"
             onChangeText={(value) => {
               setManualPhone(value);
               const normalized = normalizeE164(value);
@@ -1191,6 +1193,17 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
               variant="light"
             />
           </View>
+        </View>
+      </Card>
+      <Card title="Shared inbox">
+        {!hasPin ? <Text style={styles.warningText}>Enter your admin or tech access code on Home once to load protected inbox messages.</Text> : null}
+        {!normalizeE164(staffPhone) ? <Text style={styles.warningText}>Add your call-back phone on Home before using Call Customer.</Text> : null}
+        <View style={styles.summaryGrid}>
+          <SummaryTile label="Threads" value={activeConversations.length} />
+          <SummaryTile label="Open texts" value={activeConversations.filter((item) => item.messages?.length).length} />
+        </View>
+        <View style={styles.buttonRow}>
+          <ActionButton label="Refresh inbox" onPress={onRefresh} />
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.conversationPicker}>
           {activeConversations.map((conversation, index) => {
@@ -1294,7 +1307,7 @@ function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChang
 
 function BookingsTab({ bookings = [] }) {
   const recentBookings = (bookings || []).slice(0, 30);
-  const openBookings = recentBookings.filter((booking) => !/complete|cancel/i.test(String(booking.status || ""))).length;
+  const openBookings = recentBookings.filter((booking) => !/complete|cancel|clear|done|closed/i.test(getBookingStatusLabel(booking))).length;
   return (
     <>
       <Card title="Bookings">
@@ -1318,18 +1331,20 @@ function BookingsTab({ bookings = [] }) {
 function BookingCard({ booking = {} }) {
   const confidence = booking.confidence || {};
   const missing = Array.isArray(confidence.missing) ? confidence.missing : [];
+  const statusLabel = getBookingStatusLabel(booking);
+  const requestedFor = getBookingRequestedLabel(booking);
   return (
     <LinearGradient colors={["#fffaff", "#f7fffb"]} style={styles.listCard}>
       <View style={styles.listHeader}>
         <Text style={styles.listTitle} numberOfLines={1}>{booking.name || booking.customerName || "Customer"}</Text>
-        <Text style={styles.pill}>{booking.status || "New booking"}</Text>
+        <Text style={styles.pill}>{statusLabel}</Text>
       </View>
       <Text style={styles.record}>{booking.serviceType || booking.service || "Service not set"}</Text>
       <Text style={styles.record}>{formatPhone(booking.phone || booking.customerPhone || "") || "No phone saved"}</Text>
       <Text style={styles.record}>{booking.vehicle || "Vehicle not set"}{booking.vehicleColor ? ` (${booking.vehicleColor})` : ""}</Text>
       <Text style={styles.record}>{booking.location || "Location not set"}</Text>
       <View style={styles.callChipRow}>
-        <Text style={styles.smallChip}>Requested: {booking.preferredTime || booking.timeWindow || "ASAP / not set"}</Text>
+        <Text style={styles.smallChip}>Requested: {requestedFor}</Text>
         <Text style={styles.smallChip}>Saved: {formatDateTime(booking.createdAt)}</Text>
       </View>
       {missing.length ? <Text style={styles.warningText}>Needs: {missing.join(", ")}</Text> : null}
@@ -1337,7 +1352,37 @@ function BookingCard({ booking = {} }) {
   );
 }
 
-function CallsTab({ calls, insights }) {
+function getBookingStatusLabel(booking = {}) {
+  const raw = String(
+    booking.platformStatus ||
+      booking.externalStatus ||
+      booking.dddStatus ||
+      booking.dispatchStatus ||
+      booking.status ||
+      booking.state ||
+      ""
+  ).trim();
+  if (/complete|completed|done|closed|clear|cleared/i.test(raw)) return "Completed";
+  if (/cancel|canceled|cancelled/i.test(raw)) return "Canceled";
+  if (/assign|dispatch|en.?route|active/i.test(raw)) return raw;
+  return raw || "Requested";
+}
+
+function getBookingRequestedLabel(booking = {}) {
+  return (
+    booking.requestedFor ||
+    booking.appointmentAt ||
+    booking.scheduledAt ||
+    booking.preferredTime ||
+    booking.timeWindow ||
+    booking.requestedTime ||
+    "ASAP / not set"
+  );
+}
+
+function CallsTab({ adminPin, apiBaseUrl, calls, insights, setStatus, setStaffPhone, staffPhone }) {
+  const [dialPhone, setDialPhone] = useState("");
+  const [calling, setCalling] = useState(false);
   const recentCalls = (calls || []).slice(0, 10);
   const completed = recentCalls.filter((call) => call.completion === "complete" || call.bookings?.length).length;
   const needsReview = recentCalls.filter((call) => call.completion === "needs-review" || call.smsStatus === "failed").length;
@@ -1345,8 +1390,46 @@ function CallsTab({ calls, insights }) {
   const activeDay = insights?.sections?.latestActiveDay || daily;
   const weekly = insights?.sections?.weekly || {};
   const monthly = insights?.sections?.monthly || {};
+
+  async function startOutboundCall() {
+    const to = normalizeE164(dialPhone);
+    const from = normalizeE164(staffPhone);
+    if (!to) {
+      setStatus("Enter the customer number to call.");
+      return;
+    }
+    if (!from) {
+      setStatus("Enter your callback phone first so Twilio can bridge the call.");
+      return;
+    }
+    setCalling(true);
+    try {
+      await AsyncStorage.setItem(staffPhoneStorageKey, from);
+      setStaffPhone(from);
+      await apiPost(apiBaseUrl, "/api/calls/outbound", { to, staffPhone: from }, adminPin);
+      setStatus("Calling your phone now. Answer it, then DDD connects the customer with business caller ID.");
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setCalling(false);
+    }
+  }
+
   return (
     <>
+      <Card title="Outbound dialer">
+        <Text style={styles.muted}>Call any customer from DDD. Your phone rings first, then the customer sees the DDD caller ID.</Text>
+        <Field keyboardType="phone-pad" label="Customer phone" onChangeText={setDialPhone} value={dialPhone} />
+        <Field
+          keyboardType="phone-pad"
+          label="Your callback phone"
+          onChangeText={(value) => {
+            setStaffPhone(value);
+          }}
+          value={staffPhone}
+        />
+        <ActionButton disabled={calling} label={calling ? "Calling..." : "Call from DDD"} onPress={startOutboundCall} />
+      </Card>
       <Card title="Call summary">
         <View style={styles.summaryGrid}>
           <SummaryTile label="Recent" value={recentCalls.length} />
@@ -1622,6 +1705,12 @@ function setCallerFlow(setSettings, key, value) {
 function normalizeBaseUrl(value) {
   const cleaned = String(value || defaultApiBaseUrl).trim().replace(/\/+$/, "");
   return cleaned.startsWith("http") ? cleaned : defaultApiBaseUrl;
+}
+
+function isAdminStaff(staff) {
+  const role = String(staff?.role || "").trim().toLowerCase();
+  const name = String(staff?.name || "").trim().toLowerCase();
+  return ["admin", "administrator", "owner", "manager", "super_admin", "dispatch_admin"].includes(role) || name.includes("bria") || name.includes("brianna");
 }
 
 async function apiGet(baseUrl, path, adminPin = "") {
