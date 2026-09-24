@@ -2675,16 +2675,23 @@ function renderCallLog() {
     renderSelectedCall();
     return;
   }
-  for (const call of callLog) {
+  const groups = groupCallsByCaller(callLog);
+  if (selectedCallId && !groups.some((group) => group.calls.some((call) => call.id === selectedCallId))) {
+    selectedCallId = groups[0]?.latest?.id || "";
+  }
+  for (const group of groups) {
+    const call = group.latest;
     const button = document.createElement("button");
     button.type = "button";
-    button.className = call.id === selectedCallId ? "call-log-item selected" : "call-log-item";
-    const label = call.caller || call.callId || "Unknown caller";
+    const isSelected = group.calls.some((item) => item.id === selectedCallId);
+    button.className = isSelected ? "call-log-item selected" : "call-log-item";
+    const label = group.caller || call.caller || call.callId || "Unknown caller";
     const meta = [
       call.displayStatus || call.outcome?.label,
       call.durationLabel,
       call.smsStatus && call.smsStatus !== "none" ? `SMS ${call.smsStatus}` : "",
-      call.recordingStatus === "available" ? "recording" : ""
+      call.recordingStatus === "available" ? "recording" : "",
+      group.calls.length > 1 ? `${group.calls.length} calls` : ""
     ]
       .filter(Boolean)
       .join(" · ");
@@ -2695,12 +2702,39 @@ function renderCallLog() {
       <small>${escapeHtml(formatTime(call.startedAt || call.createdAt))}</small>
     `;
     button.addEventListener("click", () => {
-      selectedCallId = call.id;
+      selectedCallId = group.latest.id;
       renderCallLog();
     });
     callLogList.append(button);
   }
   renderSelectedCall();
+}
+
+function groupCallsByCaller(calls = []) {
+  const grouped = new Map();
+  for (const call of calls) {
+    const key = getCallCallerKey(call);
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        key,
+        caller: call.caller || call.from || "",
+        calls: []
+      });
+    }
+    const group = grouped.get(key);
+    group.calls.push(call);
+    if (!group.caller && (call.caller || call.from)) group.caller = call.caller || call.from;
+  }
+  return [...grouped.values()]
+    .map((group) => {
+      const sorted = group.calls.sort((a, b) => String(b.startedAt || b.createdAt || "").localeCompare(String(a.startedAt || a.createdAt || "")));
+      return { ...group, calls: sorted, latest: sorted[0] };
+    })
+    .sort((a, b) => String(b.latest?.startedAt || b.latest?.createdAt || "").localeCompare(String(a.latest?.startedAt || a.latest?.createdAt || "")));
+}
+
+function getCallCallerKey(call = {}) {
+  return normalizePhoneForRoute(call.caller || call.from || "") || String(call.caller || call.from || call.callId || call.id || "unknown");
 }
 
 function renderSelectedCall() {
@@ -2719,6 +2753,8 @@ function renderSelectedCall() {
   const synopsis = buildCallSynopsis(call);
   const correction = call.correction || {};
   const canCorrectCall = isAdminStaff();
+  const customerCallGroup = groupCallsByCaller(callLog).find((group) => group.calls.some((item) => item.id === call.id));
+  const repeatCallHtml = renderRepeatCallHistory(customerCallGroup, call.id);
   callDetail.innerHTML = `
     <div class="call-detail-header">
       <div>
@@ -2768,6 +2804,7 @@ function renderSelectedCall() {
       ${renderRelatedRecords("Bookings", call.bookings)}
       ${renderRelatedRecords("Leads", call.leads)}
     </div>
+    ${repeatCallHtml}
     <div class="call-section">
       <h4>Synopsis</h4>
       <div class="call-synopsis">${synopsis.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div>
@@ -2779,6 +2816,29 @@ function renderSelectedCall() {
   `;
   const saveCorrectionButton = callDetail.querySelector('[data-action="save-call-correction"]');
   saveCorrectionButton?.addEventListener("click", saveSelectedCallCorrection);
+}
+
+function renderRepeatCallHistory(group, selectedId = "") {
+  if (!group || group.calls.length <= 1) return "";
+  return `
+    <div class="call-section">
+      <h4>Caller history</h4>
+      <div class="call-synopsis">
+        ${group.calls
+          .map((item) => {
+            const isCurrent = item.id === selectedId;
+            const bits = [
+              formatTime(item.startedAt || item.createdAt),
+              item.displayStatus || item.outcome?.label || "Logged",
+              item.durationLabel,
+              item.smsStatus && item.smsStatus !== "none" ? `SMS ${item.smsStatus}` : ""
+            ].filter(Boolean);
+            return `<p>${isCurrent ? "Current: " : ""}${escapeHtml(bits.join(" · "))}</p>`;
+          })
+          .join("")}
+      </div>
+    </div>
+  `;
 }
 
 function renderCorrectionOptions(selected = "") {

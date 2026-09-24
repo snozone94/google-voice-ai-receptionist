@@ -1389,7 +1389,8 @@ function getBookingRequestedLabel(booking = {}) {
 function CallsTab({ adminPin, apiBaseUrl, calls, insights, setStatus, setStaffPhone, staffPhone }) {
   const [dialPhone, setDialPhone] = useState("");
   const [calling, setCalling] = useState(false);
-  const recentCalls = (calls || []).slice(0, 10);
+  const callGroups = useMemo(() => groupCallsByCaller(calls || []).slice(0, 10), [calls]);
+  const recentCalls = callGroups.map((group) => group.latest).filter(Boolean);
   const completed = recentCalls.filter((call) => call.completion === "complete" || call.bookings?.length).length;
   const needsReview = recentCalls.filter((call) => call.completion === "needs-review" || call.smsStatus === "failed").length;
   const daily = insights?.sections?.daily || {};
@@ -1450,26 +1451,27 @@ function CallsTab({ adminPin, apiBaseUrl, calls, insights, setStatus, setStaffPh
         <PeriodInsight label="Month" period={monthly} />
       </Card>
       <Card title="Recent calls">
-        {recentCalls.map((call, index) => (
-          <CallCard call={call} key={call.id || call.callId || index} />
+        {callGroups.map((group, index) => (
+          <CallCard call={group.latest} callGroup={group} key={group.key || group.latest?.id || group.latest?.callId || index} />
         ))}
-        {recentCalls.length ? null : <Text style={styles.muted}>Forwarded calls will appear here.</Text>}
+        {callGroups.length ? null : <Text style={styles.muted}>Forwarded calls will appear here.</Text>}
       </Card>
     </>
   );
 }
 
-function CallCard({ call }) {
+function CallCard({ call, callGroup }) {
   const complete = call.completion === "complete" || call.bookings?.length;
   const incomplete = call.completion === "incomplete" || call.outcome?.hungUpEarly;
   const transcript = formatCallTranscript(call);
   const vehicle = call.bookings?.[0]?.vehicle || call.leads?.[0]?.vehicle || "";
   const missing = call.bookings?.[0]?.confidence?.missing || call.leads?.[0]?.confidence?.missing || [];
+  const repeatCalls = callGroup?.calls || [call];
   return (
     <LinearGradient colors={complete ? ["#f5fff8", "#fffaff"] : incomplete ? ["#fff7ed", "#fffaff"] : ["#fffaff", "#f7fffb"]} style={styles.listCard}>
       <View style={styles.listHeader}>
         <Text style={styles.listTitle} numberOfLines={1}>{formatPhone(call.caller || call.from || "Unknown caller")}</Text>
-        <Text style={styles.pill}>{call.durationLabel || formatDuration(call.durationSeconds) || "No time"}</Text>
+        <Text style={styles.pill}>{repeatCalls.length > 1 ? `${repeatCalls.length} calls` : call.durationLabel || formatDuration(call.durationSeconds) || "No time"}</Text>
       </View>
       <View style={styles.callChipRow}>
         <Text style={[styles.smallChip, complete && styles.smallChipOk, incomplete && styles.smallChipWarn]}>{call.displayStatus || call.outcome?.label || "Logged"}</Text>
@@ -1480,6 +1482,16 @@ function CallCard({ call }) {
       <Text style={styles.record}>{cleanCallDetail(call.outcome?.detail || "Call logged for review.")}</Text>
       {vehicle ? <Text style={styles.record}>Vehicle: {vehicle}</Text> : null}
       {missing.length ? <Text style={styles.warningText}>Needs: {missing.join(", ")}</Text> : null}
+      {repeatCalls.length > 1 ? (
+        <View style={styles.transcriptBox}>
+          <Text style={styles.linkLabel}>Caller history</Text>
+          {repeatCalls.slice(0, 5).map((item, index) => (
+            <Text style={styles.record} key={item.id || item.callId || index}>
+              {index === 0 ? "Latest: " : ""}{formatDateTime(item.startedAt || item.createdAt)} - {item.displayStatus || item.outcome?.label || "Logged"}{item.durationLabel ? ` - ${item.durationLabel}` : ""}{item.smsStatus && item.smsStatus !== "none" ? ` - SMS ${item.smsStatus}` : ""}
+            </Text>
+          ))}
+        </View>
+      ) : null}
       <View style={styles.transcriptBox}>
         <Text style={styles.linkLabel}>Transcript</Text>
         <ScrollView style={styles.transcriptScroll} nestedScrollEnabled>
@@ -1488,6 +1500,29 @@ function CallCard({ call }) {
       </View>
     </LinearGradient>
   );
+}
+
+function groupCallsByCaller(calls = []) {
+  const grouped = new Map();
+  for (const call of calls) {
+    const key = getCallCallerKey(call);
+    if (!grouped.has(key)) {
+      grouped.set(key, { key, caller: call.caller || call.from || "", calls: [] });
+    }
+    const group = grouped.get(key);
+    group.calls.push(call);
+    if (!group.caller && (call.caller || call.from)) group.caller = call.caller || call.from;
+  }
+  return [...grouped.values()]
+    .map((group) => {
+      const sorted = group.calls.sort((a, b) => String(b.startedAt || b.createdAt || "").localeCompare(String(a.startedAt || a.createdAt || "")));
+      return { ...group, calls: sorted, latest: sorted[0] };
+    })
+    .sort((a, b) => String(b.latest?.startedAt || b.latest?.createdAt || "").localeCompare(String(a.latest?.startedAt || a.latest?.createdAt || "")));
+}
+
+function getCallCallerKey(call = {}) {
+  return normalizeE164(call.caller || call.from || "") || String(call.caller || call.from || call.callId || call.id || "unknown");
 }
 
 function formatCallTranscript(call = {}) {
