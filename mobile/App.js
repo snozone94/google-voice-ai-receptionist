@@ -233,6 +233,9 @@ export default function App() {
         const access = await apiGet(targetBaseUrl, "/api/access-check", accessPin).catch(() => null);
         setSignedInStaff(access?.ok ? access : null);
         setStatus(access?.ok ? `Signed in as ${access.name || "DDD team"} (${access.role || "staff"}).` : "Connected. Code not recognized yet.");
+        if (access?.ok) {
+          enablePushNotifications(accessPin, { quiet: true }).catch(() => {});
+        }
       } else {
         setSignedInStaff(null);
         setStatus(conversationsResponse.locked ? "Connected. Enter admin or tech code to load inbox." : "Connected to DDD AI Dispatch.");
@@ -360,13 +363,14 @@ export default function App() {
     }
   }
 
-  async function enablePushNotifications() {
+  async function enablePushNotifications(accessPin = adminPin, options = {}) {
+    const quiet = Boolean(options.quiet);
     if (Platform.OS === "web") {
-      setPushStatus("Open the iPhone app build to enable native push notifications.");
+      if (!quiet) setPushStatus("Open the iPhone app build to enable native push notifications.");
       return;
     }
 
-    setPushStatus("Requesting notification permission...");
+    if (!quiet) setPushStatus("Requesting notification permission...");
     try {
       if (Platform.OS === "android") {
         await Notifications.setNotificationChannelAsync("ddd-dispatch", {
@@ -388,7 +392,7 @@ export default function App() {
         return;
       }
       if (!Device.isDevice) {
-        setPushStatus("Permission is on. Remote push tokens need a real iPhone build.");
+        if (!quiet) setPushStatus("Permission is on. Remote push tokens need a real iPhone build.");
         return;
       }
 
@@ -400,9 +404,9 @@ export default function App() {
         token,
         platform: Platform.OS,
         staffPhone
-      }, adminPin);
+      }, accessPin);
       setPushStatus("Native push is connected on this phone.");
-      setStatus("Push notifications connected.");
+      if (!quiet) setStatus("Push notifications connected.");
     } catch (error) {
       setPushStatus(error.message);
       setStatus(error.message);
@@ -416,6 +420,8 @@ export default function App() {
           content: {
             title: "DDD AI Dispatch",
             body: "This is how new call and text alerts will show on your phone.",
+            sound: "default",
+            interruptionLevel: "timeSensitive",
             data: { type: "local-test" }
           },
           trigger: null
@@ -460,7 +466,7 @@ export default function App() {
               pushStatus={pushStatus}
               pushToken={pushToken}
               isAdmin={isAdmin}
-              onEnablePush={enablePushNotifications}
+              onEnablePush={() => enablePushNotifications()}
               onRefresh={() => loadAll(cleanBaseUrl, adminPin)}
               onSaveBaseUrl={saveBaseUrl}
               onSaveSettings={() => saveSettings("manual")}
@@ -1456,7 +1462,7 @@ function CallsTab({ adminPin, apiBaseUrl, calls, insights, setStatus, setStaffPh
 function CallCard({ call }) {
   const complete = call.completion === "complete" || call.bookings?.length;
   const incomplete = call.completion === "incomplete" || call.outcome?.hungUpEarly;
-  const transcript = call.transcriptText || call.transcript?.map((item) => `${item.speaker || "Call"}: ${item.text}`).join("\n") || "";
+  const transcript = formatCallTranscript(call);
   const vehicle = call.bookings?.[0]?.vehicle || call.leads?.[0]?.vehicle || "";
   const missing = call.bookings?.[0]?.confidence?.missing || call.leads?.[0]?.confidence?.missing || [];
   return (
@@ -1476,10 +1482,27 @@ function CallCard({ call }) {
       {missing.length ? <Text style={styles.warningText}>Needs: {missing.join(", ")}</Text> : null}
       <View style={styles.transcriptBox}>
         <Text style={styles.linkLabel}>Transcript</Text>
-        <Text style={styles.record} numberOfLines={12}>{transcript || "Transcript will appear after the call is processed."}</Text>
+        <ScrollView style={styles.transcriptScroll} nestedScrollEnabled>
+          <Text style={styles.transcriptText}>{transcript || "Transcript will appear after the call is processed."}</Text>
+        </ScrollView>
       </View>
     </LinearGradient>
   );
+}
+
+function formatCallTranscript(call = {}) {
+  if (call.transcriptText) return String(call.transcriptText).replace(/\n{3,}/g, "\n\n").trim();
+  if (Array.isArray(call.transcript)) {
+    return call.transcript
+      .map((item) => {
+        const speaker = String(item.speaker || item.role || "Call").replace(/_/g, " ");
+        const text = String(item.text || item.content || item.message || "").trim();
+        return text ? `${speaker}: ${text}` : "";
+      })
+      .filter(Boolean)
+      .join("\n\n");
+  }
+  return "";
 }
 
 function PeriodInsight({ label, period = {} }) {
@@ -2501,6 +2524,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     backgroundColor: "rgba(255, 255, 255, 0.72)",
     padding: 10
+  },
+  transcriptScroll: {
+    maxHeight: 240,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.58)",
+    padding: 10
+  },
+  transcriptText: {
+    color: "#243047",
+    flexWrap: "wrap",
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 19
   },
   teamCodeCard: {
     gap: 10,

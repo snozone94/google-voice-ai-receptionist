@@ -581,6 +581,7 @@ app.post("/api/calls/outbound", express.json(), async (req, res, next) => {
     }
 
     const delivery = await startTwilioBridgeCall(staffPhone, customerPhone, callerId);
+    const failureReason = delivery.error || delivery.reason || "";
     await saveCallEvent({
       type: "twilio.outbound.call",
       call_id: delivery.sid || "",
@@ -590,13 +591,17 @@ app.post("/api/calls/outbound", express.json(), async (req, res, next) => {
         staff: staff.name,
         staffRole: staff.role,
         customerPhone,
+        failureReason,
+        failureCode: delivery.code || "",
         from: delivery.from || process.env.TWILIO_VOICE_FROM || process.env.TWILIO_SMS_FROM || process.env.AI_FORWARDING_NUMBER || ""
       }
     });
     queueTeamNotification(
       {
         title: delivery.ok ? "DDD callback started" : "DDD callback failed",
-        body: `${staff.name || "DDD team"} is calling ${formatPhoneForAlert(customerPhone)}.`,
+        body: delivery.ok
+          ? `${staff.name || "DDD team"} is calling ${formatPhoneForAlert(customerPhone)}.`
+          : `${staff.name || "DDD team"} could not call ${formatPhoneForAlert(customerPhone)}${failureReason ? `: ${failureReason}` : "."}`,
         data: {
           type: "staff-outbound-call",
           to: customerPhone,
@@ -604,12 +609,19 @@ app.post("/api/calls/outbound", express.json(), async (req, res, next) => {
           callId: delivery.sid || "",
           staff: staff.name || "DDD team",
           staffRole: staff.role || "staff",
-          status: delivery.ok ? "initiated" : "failed"
+          status: delivery.ok ? "initiated" : "failed",
+          error: failureReason,
+          code: delivery.code || ""
         }
       },
       "staff-outbound-call"
     );
-    res.status(delivery.ok ? 201 : 502).json({ ok: delivery.ok, delivery, staff });
+    res.status(delivery.ok ? 201 : 502).json({
+      ok: delivery.ok,
+      error: delivery.ok ? "" : failureReason || "Callback failed. Check Twilio voice setup, verified caller ID, and account balance.",
+      delivery,
+      staff
+    });
   } catch (error) {
     next(error);
   }
@@ -2815,6 +2827,9 @@ async function notifyTeam({ title, body, data = {} }) {
     .map((subscription) => ({
       to: subscription.token,
       sound: "default",
+      priority: "high",
+      channelId: "ddd-dispatch",
+      interruptionLevel: "time-sensitive",
       title,
       body,
       data: {
