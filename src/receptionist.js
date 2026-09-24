@@ -127,7 +127,7 @@ const defaultNoiseHandling = {
   eagerness: "low",
   interruptResponse: false,
   notes:
-    "Protect the opening greeting: finish the full first greeting without stopping for breathing, phone rustle, road noise, background voices, or tiny filler sounds. After asking a question, listen until the caller clearly finishes. Do not cut yourself off unless the caller is clearly speaking a full interruption. Be patient with elderly callers, strong accents, dialect differences, speech delays, and people whose first language is not English. If a caller uses Spanish or another language, keep the call simple, ask whether English is okay, and continue in the caller's language when you can."
+    "Protect the opening greeting: finish the full first greeting without stopping for breathing, phone rustle, road noise, background voices, or tiny filler sounds. After asking a question, listen until the caller clearly finishes. Do not cut yourself off unless the caller is clearly speaking a full interruption. English is the default language. Be patient with elderly callers, strong accents, dialect differences, speech delays, and people whose first language is not English. Never switch languages because of an accent, name, country, nationality, or dialect. Only switch away from English if the caller clearly asks for another language or speaks mostly in that language after you ask a simple English clarification."
 };
 const defaultNotificationPreferences = {
   newCalls: true,
@@ -1389,9 +1389,13 @@ Voice and manner:
 - Keep answers short enough for a phone call, usually one or two sentences.
 - Ask one question at a time.
 - Let the caller finish before responding, and do not over-explain.
+- Default to English for every call.
+- Never switch to Spanish or any other language just because of the caller's accent, race, name, nationality, country, dialect, or because English is not their first language.
+- Strong accents and non-native English still mean: stay in clear, patient English unless the caller explicitly asks for another language.
+- If the caller speaks mostly in another language, first ask in simple English: "Is English okay?" Switch only if they clearly say no or continue mostly in that language.
+- If unsure whether a word was English or another language, keep using English and ask one simple clarification.
 - Be patient with elderly callers, strong accents, dialect differences, code-switching, and people whose first language is not English.
 - If the caller seems confused, hard of hearing, or slower to answer, slow down slightly, use plain words, and confirm only the detail that matters.
-- If the caller speaks Spanish or another non-English language, ask briefly if English is okay. If not, continue in the caller's language when possible while still collecting the same DDD intake details.
 - Use natural acknowledgements like "I can help with that" or "Let me grab a few details."
 - For booking or urgent service calls, reassure the caller once: "This will be quick, and I can make the booking for you." Use this idea naturally, then do not repeat it.
 - If the caller names a specific bookable service, such as "oil change", "brakes", "battery install", "jump start", "lockout", "flat tire", or "fuel delivery", do not ask whether they need roadside, routine service, emergency help, or another category. Treat the named service as the intent and ask for the next missing booking detail.
@@ -1712,7 +1716,7 @@ export function callAcceptPayload(business, settings = {}) {
           model: "gpt-4o-mini-transcribe",
           prompt: settings.verificationMode
             ? "This is a Google Voice verification call. Listen for a six digit numeric code."
-            : "Phone call with a DDD receptionist. Transcribe caller details, names, phone numbers, service requests, locations, appointment times, accents, dialects, and mixed-language speech. English is the default, but callers may use Spanish or another language."
+            : "Phone call with a DDD receptionist. English is the default. Transcribe caller details, names, phone numbers, service requests, locations, appointment times, accents, dialects, and mixed-language speech accurately. Do not infer a non-English language from accent, nationality, or name; only transcribe another language when the caller actually speaks it."
         },
         turn_detection: {
           type: "semantic_vad",
