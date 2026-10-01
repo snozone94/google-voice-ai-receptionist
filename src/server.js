@@ -1029,12 +1029,21 @@ app.post("/api/twilio/call-status", express.urlencoded({ extended: false }), asy
     const isEarlyHangup = normalizedStatus === "completed" && durationSeconds > 0 && durationSeconds <= earlyHangupSeconds;
     if (isMissed || isEarlyHangup) {
       const reason = isEarlyHangup ? `hung up after ${durationSeconds}s` : status || "missed";
+      const rescueSms = await sendMissedCallSms(req.body.From || "", reason);
       await notifyTeamTracked({
         title: "DDD call needs review",
-        body: `${formatPhoneForAlert(req.body.From || "")} ${isEarlyHangup ? reason : `ended as ${reason}`}.`,
-        data: { type: isEarlyHangup ? "early-hangup" : "missed-call", status, durationSeconds, from: req.body.From || "" }
+        body: `${formatPhoneForAlert(req.body.From || "")} ${isEarlyHangup ? reason : `ended as ${reason}`}. Rescue text ${
+          rescueSms?.ok ? (rescueSms.skipped ? "already handled" : "sent") : "failed"
+        }.`,
+        data: {
+          type: isEarlyHangup ? "early-hangup" : "missed-call",
+          status,
+          durationSeconds,
+          from: req.body.From || "",
+          smsStatus: rescueSms?.ok ? (rescueSms.skipped ? "skipped" : "sent") : "failed",
+          smsReason: rescueSms?.reason || rescueSms?.error || ""
+        }
       }, "call-needs-review");
-      await sendMissedCallSms(req.body.From || "", reason);
     } else if (normalizedStatus === "completed") {
       await notifyTeamTracked({
         title: "DDD call completed",
@@ -2365,25 +2374,24 @@ async function sendMissedCallSms(to, status = "") {
   const normalizedTo = normalizeE164(to);
   if (!normalizedTo || process.env.MISSED_CALL_SMS_ENABLED === "false") {
     console.warn(`Missed-call SMS skipped: ${normalizedTo ? "disabled" : "missing caller number"}`);
-    return;
+    return { ok: false, skipped: true, reason: normalizedTo ? "Missed-call SMS is disabled." : "Missing caller number." };
   }
 
   const dedupeMinutes = Number(process.env.MISSED_CALL_SMS_DEDUPE_MINUTES || 30) || 30;
   const recentWindowMs = Math.max(1, dedupeMinutes) * 60 * 1000;
   const recentMessages = await listSms(300);
-  const now = Date.now();
-  const alreadyTexted = recentMessages.some((message) => {
-    if (message.direction !== "outbound" || normalizeE164(message.to) !== normalizedTo) return false;
-    if (!/call_start|completed_call|missed_call|alert_audit/.test(message.source || "")) return false;
-    const sentAt = Date.parse(message.createdAt || "");
-    return Number.isFinite(sentAt) && now - sentAt <= recentWindowMs;
-  });
+  const alreadyTexted = hasRecentSuccessfulSms(recentMessages, normalizedTo, recentWindowMs, ["missed_call"]);
   if (alreadyTexted) {
-    console.log(`Missed-call SMS skipped for ${formatPhoneForAlert(normalizedTo)}: recent call SMS already exists.`);
-    return { ok: true, skipped: true, reason: "Recent call SMS already exists." };
+    console.log(`Missed-call SMS skipped for ${formatPhoneForAlert(normalizedTo)}: recent rescue SMS already exists.`);
+    return { ok: true, skipped: true, reason: "Recent rescue SMS already exists." };
   }
 
-  const message = appendStopFooter(callSelfServiceSmsMessage(process.env.MISSED_CALL_SMS_MESSAGE));
+  const message = appendStopFooter(
+    callSelfServiceSmsMessage(
+      process.env.MISSED_CALL_SMS_MESSAGE,
+      `Thanks for calling DDD. Sorry we missed you or the call dropped. You do not have to stay on the AI call. Reply here with your service, vehicle, and location, or book/manage service: iPhone ${iosAppUrl()} Android ${androidAppUrl()} Web ${bookingUrl()}`
+    )
+  );
   const delivery = await sendTwilioSms(normalizedTo, message);
   console.log(`Missed-call SMS ${delivery.ok ? "sent" : "failed"} to ${formatPhoneForAlert(normalizedTo)}${delivery.error ? `: ${delivery.error}` : ""}`);
   await saveOutgoingSms({
@@ -2396,6 +2404,13 @@ async function sendMissedCallSms(to, status = "") {
     source: "missed_call",
     reason: status
   });
+  if (!delivery.ok) {
+    queueTeamNotification({
+      title: "DDD rescue text failed",
+      body: `Could not send the missed-call text to ${formatPhoneForAlert(normalizedTo)}. Use the inbox/callback button.`,
+      data: { type: "sms-failed", from: normalizedTo, reason: delivery.error || delivery.reason || "missed-call SMS failed" }
+    }, "missed-call-sms-failed");
+  }
   return delivery;
 }
 
@@ -2430,13 +2445,12 @@ async function sendCallStartSmsIfNeeded(to) {
   const dedupeMinutes = Number(process.env.CALL_START_SMS_DEDUPE_MINUTES || 30) || 30;
   const recentWindowMs = Math.max(1, dedupeMinutes) * 60 * 1000;
   const recentMessages = await listSms(300);
-  const now = Date.now();
-  const alreadyTexted = recentMessages.some((message) => {
-    if (message.direction !== "outbound" || normalizeE164(message.to) !== normalizedTo) return false;
-    if (!/call_start|completed_call|missed_call|alert_audit/.test(message.source || "")) return false;
-    const sentAt = Date.parse(message.createdAt || "");
-    return Number.isFinite(sentAt) && now - sentAt <= recentWindowMs;
-  });
+  const alreadyTexted = hasRecentSuccessfulSms(recentMessages, normalizedTo, recentWindowMs, [
+    "call_start",
+    "completed_call",
+    "missed_call",
+    "alert_audit"
+  ]);
   if (alreadyTexted) {
     console.log(`Call-start SMS skipped for ${formatPhoneForAlert(normalizedTo)}: recent call SMS already exists.`);
     return { ok: true, skipped: true, reason: "Recent call SMS already exists." };
@@ -2473,12 +2487,7 @@ async function sendCompletedCallSmsIfNeeded(to, status = "") {
   const dedupeMinutes = Number(process.env.CALL_FOLLOWUP_SMS_DEDUPE_MINUTES || 15) || 15;
   const recentWindowMs = Math.max(1, dedupeMinutes) * 60 * 1000;
   const recentMessages = await listSms(300);
-  const now = Date.now();
-  const alreadyTexted = recentMessages.some((message) => {
-    if (message.direction !== "outbound" || normalizeE164(message.to) !== normalizedTo) return false;
-    const sentAt = Date.parse(message.createdAt || "");
-    return Number.isFinite(sentAt) && now - sentAt <= recentWindowMs;
-  });
+  const alreadyTexted = hasRecentSuccessfulSms(recentMessages, normalizedTo, recentWindowMs);
   if (alreadyTexted) {
     console.log(`Completed-call SMS skipped for ${formatPhoneForAlert(normalizedTo)}: recent outbound SMS already exists.`);
     return { ok: true, skipped: true, reason: "Recent outbound SMS already exists." };
@@ -2503,6 +2512,24 @@ async function sendCompletedCallSmsIfNeeded(to, status = "") {
     reason: status || "completed"
   });
   return delivery;
+}
+
+function hasRecentSuccessfulSms(messages = [], normalizedTo = "", recentWindowMs = 0, sources = []) {
+  const now = Date.now();
+  const allowedSources = new Set(sources.filter(Boolean));
+  return messages.some((message) => {
+    if (message.direction !== "outbound" || normalizeE164(message.to) !== normalizedTo) return false;
+    if (allowedSources.size && !allowedSources.has(message.source || "")) return false;
+    if (!isSuccessfulSmsStatus(message.status)) return false;
+    const sentAt = Date.parse(message.createdAt || "");
+    return Number.isFinite(sentAt) && now - sentAt <= recentWindowMs;
+  });
+}
+
+function isSuccessfulSmsStatus(status = "") {
+  const normalized = String(status || "").toLowerCase();
+  if (!normalized) return true;
+  return ["accepted", "queued", "sending", "sent", "delivered"].includes(normalized);
 }
 
 function formatAlertDuration(seconds = 0) {
