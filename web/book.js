@@ -12,7 +12,7 @@ form.addEventListener("submit", async (event) => {
 
   if (response.ok) {
     form.reset();
-    statusEl.textContent = "Thanks. DDD received your booking request.";
+    statusEl.textContent = "Thanks. Your DDD booking request is in.";
   } else {
     statusEl.textContent = "Something went wrong. Please call DDD again.";
   }
