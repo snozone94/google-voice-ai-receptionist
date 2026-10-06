@@ -1,38 +1,4 @@
-Thanks for calling DDD. Reply with the service, vehicle, and location, or book here: {{link}}. DDD Mobile: iPhone {{iosAppLink}} Android {{androidAppLink}}. Reply STOP to stop.<Text style={[styles.textBubbleBody, message.direction === "outbound" && styles.textBubbleBodyOutbound]}>{cleanConversationBody(message.body || message.text || "")}</Text>if (conversation.lastMessage || conversation.preview) return cleanConversationBody(conversation.lastMessage || conversation.preview);return cleanConversationBody(last?.body || last?.message || last?.text || "No message preview available.");function getConversationTime(conversation = {}) {
-  const last = conversation.messages?.at?.(-1);
-  return conversation.updatedAt || conversation.lastAt || last?.createdAt || last?.at || "";
-}
-
-function cleanConversationBody(value = "") {
-  const raw = String(value || "").replace(/\s+/g, " ").trim();
-  if (!raw) return "";
-  const withoutCallPrefix = raw.replace(/^Call:\s*/i, "").trim();
-  const statusLabel = formatMessageStatus(withoutCallPrefix);
-  if (statusLabel && (withoutCallPrefix !== raw || /staff-sms-reply|email-sent|push-\d+|sms-[\w-]+/i.test(raw))) {
-    return statusLabel;
-  }
-  return raw.replace(/^Call:\s*/i, "Call received: ");
-}
-
-function formatMessageStatus(value = "") {
-  const status = String(value || "").toLowerCase();
-  if (!status) return "";
-  if (/staff-sms-reply/.test(status) && /failed/.test(status)) return "Text reply failed";
-  if (/sms/.test(status) && /failed/.test(status)) return "Text failed";
-  if (/failed/.test(status)) return "Failed";
-  if (/delivered|sent/.test(status)) return "Sent";
-  if (/queued|sending|accepted/.test(status)) return "Sending";
-  if (/received/.test(status)) return "";
-  if (/email-sent/.test(status) && /push-\d+/.test(status)) return "Alerts sent";
-  if (/email-sent/.test(status)) return "Email alert sent";
-  if (/push-\d+/.test(status)) return "Push alert sent";
-  if (/completed|complete/.test(status)) return "Completed";
-  if (/busy/.test(status)) return "Busy";
-  if (/no-answer|missed/.test(status)) return "Missed";
-  return "";
-}
-
-function buildQuickRepliesHi, this is DDD. What service do you need, what vehicle is it for, and what is the service location? Reply STOP to stop.Book here: https://dddcincy.com/book-service/ DDD Mobile: iPhone https://apps.apple.com/app/id6762315831 Android https://play.google.com/store/apps/details?id=com.dddroadside.mobile Reply STOP to stop.Please send the exact address or nearest cross streets, plus the vehicle color. Reply STOP to stop.Got it. DDD has this and will follow up shortly. Reply STOP to stop.Do you already have the parts/materials, or should DDD confirm them? For tire/brake work, include quantity or position. Reply STOP to stop.import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import { LinearGradient } from "expo-linear-gradient";
@@ -145,7 +111,7 @@ const blankSettings = {
   smsFollowUp: {
     enabled: true,
     message:
-      "Thanks for calling DDD. Your request was received: {{link}}. iPhone users: open DDD Mobile in the App Store and log in with the same phone number used for booking. Android users: open DDD Mobile in Google Play and log in with the same phone number. Website backup: {{webLoginLink}}. Reply here if anything changes. Reply STOP to stop."
+      "Thanks for calling DDD. Reply with the service, vehicle, and location, or book here: {{link}}. DDD Mobile: iPhone {{iosAppLink}} Android {{androidAppLink}}. Reply STOP to stop."
   },
   reviewFollowUp: {
     enabled: true,
@@ -1318,7 +1284,7 @@ function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChang
             <Text style={[styles.textBubbleLabel, message.direction === "outbound" && styles.textBubbleLabelOutbound]}>
               {message.direction === "outbound" ? message.agentName || "DDD" : "Customer"}
             </Text>
-            <Text style={[styles.textBubbleBody, message.direction === "outbound" && styles.textBubbleBodyOutbound]}>{message.body || message.text || ""}</Text>
+            <Text style={[styles.textBubbleBody, message.direction === "outbound" && styles.textBubbleBodyOutbound]}>{cleanConversationBody(message.body || message.text || "")}</Text>
           </View>
         )) : <Text style={styles.record} numberOfLines={3}>{getConversationPreview(conversation)}</Text>}
       </ScrollView>
@@ -2028,9 +1994,9 @@ function getConversationName(conversation = {}) {
 }
 
 function getConversationPreview(conversation = {}) {
-  if (conversation.lastMessage || conversation.preview) return conversation.lastMessage || conversation.preview;
+  if (conversation.lastMessage || conversation.preview) return cleanConversationBody(conversation.lastMessage || conversation.preview);
   const last = conversation.messages?.at?.(-1);
-  return last?.body || last?.message || last?.text || "No message preview available.";
+  return cleanConversationBody(last?.body || last?.message || last?.text || "No message preview available.");
 }
 
 function getConversationTime(conversation = {}) {
@@ -2038,16 +2004,45 @@ function getConversationTime(conversation = {}) {
   return conversation.updatedAt || conversation.lastAt || last?.createdAt || last?.at || "";
 }
 
+function cleanConversationBody(value = "") {
+  const raw = String(value || "").replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+  const withoutCallPrefix = raw.replace(/^Call:\s*/i, "").trim();
+  const statusLabel = formatMessageStatus(withoutCallPrefix);
+  if (statusLabel && (withoutCallPrefix !== raw || /staff-sms-reply|email-sent|push-\d+|sms-[\w-]+/i.test(raw))) {
+    return statusLabel;
+  }
+  return raw.replace(/^Call:\s*/i, "Call received: ");
+}
+
+function formatMessageStatus(value = "") {
+  const status = String(value || "").toLowerCase();
+  if (!status) return "";
+  if (/staff-sms-reply/.test(status) && /failed/.test(status)) return "Text reply failed";
+  if (/sms/.test(status) && /failed/.test(status)) return "Text failed";
+  if (/failed/.test(status)) return "Failed";
+  if (/delivered|sent/.test(status)) return "Sent";
+  if (/queued|sending|accepted/.test(status)) return "Sending";
+  if (/received/.test(status)) return "";
+  if (/email-sent/.test(status) && /push-\d+/.test(status)) return "Alerts sent";
+  if (/email-sent/.test(status)) return "Email alert sent";
+  if (/push-\d+/.test(status)) return "Push alert sent";
+  if (/completed|complete/.test(status)) return "Completed";
+  if (/busy/.test(status)) return "Busy";
+  if (/no-answer|missed/.test(status)) return "Missed";
+  return "";
+}
+
 function buildQuickReplies(conversation = {}, settings = blankSettings) {
   const text = `${conversation.lastBody || ""} ${(conversation.messages || []).map((message) => message.body || message.text || "").join(" ")}`.toLowerCase();
   const base = [
     {
       label: "Professional follow-up",
-      text: "Hi, this is DDD. Thanks for reaching out. What service do you need, what vehicle is it for, and what is the service location? Reply STOP to stop."
+      text: "Hi, this is DDD. What service do you need, what vehicle is it for, and what is the service location? Reply STOP to stop."
     },
     {
       label: "Booking link",
-      text: "No problem. You can book/manage service here: https://dddcincy.com/book-service/ iPhone users can use DDD Mobile: https://apps.apple.com/app/id6762315831 Android users can use DDD Mobile: https://play.google.com/store/apps/details?id=com.dddroadside.mobile Reply STOP to stop."
+      text: "Book here: https://dddcincy.com/book-service/ DDD Mobile: iPhone https://apps.apple.com/app/id6762315831 Android https://play.google.com/store/apps/details?id=com.dddroadside.mobile Reply STOP to stop."
     },
     {
       label: "Google review",
@@ -2055,11 +2050,11 @@ function buildQuickReplies(conversation = {}, settings = blankSettings) {
     },
     {
       label: "Get location",
-      text: "Can you send the exact address or nearest cross streets, plus the vehicle color? That helps us route the request faster. Reply STOP to stop."
+      text: "Please send the exact address or nearest cross streets, plus the vehicle color. Reply STOP to stop."
     },
     {
       label: "On it",
-      text: "Got it. We received your request and will follow up with the next step shortly. Reply STOP to stop."
+      text: "Got it. DDD has this and will follow up shortly. Reply STOP to stop."
     }
   ];
   if (/complain|refund|damage|upset|manager|bad/i.test(text)) {
@@ -2075,7 +2070,7 @@ function buildQuickReplies(conversation = {}, settings = blankSettings) {
     return [
       {
         label: "Parts/details",
-        text: "Thanks. Do you already have the needed parts/materials, or do you need DDD to confirm them? For tire/brake work, please include quantity or position. Reply STOP to stop."
+        text: "Do you already have the parts/materials, or should DDD confirm them? For tire/brake work, include quantity or position. Reply STOP to stop."
       },
       ...base
     ];
