@@ -1,4 +1,4 @@
-import "dotenv/config";
+Thanks. DDD has this. Reply here with updates. Text STOP to stop.Sorry we missed you. Reply with the service, vehicle, and location, or book here: ${bookingUrl()} DDD Mobile: iPhone ${iosAppUrl()} Android ${androidAppUrl()}Thanks for calling DDD. Reply with the service, vehicle, and location, or book here: ${bookingUrl()} DDD Mobile: iPhone ${iosAppUrl()} Android ${androidAppUrl()}Thanks for calling DDD. Reply here with updates, or book here: ${bookingUrl()} DDD Mobile: iPhone ${iosAppUrl()} Android ${androidAppUrl()}.Thanks for calling DDD. Reply with the service, vehicle, and location, or book here: ${bookingUrl()} DDD Mobile: iPhone ${iosAppUrl()} Android ${androidAppUrl()}.Thanks. Your DDD booking request is in.import "dotenv/config";
 import crypto from "node:crypto";
 import express from "express";
 import fs from "node:fs/promises";
