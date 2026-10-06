@@ -1,4 +1,44 @@
-const callButton = document.querySelector("#callButton");
+Thanks for calling DDD. Reply with the service, vehicle, and location, or book here: {{link}}. DDD Mobile: iPhone {{iosAppLink}} Android {{androidAppLink}}. Reply STOP to stop.<span>${escapeHtml(cleanConversationBody(conversation.lastBody || "No message body"))}</span>const meta = [
+      message.direction === "outbound" ? message.agentName || "DDD team" : "Customer",
+      formatTime(message.createdAt),
+      formatMessageStatus(message.status)
+    ]
+      .filter(Boolean)
+      .join(" · ");<p>${escapeHtml(cleanConversationBody(message.body || ""))}</p>addReply("Follow up", `Hi, this is DDD. We got your ${service} request. Send any updates, photos, or timing changes here.`);? `Please confirm the service location here: ${locationUrl}`
+        : "Please send the exact address, business name, or nearest cross street for service."addReply("Get vehicle", "Please send the vehicle year, make, model, and color. If parts/materials are needed, let us know if you already have them.");addReply("Tire details", "Is it one tire or multiple? Does the vehicle have a wheel lock or special key, and do you have it with you?");addReply("Parts check", "Do you already have the parts/materials, or should DDD confirm what is needed first?");addReply("Payment", "DDD accepts cash, card, tap pay, and installments. No checks. Final price depends on the service details.");addReply("Reschedule", "No problem. Reply with the new day/time that works best and DDD will confirm.");addReply("Complaint", "I’m sorry about that. Please send the job details, what happened, and the best callback number. You can also email support@dddcincy.com.");addReply("Photo link", `Upload photos here: ${booking?.photoUploadUrl || "https://dddcincy.com/customer-photo-upload/"}`);addReply("On it", "Thanks. DDD has this and will follow up shortly.");addReply("Booking link", "Book or manage service here: https://dddcincy.com/book-service/");addReply("Call back soon", "Thanks for reaching out. DDD has your message and will follow up as soon as possible.");function cleanCallText(value = "") {
+  const text = String(value || "");
+  if (/sip|routing|twilio reported/i.test(text)) return "The call is logged for review.";
+  return text;
+}
+
+function cleanConversationBody(value = "") {
+  const raw = String(value || "").replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+  const withoutCallPrefix = raw.replace(/^Call:\s*/i, "").trim();
+  const statusLabel = formatMessageStatus(withoutCallPrefix);
+  if (statusLabel && (withoutCallPrefix !== raw || /staff-sms-reply|email-sent|push-\d+|sms-[\w-]+/i.test(raw))) {
+    return statusLabel;
+  }
+  return raw.replace(/^Call:\s*/i, "Call received: ");
+}
+
+function formatMessageStatus(value = "") {
+  const status = String(value || "").toLowerCase();
+  if (!status) return "";
+  if (/staff-sms-reply/.test(status) && /failed/.test(status)) return "Text reply failed";
+  if (/sms/.test(status) && /failed/.test(status)) return "Text failed";
+  if (/failed/.test(status)) return "Failed";
+  if (/delivered|sent/.test(status)) return "Sent";
+  if (/queued|sending|accepted/.test(status)) return "Sending";
+  if (/received/.test(status)) return "";
+  if (/email-sent/.test(status) && /push-\d+/.test(status)) return "Alerts sent";
+  if (/email-sent/.test(status)) return "Email alert sent";
+  if (/push-\d+/.test(status)) return "Push alert sent";
+  if (/completed|complete/.test(status)) return "Completed";
+  if (/busy/.test(status)) return "Busy";
+  if (/no-answer|missed/.test(status)) return "Missed";
+  return "";
+}const callButton = document.querySelector("#callButton");
 const hangupButton = document.querySelector("#hangupButton");
 const statusEl = document.querySelector("#status");
 const leadForm = document.querySelector("#leadForm");
