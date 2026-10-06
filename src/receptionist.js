@@ -1,29 +1,4 @@
-const status = call.status || (call.durationSeconds ? `completed in ${formatDuration(call.durationSeconds)}` : "call received");
-    const callNote = formatConversationCallNote(call, status);
-    if (!conversations.has(key)) {lastMessageAt: call.createdAt,
-        lastBody: callNote,to: call.to || "",
-        body: callNote,conversation.lastMessageAt = call.createdAt;
-      conversation.lastBody = callNote;    .sort((a, b) => String(b.lastMessageAt).localeCompare(String(a.lastMessageAt)));
-}
-
-function formatConversationCallNote(call = {}, status = "") {
-  const display = call.displayStatus || call.outcome?.label || getCallDisplayStatus(status, call.outcome || {}, call.bookings || [], call.leads || []);
-  return getCleanStatusLabel(display || status || "Call received");
-}
-
-export async function archiveConversationfunction getCleanStatusLabel(value = "") {
-  const status = String(value).toLowerCase();
-  if (/staff-sms-reply/.test(status) && /failed/.test(status)) return "Text reply failed";
-  if (/sms/.test(status) && /failed/.test(status)) return "Text failed";
-  if (/email-sent/.test(status) && /push-\d+/.test(status)) return "Alerts sent";
-  if (/email-sent/.test(status)) return "Email alert sent";
-  if (/push-\d+/.test(status)) return "Push alert sent";If the caller asks how to check the booking, say DDD will text the app and website options. Do not read long links out loud.if (/DDD Mobile: iPhone/i.test(text) && /Android/i.test(text)) return text;const reviewLink = settings.reviewFollowUp?.url || defaultReviewFollowUpUrl;
-  const webLoginLink = process.env.DDD_WEB_LOGIN_URL || "https://dddcincy.com/login";
-  const iosAppLink = process.env.DDD_IOS_APP_URL || "https://apps.apple.com/app/id6762315831";
-  const androidAppLink = process.env.DDD_ANDROID_APP_URL || "https://play.google.com/store/apps/details?id=com.dddroadside.mobile";.replaceAll("{{webLoginLink}}", webLoginLink)
-    .replaceAll("{{iosAppLink}}", iosAppLink)
-    .replaceAll("{{androidAppLink}}", androidAppLink)
-    .replaceAll("{{reviewLink}}", reviewLink)import fs from "node:fs/promises";
+import fs from "node:fs/promises";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -72,7 +47,7 @@ const defaultHumanHandoffRules =
 const defaultApplyInstructions =
   "For work, contractor, technician, or job-interest calls, collect name, phone, email, role or service type, experience, and location, then direct them to the DDD apply to work link.";
 const defaultSmsFollowUpText =
-  "Thanks for calling {{business}}. Your request was received: {{link}}. Add photos if needed: {{photoUploadLink}}. iPhone users: open DDD Mobile and log in with this phone number. Non-iPhone users: log in at {{webLoginLink}}. Reply here if anything changes. Reply STOP to stop.";
+  "Thanks for calling DDD. Reply with the service, vehicle, and location, or book here: {{link}}. DDD Mobile: iPhone {{iosAppLink}} Android {{androidAppLink}}. Reply STOP to stop.";
 const defaultReviewFollowUpUrl = "https://g.page/r/CfVinSqxHOIDEAE/review";
 const defaultReviewFollowUpText =
   "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}";
@@ -1149,11 +1124,12 @@ export async function listConversations(limit = 200) {
     const key = normalizeConversationPhone(call.from);
     if (!key) continue;
     const status = call.status || (call.durationSeconds ? `completed in ${formatDuration(call.durationSeconds)}` : "call received");
+    const callNote = formatConversationCallNote(call, status);
     if (!conversations.has(key)) {
       conversations.set(key, {
         phone: key,
         lastMessageAt: call.createdAt,
-        lastBody: `Call: ${status}`,
+        lastBody: callNote,
         unread: 1,
         bookings: bookingsByPhone.get(key) || [],
         messages: []
@@ -1167,7 +1143,7 @@ export async function listConversations(limit = 200) {
         direction: "call",
         from: key,
         to: call.to || "",
-        body: `Call: ${status}`,
+        body: callNote,
         messageSid: `call:${call.callId || call.createdAt}`,
         status,
         agentName: "DDD AI Dispatch",
@@ -1176,7 +1152,7 @@ export async function listConversations(limit = 200) {
     }
     if (String(call.createdAt || "").localeCompare(String(conversation.lastMessageAt || "")) > 0) {
       conversation.lastMessageAt = call.createdAt;
-      conversation.lastBody = `Call: ${status}`;
+      conversation.lastBody = callNote;
     }
   }
 
@@ -1187,6 +1163,11 @@ export async function listConversations(limit = 200) {
       messages: conversation.messages.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
     }))
     .sort((a, b) => String(b.lastMessageAt).localeCompare(String(a.lastMessageAt)));
+}
+
+function formatConversationCallNote(call = {}, status = "") {
+  const display = call.displayStatus || call.outcome?.label || getCallDisplayStatus(status, call.outcome || {}, call.bookings || [], call.leads || []);
+  return getCleanStatusLabel(display || status || "Call received");
 }
 
 export async function archiveConversation(phone, archivedBy = "DDD team") {
@@ -1344,6 +1325,11 @@ function getCallDisplayStatus(status, outcome = {}, bookings = [], leads = []) {
 
 function getCleanStatusLabel(value = "") {
   const status = String(value).toLowerCase();
+  if (/staff-sms-reply/.test(status) && /failed/.test(status)) return "Text reply failed";
+  if (/sms/.test(status) && /failed/.test(status)) return "Text failed";
+  if (/email-sent/.test(status) && /push-\d+/.test(status)) return "Alerts sent";
+  if (/email-sent/.test(status)) return "Email alert sent";
+  if (/push-\d+/.test(status)) return "Push alert sent";
   if (/routing|sip|incoming|accepted|in-progress|ringing|queued|initiated/.test(status)) return "Connected";
   if (/completed|complete/.test(status)) return "Completed";
   if (/busy/.test(status)) return "Busy";
@@ -1510,7 +1496,7 @@ SMS follow-up:
 - Message template: ${activeSettings.smsFollowUp.message}
 - All outbound SMS must include opt-out wording: "Reply STOP to stop." If the template already includes it, do not repeat it.
 - Use the most relevant DDD destination as {{link}}. Do not use a booking/customer tracking URL for immediate SMS until a technician is assigned, active, or en route.
-- If the caller asks how to check the booking, say iPhone users can use the DDD Mobile app link and non-iPhone users can use the dddcincy.com login link, and that DDD will text those instructions. Do not read the links out loud.
+- If the caller asks how to check the booking, say DDD will text the app and website options. Do not read long links out loud.
 - When calling save_lead or save_booking_request, set smsConsent to true only if the caller clearly agreed to receive the text.
 - If SMS delivery is not connected yet, still save the caller's phone number and best next link.
 
@@ -1915,7 +1901,7 @@ function appendMissingGuidance(value, fallback, additions) {
 
 function migrateSmsMessage(message) {
   const text = cleanLongText(message, defaultSmsFollowUpText, 500);
-  if (/iPhone users: open the DDD Mobile app link/i.test(text) && /Non-iPhone users: log in/i.test(text)) return text;
+  if (/DDD Mobile: iPhone/i.test(text) && /Android/i.test(text)) return text;
   if (/Here is the best next link for your request|Use this link for the best next step/i.test(text)) return defaultSmsFollowUpText;
   return text;
 }
@@ -2617,10 +2603,14 @@ function renderSmsTemplate(template, destination, settings = {}, record = {}) {
   const fallbackLink = destination?.url || process.env.BOOKING_URL || "";
   const reviewLink = settings.reviewFollowUp?.url || defaultReviewFollowUpUrl;
   const webLoginLink = process.env.DDD_WEB_LOGIN_URL || "https://dddcincy.com/login";
+  const iosAppLink = process.env.DDD_IOS_APP_URL || "https://apps.apple.com/app/id6762315831";
+  const androidAppLink = process.env.DDD_ANDROID_APP_URL || "https://play.google.com/store/apps/details?id=com.dddroadside.mobile";
   const photoUploadLink = record.photoUploadUrl || record.customerStatusUrl || fallbackLink;
   return appendSmsCompliance(String(template || defaultSmsFollowUpText)
     .replaceAll("{{link}}", fallbackLink)
     .replaceAll("{{webLoginLink}}", webLoginLink)
+    .replaceAll("{{iosAppLink}}", iosAppLink)
+    .replaceAll("{{androidAppLink}}", androidAppLink)
     .replaceAll("{{reviewLink}}", reviewLink)
     .replaceAll("{{photoUploadLink}}", photoUploadLink)
     .replaceAll("{{business}}", "DDD")
