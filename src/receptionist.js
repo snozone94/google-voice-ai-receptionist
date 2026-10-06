@@ -1,4 +1,29 @@
-import fs from "node:fs/promises";
+const status = call.status || (call.durationSeconds ? `completed in ${formatDuration(call.durationSeconds)}` : "call received");
+    const callNote = formatConversationCallNote(call, status);
+    if (!conversations.has(key)) {lastMessageAt: call.createdAt,
+        lastBody: callNote,to: call.to || "",
+        body: callNote,conversation.lastMessageAt = call.createdAt;
+      conversation.lastBody = callNote;    .sort((a, b) => String(b.lastMessageAt).localeCompare(String(a.lastMessageAt)));
+}
+
+function formatConversationCallNote(call = {}, status = "") {
+  const display = call.displayStatus || call.outcome?.label || getCallDisplayStatus(status, call.outcome || {}, call.bookings || [], call.leads || []);
+  return getCleanStatusLabel(display || status || "Call received");
+}
+
+export async function archiveConversationfunction getCleanStatusLabel(value = "") {
+  const status = String(value).toLowerCase();
+  if (/staff-sms-reply/.test(status) && /failed/.test(status)) return "Text reply failed";
+  if (/sms/.test(status) && /failed/.test(status)) return "Text failed";
+  if (/email-sent/.test(status) && /push-\d+/.test(status)) return "Alerts sent";
+  if (/email-sent/.test(status)) return "Email alert sent";
+  if (/push-\d+/.test(status)) return "Push alert sent";If the caller asks how to check the booking, say DDD will text the app and website options. Do not read long links out loud.if (/DDD Mobile: iPhone/i.test(text) && /Android/i.test(text)) return text;const reviewLink = settings.reviewFollowUp?.url || defaultReviewFollowUpUrl;
+  const webLoginLink = process.env.DDD_WEB_LOGIN_URL || "https://dddcincy.com/login";
+  const iosAppLink = process.env.DDD_IOS_APP_URL || "https://apps.apple.com/app/id6762315831";
+  const androidAppLink = process.env.DDD_ANDROID_APP_URL || "https://play.google.com/store/apps/details?id=com.dddroadside.mobile";.replaceAll("{{webLoginLink}}", webLoginLink)
+    .replaceAll("{{iosAppLink}}", iosAppLink)
+    .replaceAll("{{androidAppLink}}", androidAppLink)
+    .replaceAll("{{reviewLink}}", reviewLink)import fs from "node:fs/promises";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
