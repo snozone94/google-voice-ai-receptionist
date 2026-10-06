@@ -1,4 +1,4 @@
-Thanks. DDD has this. Reply here with updates. Text STOP to stop.Sorry we missed you. Reply with the service, vehicle, and location, or book here: ${bookingUrl()} DDD Mobile: iPhone ${iosAppUrl()} Android ${androidAppUrl()}Thanks for calling DDD. Reply with the service, vehicle, and location, or book here: ${bookingUrl()} DDD Mobile: iPhone ${iosAppUrl()} Android ${androidAppUrl()}Thanks for calling DDD. Reply here with updates, or book here: ${bookingUrl()} DDD Mobile: iPhone ${iosAppUrl()} Android ${androidAppUrl()}.Thanks for calling DDD. Reply with the service, vehicle, and location, or book here: ${bookingUrl()} DDD Mobile: iPhone ${iosAppUrl()} Android ${androidAppUrl()}.Thanks. Your DDD booking request is in.import "dotenv/config";
+import "dotenv/config";
 import crypto from "node:crypto";
 import express from "express";
 import fs from "node:fs/promises";
@@ -64,7 +64,7 @@ const appReviewConversations = [
       {
         direction: "outbound",
         to: "+15135550144",
-        body: "DDD received your roadside request. Reply here with any updates. Text STOP to stop.",
+        body: "Thanks. DDD has this. Reply here with updates. Text STOP to stop.",
         agentName: "DDD AI",
         createdAt: "2026-08-29T14:20:00.000Z"
       }
@@ -2389,7 +2389,7 @@ async function sendMissedCallSms(to, status = "") {
   const message = appendStopFooter(
     callSelfServiceSmsMessage(
       process.env.MISSED_CALL_SMS_MESSAGE,
-      `Thanks for calling DDD. Sorry we missed you or the call dropped. You do not have to stay on the AI call. Reply here with your service, vehicle, and location, or book/manage service: iPhone ${iosAppUrl()} Android ${androidAppUrl()} Web ${bookingUrl()}`
+      `Sorry we missed you. Reply with the service, vehicle, and location, or book here: ${bookingUrl()} DDD Mobile: iPhone ${iosAppUrl()} Android ${androidAppUrl()}`
     )
   );
   const delivery = await sendTwilioSms(normalizedTo, message);
@@ -2459,7 +2459,7 @@ async function sendCallStartSmsIfNeeded(to) {
   const message = appendStopFooter(
     callSelfServiceSmsMessage(
       process.env.CALL_START_SMS_MESSAGE,
-      `Thanks for calling DDD. No worries if you do not want to stay on the AI call. Reply here with your service, vehicle, and location, or book/manage service here: iPhone users can use DDD Mobile ${iosAppUrl()} ; Android users can use DDD Mobile ${androidAppUrl()} ; or book on the website at ${bookingUrl()}`
+      `Thanks for calling DDD. Reply with the service, vehicle, and location, or book here: ${bookingUrl()} DDD Mobile: iPhone ${iosAppUrl()} Android ${androidAppUrl()}`
     )
   );
   const delivery = await sendTwilioSms(normalizedTo, message);
@@ -2496,7 +2496,7 @@ async function sendCompletedCallSmsIfNeeded(to, status = "") {
   const message = appendStopFooter(
     callSelfServiceSmsMessage(
       process.env.COMPLETED_CALL_SMS_MESSAGE,
-      `Thanks for calling DDD. Reply here with any updates or details and our team can text you back. Book or manage service here: ${bookingUrl()}. iPhone users can use DDD Mobile: ${iosAppUrl()}. Android users can use DDD Mobile: ${androidAppUrl()}.`
+      `Thanks for calling DDD. Reply here with updates, or book here: ${bookingUrl()} DDD Mobile: iPhone ${iosAppUrl()} Android ${androidAppUrl()}.`
     )
   );
   const delivery = await sendTwilioSms(normalizedTo, message);
@@ -2727,7 +2727,7 @@ function androidAppUrl() {
 }
 
 function defaultCallerSelfServiceSms() {
-  return `Thanks for calling DDD. No worries if you do not want to stay on the AI call. You can reply here with your service, vehicle, and location. iPhone users can use DDD Mobile: ${iosAppUrl()}. Android users can use DDD Mobile: ${androidAppUrl()}. Website booking: ${bookingUrl()}.`;
+  return `Thanks for calling DDD. Reply with the service, vehicle, and location, or book here: ${bookingUrl()} DDD Mobile: iPhone ${iosAppUrl()} Android ${androidAppUrl()}.`;
 }
 
 function callSelfServiceSmsMessage(customMessage = "", fallbackMessage = defaultCallerSelfServiceSms()) {
@@ -3379,7 +3379,7 @@ function bookingPage() {
         });
         if (response.ok) {
           form.reset();
-          statusEl.textContent = "Thanks. DDD received your booking request.";
+          statusEl.textContent = "Thanks. Your DDD booking request is in.";
         } else {
           statusEl.textContent = "Something went wrong. Please call or text DDD.";
         }
