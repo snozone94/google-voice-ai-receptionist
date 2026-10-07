@@ -1285,6 +1285,9 @@ function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChang
               {message.direction === "outbound" ? message.agentName || "DDD" : "Customer"}
             </Text>
             <Text style={[styles.textBubbleBody, message.direction === "outbound" && styles.textBubbleBodyOutbound]}>{cleanConversationBody(message.body || message.text || "")}</Text>
+            {getDeliveryIssue(message) ? (
+              <Text style={[styles.deliveryIssue, message.direction === "outbound" && styles.deliveryIssueOutbound]}>{getDeliveryIssue(message)}</Text>
+            ) : null}
           </View>
         )) : <Text style={styles.record} numberOfLines={3}>{getConversationPreview(conversation)}</Text>}
       </ScrollView>
@@ -2015,6 +2018,17 @@ function cleanConversationBody(value = "") {
   return raw.replace(/^Call:\s*/i, "Call received: ");
 }
 
+function getDeliveryIssue(message = {}) {
+  const status = String(message.status || "").toLowerCase();
+  if (!/failed|undelivered|error/.test(status)) return "";
+  const reason = String(message.errorMessage || message.reason || "").replace(/\s+/g, " ").trim();
+  const code = String(message.errorCode || "").trim();
+  if (reason && code) return `Delivery issue ${code}: ${reason}`;
+  if (reason) return `Delivery issue: ${reason}`;
+  if (code) return `Delivery issue ${code}`;
+  return "Delivery issue: Twilio could not send this text.";
+}
+
 function formatMessageStatus(value = "") {
   const status = String(value || "").toLowerCase();
   if (!status) return "";
@@ -2647,6 +2661,8 @@ const styles = StyleSheet.create({
   textBubbleLabelOutbound: { color: "#a81586" },
   textBubbleBody: { color: "#203040", fontSize: 13, lineHeight: 18 },
   textBubbleBodyOutbound: { color: "#3f2140" },
+  deliveryIssue: { color: "#9f1239", fontSize: 11, fontWeight: "900", marginTop: 6 },
+  deliveryIssueOutbound: { color: "#a81586" },
   insightRow: { alignItems: "center", borderTopColor: "#f0edf8", borderTopWidth: 1, flexDirection: "row", justifyContent: "space-between", gap: 12, paddingTop: 10 },
   miniList: {
     gap: 7,
