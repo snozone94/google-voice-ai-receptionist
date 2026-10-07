@@ -1976,10 +1976,13 @@ async function fetchDddPlatformTeam() {
   if (secret) headers["x-ddd-ai-secret"] = secret;
 
   try {
-    const response = await fetch(url, {
-      headers,
-      signal: AbortSignal.timeout(5000)
-    });
+    const [response, roleOverrides] = await Promise.all([
+      fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(5000)
+      }),
+      fetchDddRoleOverrides()
+    ]);
     if (!response.ok) {
       console.warn(`DDD team sync failed: ${response.status}`);
       return { configured: true, team: [] };
@@ -1998,7 +2001,7 @@ async function fetchDddPlatformTeam() {
             : [];
     return {
       configured: true,
-      team: records.map(normalizePlatformTeamMember).filter((entry) => entry.name)
+      team: records.map((member) => normalizePlatformTeamMember(member, roleOverrides)).filter((entry) => entry.name)
     };
   } catch (error) {
     console.warn(`DDD team sync failed: ${error.message}`);
@@ -2028,14 +2031,18 @@ async function authenticateDddPlatformStaff(code) {
     if (!response.ok || !(payload.token_matches || payload.can_manage_jobs || payload.ok)) {
       return { ok: false };
     }
-    return {
+    const roleOverrides = await fetchDddRoleOverrides();
+    const staff = {
       ok: true,
       id: String(payload.tech_id || ""),
       name: String(payload.tech_label || payload.name || "DDD Tech").replace(/\s+/g, " ").trim().slice(0, 80),
+      email: String(payload.email || payload.user_email || "").trim().slice(0, 120),
+      code: submittedCode,
       role: normalizeStaffRole(payload.role || payload.type || "tech", payload),
       availability: payload.availability || "available",
       source: "ddd-platform"
     };
+    return applyStaffRoleOverride(staff, roleOverrides);
   } catch (error) {
     console.warn(`DDD platform staff auth failed: ${error.message}`);
     return { ok: false };
@@ -2052,6 +2059,45 @@ function dddPlatformAuthUrl() {
   return "";
 }
 
+function dddRoleOverridesUrl() {
+  const explicit = String(process.env.DDD_TECH_ROLE_OVERRIDES_URL || "").trim();
+  if (explicit) return explicit;
+  const teamUrl = String(process.env.DDD_TECH_TEAM_URL || "").trim();
+  if (!teamUrl) return "";
+  if (/\/techs\/?$/i.test(teamUrl)) return teamUrl.replace(/\/techs\/?$/i, "/ai-dispatch-roles");
+  if (/\/technicians\/?$/i.test(teamUrl)) return teamUrl.replace(/\/technicians\/?$/i, "/ai-dispatch-roles");
+  return "";
+}
+
+async function fetchDddRoleOverrides() {
+  const url = dddRoleOverridesUrl();
+  if (!url) return [];
+  try {
+    const response = await fetch(url, {
+      headers: dddPlatformHeaders(),
+      signal: AbortSignal.timeout(5000)
+    });
+    if (!response.ok) {
+      console.warn(`DDD role override sync failed: ${response.status}`);
+      return [];
+    }
+    const payload = await response.json().catch(() => ({}));
+    const records = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload.roles)
+        ? payload.roles
+        : Array.isArray(payload.overrides)
+          ? payload.overrides
+          : Array.isArray(payload.data)
+            ? payload.data
+            : [];
+    return records.map(normalizeRoleOverride).filter(Boolean);
+  } catch (error) {
+    console.warn(`DDD role override sync failed: ${error.message}`);
+    return [];
+  }
+}
+
 function dddPlatformHeaders(techToken = "") {
   const headers = { Accept: "application/json" };
   const token = String(techToken || process.env.DDD_TECH_TEAM_TOKEN || "").trim();
@@ -2059,7 +2105,7 @@ function dddPlatformHeaders(techToken = "") {
   return headers;
 }
 
-function normalizePlatformTeamMember(member = {}) {
+function normalizePlatformTeamMember(member = {}, roleOverrides = []) {
   const code = String(
     member.inbox_code ||
       member.dispatch_code ||
@@ -2071,12 +2117,13 @@ function normalizePlatformTeamMember(member = {}) {
   )
     .replace(/\s+/g, "")
     .slice(0, 32);
-  return {
+  const entry = {
     id: String(member.id || member.tech_id || member.user_id || member.uuid || ""),
     name: String(member.name || member.tech_label || member.full_name || member.display_name || member.email || "")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 80),
+    email: String(member.email || member.user_email || "").trim().slice(0, 120),
     phone: normalizeE164(member.phone || member.mobile_phone || member.phone_number || member.profile?.phone || ""),
     code,
     role: normalizeStaffRole(member.role || member.type || "tech", member)
@@ -2087,6 +2134,61 @@ function normalizePlatformTeamMember(member = {}) {
     availability: member.availability || member.status || "available",
     source: "ddd-platform"
   };
+  return applyStaffRoleOverride(entry, roleOverrides);
+}
+
+function normalizeRoleOverride(record = {}) {
+  const identifier = normalizeRoleIdentifier(record.identifier || record.match || record.value || record.code || record.email || record.phone || record.name || "");
+  const role = normalizeOverrideRole(record.role || record.access || record.type || "");
+  if (!identifier || !role) return null;
+  return {
+    label: String(record.label || record.name || identifier).replace(/\s+/g, " ").trim().slice(0, 80),
+    identifier,
+    role,
+    active: record.active !== false && record.disabled !== true
+  };
+}
+
+function applyStaffRoleOverride(staff = {}, roleOverrides = []) {
+  const override = roleOverrides.find((record) => record.active && staffMatchesRoleOverride(staff, record.identifier));
+  if (!override) return staff;
+  return {
+    ...staff,
+    role: normalizeStaffRole(override.role, staff),
+    roleSource: "ddd-platform-override"
+  };
+}
+
+function staffMatchesRoleOverride(staff = {}, identifier = "") {
+  const match = normalizeRoleIdentifier(identifier);
+  if (!match) return false;
+  const values = [
+    staff.id,
+    staff.code,
+    staff.email,
+    staff.name,
+    staff.phone,
+    staff.mobile_phone,
+    staff.phone_number
+  ].map(normalizeRoleIdentifier).filter(Boolean);
+  return values.some((value) => value === match);
+}
+
+function normalizeOverrideRole(role = "") {
+  const normalized = String(role || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (!normalized) return "";
+  if (["admin", "administrator", "owner", "super_admin", "dispatch_admin"].includes(normalized)) return "admin";
+  if (normalized === "manager") return "manager";
+  if (["dispatcher", "dispatch"].includes(normalized)) return "dispatcher";
+  if (["read_only", "readonly", "viewer", "view_only"].includes(normalized)) return "read_only";
+  return "tech";
+}
+
+function normalizeRoleIdentifier(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 }
 
 function dedupeTeam(team) {
