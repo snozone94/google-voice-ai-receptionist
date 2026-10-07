@@ -1025,7 +1025,9 @@ export async function saveOutgoingSms(message) {
     status: cleanText(message.SmsStatus || message.status || "sent", "sent", 80),
     agentName: cleanText(message.agentName || "DDD team", "DDD team", 80),
     source: cleanText(message.source || "", "", 80),
-    reason: cleanText(message.reason || "", "", 160)
+    reason: cleanText(message.reason || "", "", 160),
+    errorCode: cleanText(message.errorCode || message.code || "", "", 40),
+    errorMessage: cleanText(message.errorMessage || message.error || "", "", 240)
   };
   await ensureDataDir();
   await fs.appendFile(smsPath, `${JSON.stringify(record)}\n`);

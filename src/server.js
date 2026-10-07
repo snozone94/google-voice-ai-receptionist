@@ -537,7 +537,9 @@ app.post("/api/sms/reply", express.json(), async (req, res, next) => {
       body: message,
       messageSid: delivery.sid || "",
       status: delivery.status || (delivery.ok ? "sent" : "failed"),
-      agentName
+      agentName,
+      errorCode: delivery.code || "",
+      errorMessage: delivery.error || delivery.reason || ""
     });
     queueTeamNotification(
       {
@@ -751,7 +753,9 @@ app.post("/api/alerts/audit", express.json(), async (req, res, next) => {
         status: smsResult.status || (smsResult.ok ? "sent" : "failed"),
         agentName: "Alert audit",
         source: "alert_audit",
-        reason: "manual-test"
+        reason: "manual-test",
+        errorCode: smsResult.code || "",
+        errorMessage: smsResult.error || smsResult.reason || ""
       });
       console.log(`Alert audit SMS ${smsResult.ok ? "sent" : "failed"} to ${formatPhoneForAlert(phone)}${smsResult.error ? `: ${smsResult.error}` : ""}`);
     }
@@ -806,6 +810,12 @@ app.post("/api/twilio/outbound-bridge", express.urlencoded({ extended: false }),
   const from =
     normalizeOutboundCallerId(req.query.callerId || req.body?.callerId) ||
     normalizeE164(process.env.TWILIO_VOICE_FROM || process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || process.env.AI_FORWARDING_NUMBER);
+  const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+  const secret = String(req.query.secret || process.env.TWILIO_SMS_WEBHOOK_SECRET || "");
+  const dialStatusUrl =
+    publicBaseUrl && secret
+      ? `${publicBaseUrl}/api/twilio/outbound-dial-status?secret=${encodeURIComponent(secret)}&staff=${encodeURIComponent(req.body?.To || req.query.staff || "")}&customer=${encodeURIComponent(to || "")}`
+      : "";
   if (!to || !from) {
     res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>DDD could not connect this outbound call.</Say></Response>`);
     return;
@@ -814,8 +824,82 @@ app.post("/api/twilio/outbound-bridge", express.urlencoded({ extended: false }),
   res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">Connecting your DDD call now.</Say>
-  <Dial callerId="${escapeXml(from)}">${escapeXml(to)}</Dial>
+  <Dial callerId="${xmlEscape(from)}" answerOnBridge="true"${dialStatusUrl ? ` action="${xmlEscape(dialStatusUrl)}" method="POST"` : ""}>${xmlEscape(to)}</Dial>
 </Response>`);
+});
+
+app.post("/api/twilio/outbound-status", express.urlencoded({ extended: false }), async (req, res, next) => {
+  try {
+    if (!hasTwilioSmsAccess(req)) {
+      res.status(403).send("Forbidden");
+      return;
+    }
+    const status = String(req.body.CallStatus || req.body.callStatus || "").toLowerCase();
+    const customerPhone = normalizeE164(req.query.customer || req.body?.customer || "");
+    const staffPhone = normalizeE164(req.query.staff || req.body?.To || req.body?.to || "");
+    const durationSeconds = Number(req.body.CallDuration || req.body.callDuration || 0) || 0;
+    await saveCallEvent({
+      type: "twilio.outbound.status",
+      call_id: req.body.CallSid || req.body.callSid || "",
+      caller: staffPhone,
+      status: status || "unknown",
+      details: {
+        staffPhone,
+        customerPhone,
+        durationSeconds,
+        from: req.body.From || "",
+        to: req.body.To || "",
+        leg: "staff"
+      }
+    });
+    if (/busy|failed|no-answer|canceled|cancelled/.test(status)) {
+      await notifyTeamTracked({
+        title: "DDD callback did not connect",
+        body: `Outbound callback to ${formatPhoneForAlert(customerPhone || staffPhone)} ended as ${status || "failed"}.`,
+        data: { type: "outbound-call-failed", status, from: staffPhone, to: customerPhone, durationSeconds }
+      }, "outbound-call-failed");
+    }
+    res.type("text/xml").send("<Response></Response>");
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/twilio/outbound-dial-status", express.urlencoded({ extended: false }), async (req, res, next) => {
+  try {
+    if (!hasTwilioSmsAccess(req)) {
+      res.status(403).send("Forbidden");
+      return;
+    }
+    const status = String(req.body.DialCallStatus || req.body.CallStatus || "").toLowerCase();
+    const customerPhone = normalizeE164(req.query.customer || req.body?.DialCallTo || "");
+    const staffPhone = normalizeE164(req.query.staff || req.body?.From || "");
+    const durationSeconds = Number(req.body.DialCallDuration || req.body.CallDuration || 0) || 0;
+    await saveCallEvent({
+      type: "twilio.outbound.customer.status",
+      call_id: req.body.DialCallSid || req.body.CallSid || "",
+      caller: customerPhone,
+      status: status || "unknown",
+      details: {
+        staffPhone,
+        customerPhone,
+        durationSeconds,
+        from: req.body.From || "",
+        to: req.body.To || "",
+        leg: "customer"
+      }
+    });
+    if (/busy|failed|no-answer|canceled|cancelled/.test(status)) {
+      await notifyTeamTracked({
+        title: "DDD customer callback failed",
+        body: `${formatPhoneForAlert(customerPhone)} did not connect${status ? `: ${status}` : "."}`,
+        data: { type: "customer-callback-failed", status, from: staffPhone, to: customerPhone, durationSeconds }
+      }, "customer-callback-failed");
+    }
+    res.type("text/xml").send("<Response></Response>");
+  } catch (error) {
+    next(error);
+  }
 });
 
 async function handleTwilioVoice(req, res, next) {
@@ -2402,7 +2486,9 @@ async function sendMissedCallSms(to, status = "") {
     status: delivery.status || (delivery.ok ? "sent" : "failed"),
     agentName: "Missed-call fallback",
     source: "missed_call",
-    reason: status
+    reason: status,
+    errorCode: delivery.code || "",
+    errorMessage: delivery.error || delivery.reason || ""
   });
   if (!delivery.ok) {
     queueTeamNotification({
@@ -2472,7 +2558,9 @@ async function sendCallStartSmsIfNeeded(to) {
     status: delivery.status || (delivery.ok ? "sent" : "failed"),
     agentName: "Call-start fallback",
     source: "call_start",
-    reason: "incoming-call"
+    reason: "incoming-call",
+    errorCode: delivery.code || "",
+    errorMessage: delivery.error || delivery.reason || ""
   });
   return delivery;
 }
@@ -2509,7 +2597,9 @@ async function sendCompletedCallSmsIfNeeded(to, status = "") {
     status: delivery.status || (delivery.ok ? "sent" : "failed"),
     agentName: "Call follow-up",
     source: "completed_call",
-    reason: status || "completed"
+    reason: status || "completed",
+    errorCode: delivery.code || "",
+    errorMessage: delivery.error || delivery.reason || ""
   });
   return delivery;
 }
@@ -2753,13 +2843,17 @@ async function startTwilioBridgeCall(staffPhone, customerPhone, requestedCallerI
     };
   }
 
-  const bridgeUrl = `${publicBaseUrl}/api/twilio/outbound-bridge?secret=${encodeURIComponent(secret)}&to=${encodeURIComponent(customerPhone)}&callerId=${encodeURIComponent(from)}`;
+  const bridgeUrl = `${publicBaseUrl}/api/twilio/outbound-bridge?secret=${encodeURIComponent(secret)}&to=${encodeURIComponent(customerPhone)}&staff=${encodeURIComponent(staffPhone)}&callerId=${encodeURIComponent(from)}`;
+  const statusCallbackUrl = `${publicBaseUrl}/api/twilio/outbound-status?secret=${encodeURIComponent(secret)}&staff=${encodeURIComponent(staffPhone)}&customer=${encodeURIComponent(customerPhone)}`;
   const body = new URLSearchParams({
     From: from,
     To: staffPhone,
     Url: bridgeUrl,
-    Method: "POST"
+    Method: "POST",
+    StatusCallback: statusCallbackUrl,
+    StatusCallbackMethod: "POST"
   });
+  ["initiated", "ringing", "answered", "completed"].forEach((eventName) => body.append("StatusCallbackEvent", eventName));
   const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`, {
     method: "POST",
     headers: {
