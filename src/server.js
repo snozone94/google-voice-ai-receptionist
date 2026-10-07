@@ -415,6 +415,42 @@ app.post("/api/twilio/sms", express.urlencoded({ extended: false }), async (req,
   }
 });
 
+app.post("/api/twilio/sms-status", express.urlencoded({ extended: false }), async (req, res, next) => {
+  try {
+    if (!hasTwilioSmsAccess(req)) {
+      res.status(403).send("Forbidden");
+      return;
+    }
+    const status = String(req.body.MessageStatus || req.body.SmsStatus || req.body.messageStatus || "").toLowerCase();
+    const to = normalizeE164(req.body.To || req.body.to || "");
+    const from = normalizeE164(req.body.From || req.body.from || "");
+    const errorCode = String(req.body.ErrorCode || req.body.errorCode || "").trim();
+    const errorMessage = String(req.body.ErrorMessage || req.body.errorMessage || "").trim();
+    if (/failed|undelivered/.test(status)) {
+      await saveOutgoingSms({
+        to,
+        from,
+        body: "Text delivery failed",
+        messageSid: req.body.MessageSid || req.body.SmsSid || "",
+        status: status || "failed",
+        agentName: "Twilio delivery",
+        source: "delivery_status",
+        reason: "carrier-status",
+        errorCode,
+        errorMessage
+      });
+      await notifyTeamTracked({
+        title: "DDD text delivery failed",
+        body: `Text to ${formatPhoneForAlert(to)} was ${status || "failed"}${errorMessage ? `: ${errorMessage}` : "."}`,
+        data: { type: "sms-delivery-failed", to, from, status, errorCode, errorMessage }
+      }, "sms-delivery-failed");
+    }
+    res.type("text/xml").send("<Response></Response>");
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/sms", async (req, res, next) => {
   try {
     if (!hasSmsReadAccess(req)) {
@@ -2113,6 +2149,11 @@ async function sendTwilioSms(to, message) {
     To: to,
     Body: message
   });
+  const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+  const secret = process.env.TWILIO_SMS_WEBHOOK_SECRET || "";
+  if (publicBaseUrl && secret) {
+    body.set("StatusCallback", `${publicBaseUrl}/api/twilio/sms-status?secret=${encodeURIComponent(secret)}`);
+  }
   const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
     method: "POST",
     headers: {
