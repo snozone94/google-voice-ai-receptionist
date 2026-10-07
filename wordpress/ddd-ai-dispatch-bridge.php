@@ -11,9 +11,12 @@ if (!defined('ABSPATH')) {
 }
 
 const DDD_AI_DISPATCH_RENDER_BASE = 'https://google-voice-ai-receptionist.onrender.com';
+const DDD_AI_DISPATCH_ROLE_OPTION = 'ddd_ai_dispatch_staff_roles';
 
 add_action('init', 'ddd_ai_dispatch_ensure_photo_page');
 add_action('rest_api_init', 'ddd_ai_dispatch_register_routes');
+add_action('admin_menu', 'ddd_ai_dispatch_register_admin_page');
+add_action('admin_post_ddd_ai_dispatch_save_roles', 'ddd_ai_dispatch_save_roles');
 add_shortcode('ddd_ai_dispatch_photo_upload', 'ddd_ai_dispatch_photo_upload_shortcode');
 
 function ddd_ai_dispatch_ensure_photo_page() {
@@ -95,6 +98,147 @@ function ddd_ai_dispatch_register_routes() {
         'permission_callback' => 'ddd_ai_dispatch_auth',
         'callback' => 'ddd_ai_dispatch_booking_photos',
     ]);
+
+    register_rest_route('ddd/v1', '/ai-dispatch-roles', [
+        'methods' => 'GET',
+        'permission_callback' => 'ddd_ai_dispatch_auth',
+        'callback' => 'ddd_ai_dispatch_roles',
+    ]);
+}
+
+function ddd_ai_dispatch_register_admin_page() {
+    add_management_page(
+        'DDD AI Dispatch Roles',
+        'DDD AI Dispatch Roles',
+        'manage_options',
+        'ddd-ai-dispatch-roles',
+        'ddd_ai_dispatch_roles_page'
+    );
+}
+
+function ddd_ai_dispatch_roles_page() {
+    if (!current_user_can('manage_options')) {
+        wp_die(esc_html__('You do not have permission to manage DDD AI Dispatch roles.', 'ddd-ai-dispatch'));
+    }
+
+    $roles = ddd_ai_dispatch_get_roles();
+    $message = isset($_GET['ddd_ai_saved']) ? 'Roles saved. DDD AI Dispatch will pick this up on the next login/refresh.' : '';
+    ?>
+    <div class="wrap">
+      <h1>DDD AI Dispatch Roles</h1>
+      <p>Use this screen to tell DDD AI Dispatch who is an admin, dispatcher, tech, or read-only user. Match each person by TechAssist code, phone, email, user ID, or exact display name.</p>
+      <?php if ($message) : ?>
+        <div class="notice notice-success is-dismissible"><p><?php echo esc_html($message); ?></p></div>
+      <?php endif; ?>
+      <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+        <?php wp_nonce_field('ddd_ai_dispatch_save_roles'); ?>
+        <input type="hidden" name="action" value="ddd_ai_dispatch_save_roles" />
+        <table class="widefat striped" style="max-width:1100px">
+          <thead>
+            <tr>
+              <th>Name/label</th>
+              <th>Match value</th>
+              <th>Role</th>
+              <th>Active</th>
+            </tr>
+          </thead>
+          <tbody id="ddd-ai-role-rows">
+            <?php
+            $rows = array_pad($roles, max(6, count($roles) + 2), []);
+            foreach ($rows as $index => $role) :
+                $selected = $role['role'] ?? 'tech';
+                ?>
+                <tr>
+                  <td><input type="text" name="roles[<?php echo esc_attr($index); ?>][label]" value="<?php echo esc_attr($role['label'] ?? ''); ?>" placeholder="Brianna" style="width:100%" /></td>
+                  <td><input type="text" name="roles[<?php echo esc_attr($index); ?>][identifier]" value="<?php echo esc_attr($role['identifier'] ?? ''); ?>" placeholder="code, phone, email, user ID, or exact name" style="width:100%" /></td>
+                  <td>
+                    <select name="roles[<?php echo esc_attr($index); ?>][role]">
+                      <?php foreach (ddd_ai_dispatch_allowed_roles() as $value => $label) : ?>
+                        <option value="<?php echo esc_attr($value); ?>" <?php selected($selected, $value); ?>><?php echo esc_html($label); ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </td>
+                  <td><label><input type="checkbox" name="roles[<?php echo esc_attr($index); ?>][active]" value="1" <?php checked(($role['active'] ?? true), true); ?> /> Active</label></td>
+                </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+        <p class="description">Recommended: set Bria/Brianna to <strong>Admin</strong>. Regular technicians should stay <strong>Tech</strong>. Dispatchers can see ops tools without being full admins once DDD AI supports that permission level.</p>
+        <?php submit_button('Save DDD AI roles'); ?>
+      </form>
+    </div>
+    <?php
+}
+
+function ddd_ai_dispatch_save_roles() {
+    if (!current_user_can('manage_options')) {
+        wp_die(esc_html__('You do not have permission to manage DDD AI Dispatch roles.', 'ddd-ai-dispatch'));
+    }
+    check_admin_referer('ddd_ai_dispatch_save_roles');
+
+    $incoming = isset($_POST['roles']) && is_array($_POST['roles']) ? wp_unslash($_POST['roles']) : [];
+    $roles = [];
+    foreach ($incoming as $row) {
+        $label = sanitize_text_field($row['label'] ?? '');
+        $identifier = ddd_ai_dispatch_role_identifier($row['identifier'] ?? '');
+        $role = sanitize_key($row['role'] ?? 'tech');
+        if (!$identifier || !array_key_exists($role, ddd_ai_dispatch_allowed_roles())) {
+            continue;
+        }
+        $roles[] = [
+            'label' => $label ?: $identifier,
+            'identifier' => $identifier,
+            'role' => $role,
+            'active' => !empty($row['active']),
+        ];
+    }
+
+    update_option(DDD_AI_DISPATCH_ROLE_OPTION, $roles, false);
+    wp_safe_redirect(add_query_arg('ddd_ai_saved', '1', admin_url('tools.php?page=ddd-ai-dispatch-roles')));
+    exit;
+}
+
+function ddd_ai_dispatch_roles(WP_REST_Request $request) {
+    return [
+        'ok' => true,
+        'roles' => ddd_ai_dispatch_get_roles(),
+    ];
+}
+
+function ddd_ai_dispatch_get_roles() {
+    $roles = get_option(DDD_AI_DISPATCH_ROLE_OPTION, []);
+    return is_array($roles) ? array_values(array_filter(array_map('ddd_ai_dispatch_clean_role', $roles))) : [];
+}
+
+function ddd_ai_dispatch_clean_role($role) {
+    if (!is_array($role)) {
+        return null;
+    }
+    $identifier = ddd_ai_dispatch_role_identifier($role['identifier'] ?? '');
+    $role_name = sanitize_key($role['role'] ?? 'tech');
+    if (!$identifier || !array_key_exists($role_name, ddd_ai_dispatch_allowed_roles())) {
+        return null;
+    }
+    return [
+        'label' => sanitize_text_field($role['label'] ?? $identifier),
+        'identifier' => $identifier,
+        'role' => $role_name,
+        'active' => !empty($role['active']),
+    ];
+}
+
+function ddd_ai_dispatch_role_identifier($value) {
+    return strtolower(trim(preg_replace('/\s+/', ' ', sanitize_text_field((string) $value))));
+}
+
+function ddd_ai_dispatch_allowed_roles() {
+    return [
+        'admin' => 'Admin',
+        'dispatcher' => 'Dispatcher',
+        'manager' => 'Manager',
+        'tech' => 'Tech',
+        'read_only' => 'Read-only',
+    ];
 }
 
 function ddd_ai_dispatch_auth(WP_REST_Request $request) {
