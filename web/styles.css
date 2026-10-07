@@ -1086,6 +1086,12 @@ button:hover:not(:disabled) {
   line-height: 1.35;
 }
 
+.message-bubble .delivery-issue {
+  color: #9f1239;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 .message-bubble.outbound {
   align-self: flex-end;
   color: #fff;
@@ -1099,6 +1105,10 @@ button:hover:not(:disabled) {
 
 .message-bubble.outbound small {
   color: rgba(255, 255, 255, 0.78);
+}
+
+.message-bubble.outbound .delivery-issue {
+  color: #fff4f9;
 }
 
 .reply-form {

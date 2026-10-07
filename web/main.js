@@ -2174,6 +2174,7 @@ function renderSelectedConversation() {
   for (const message of conversation.messages) {
     const bubble = document.createElement("article");
     bubble.className = `message-bubble ${message.direction === "outbound" ? "outbound" : "inbound"}`;
+    const deliveryIssue = getDeliveryIssue(message);
     const meta = [
       message.direction === "outbound" ? message.agentName || "DDD team" : "Customer",
       formatTime(message.createdAt),
@@ -2183,12 +2184,24 @@ function renderSelectedConversation() {
       .join(" · ");
     bubble.innerHTML = `
       <p>${escapeHtml(cleanConversationBody(message.body || ""))}</p>
+      ${deliveryIssue ? `<p class="delivery-issue">${escapeHtml(deliveryIssue)}</p>` : ""}
       <small>${escapeHtml(meta)}</small>
     `;
     messageList.append(bubble);
   }
   messageList.scrollTop = messageList.scrollHeight;
   renderTypingStatus();
+}
+
+function getDeliveryIssue(message = {}) {
+  const status = String(message.status || "").toLowerCase();
+  if (!/failed|undelivered|error/.test(status)) return "";
+  const reason = String(message.errorMessage || message.reason || "").replace(/\s+/g, " ").trim();
+  const code = String(message.errorCode || "").trim();
+  if (reason && code) return `Delivery issue ${code}: ${reason}`;
+  if (reason) return `Delivery issue: ${reason}`;
+  if (code) return `Delivery issue ${code}`;
+  return "Delivery issue: Twilio could not send this text.";
 }
 
 function getLatestConversationBooking(conversation = {}) {
