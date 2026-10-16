@@ -7,6 +7,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Image,
   Linking,
   Platform,
@@ -28,17 +29,16 @@ const adminPrimaryTabs = [
   { name: "Inbox", color: "#16b8ff" },
   { name: "Calls", color: "#ff7a3d" },
   { name: "Bookings", color: "#ffc83d" },
-  { name: "Insights", color: "#23c779", label: "Reports" },
   { name: "More", color: "#ff3ea5" }
 ];
 const staffPrimaryTabs = [
   { name: "Inbox", color: "#16b8ff" },
   { name: "Calls", color: "#ff7a3d" },
   { name: "Bookings", color: "#ffc83d" },
-  { name: "Insights", color: "#23c779", label: "Reports" },
-  { name: "Home", color: "#7657ff" }
+  { name: "More", color: "#ff3ea5" }
 ];
 const adminMoreTabs = [
+  { name: "Insights", color: "#23c779", label: "Insights" },
   { name: "Home", color: "#7657ff" },
   { name: "Team", color: "#23c779" },
   { name: "Voice", color: "#ff3ea5" },
@@ -150,6 +150,7 @@ const blankSettings = {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("Inbox");
+  const [contactPhone, setContactPhone] = useState("");
   const [apiBaseUrl, setApiBaseUrl] = useState(defaultApiBaseUrl);
   const [savedApiBaseUrl, setSavedApiBaseUrl] = useState(defaultApiBaseUrl);
   const [adminPin, setAdminPin] = useState("");
@@ -176,7 +177,7 @@ export default function App() {
   const isAdmin = isAdminStaff(signedInStaff);
   const availableTabs = useMemo(() => (isAdmin ? adminPrimaryTabs : staffPrimaryTabs), [isAdmin]);
   const allowedTabNames = useMemo(
-    () => new Set([...availableTabs, ...(isAdmin ? adminMoreTabs : [])].map((tab) => tab.name)),
+    () => new Set([...availableTabs, ...(isAdmin ? adminMoreTabs : [{ name: "Home" }, { name: "Insights" }])].map((tab) => tab.name)),
     [availableTabs, isAdmin]
   );
 
@@ -438,13 +439,14 @@ export default function App() {
     }
   }
 
+  const WorkspaceContent = activeTab === "Inbox" ? View : ScrollView;
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
       <LinearGradient colors={["#140f2a", "#102d3b", "#33133d"]} style={styles.shell}>
-        <Header business={business} settings={settings} editMode={editMode} signedInStaff={signedInStaff} />
+        <Header business={business} settings={settings} signedInStaff={signedInStaff} onProfile={() => setActiveTab("Home")} onAlerts={() => enablePushNotifications()} />
 
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <WorkspaceContent style={activeTab === "Inbox" ? styles.inboxContent : undefined} contentContainerStyle={activeTab === "Inbox" ? undefined : styles.content} showsVerticalScrollIndicator={false}>
           {activeTab === "Home" ? (
             <HomeTab
               adminPin={adminPin}
@@ -471,6 +473,7 @@ export default function App() {
               onSaveBaseUrl={saveBaseUrl}
               onSaveSettings={() => saveSettings("manual")}
               onUnlockAdmin={() => loadAll(cleanBaseUrl, adminPin)}
+              onSignOut={() => { setAdminPin(""); setSignedInStaff(null); setActivity({ calls: [], leads: [], bookings: [], conversations: [], insights: null }); AsyncStorage.removeItem(adminPinStorageKey); }}
               onSendTestNotification={sendTestNotification}
             />
           ) : null}
@@ -507,6 +510,7 @@ export default function App() {
           ) : null}
           {activeTab === "Inbox" ? (
             <InboxTab
+              initialPhone={contactPhone}
               adminPin={adminPin}
               apiBaseUrl={cleanBaseUrl}
               conversations={activity.conversations}
@@ -523,6 +527,7 @@ export default function App() {
               apiBaseUrl={cleanBaseUrl}
               calls={activity.calls}
               insights={activity.insights}
+              onText={(phone) => { setContactPhone(phone); setActiveTab("Inbox"); }}
               setStatus={setStatus}
               setStaffPhone={setStaffPhone}
               staffPhone={staffPhone}
@@ -537,11 +542,11 @@ export default function App() {
               onRefresh={() => loadAll(cleanBaseUrl, adminPin)}
             />
           ) : null}
-          {isAdmin && activeTab === "More" ? <MoreTab onSelect={setActiveTab} settings={settings} activity={activity} /> : null}
+          {activeTab === "More" ? <MoreTab isAdmin={isAdmin} onSelect={setActiveTab} settings={settings} activity={activity} /> : null}
 
           {loading ? <ActivityIndicator color="#7d4dff" /> : null}
           <Text style={styles.status}>{status}</Text>
-        </ScrollView>
+        </WorkspaceContent>
         <BottomTabs activeTab={activeTab} onSelect={setActiveTab} tabs={availableTabs} />
       </LinearGradient>
     </SafeAreaView>
@@ -549,7 +554,7 @@ export default function App() {
 }
 
 function BottomTabs({ activeTab, onSelect, tabs = staffPrimaryTabs }) {
-  const activePrimary = tabs.some((tab) => tab.name === activeTab) ? activeTab : tabs[0]?.name || "Inbox";
+  const activePrimary = tabs.some((tab) => tab.name === activeTab) ? activeTab : "More";
   return (
     <LinearGradient colors={["rgba(20, 18, 42, 0.96)", "rgba(49, 31, 72, 0.92)"]} style={styles.tabWrap}>
       <View style={styles.tabContent}>
@@ -575,7 +580,7 @@ function BottomTabs({ activeTab, onSelect, tabs = staffPrimaryTabs }) {
   );
 }
 
-function Header({ business, editMode, settings, signedInStaff }) {
+function Header({ settings, signedInStaff, onProfile, onAlerts }) {
   return (
     <LinearGradient colors={["rgba(29, 22, 58, 0.98)", "rgba(28, 48, 75, 0.94)", "rgba(76, 33, 91, 0.96)"]} style={styles.header}>
       <View style={styles.brandRow}>
@@ -583,16 +588,14 @@ function Header({ business, editMode, settings, signedInStaff }) {
           <Image source={require("./assets/icon.png")} style={styles.logo} />
         </LinearGradient>
         <View style={styles.brandCopy}>
-          <Text style={styles.eyebrow}>DDD AI Dispatch</Text>
-          <Text style={styles.title}>{business?.name || "DDD AI Dispatch"}</Text>
+          <Text style={styles.title}>DDD Dispatch</Text>
+          <Pressable onPress={onProfile} accessibilityRole="button" accessibilityLabel="Open account"><Text style={styles.subtitle}>{signedInStaff?.ok ? signedInStaff.name : "Sign in"}</Text></Pressable>
         </View>
         <Text style={[styles.modePill, settings.enabled ? styles.modePillLive : styles.modePillPaused]}>
           {settings.enabled ? "Live" : "Paused"}
         </Text>
+        <Pressable onPress={onAlerts} accessibilityRole="button" accessibilityLabel="Notification settings" style={styles.headerAction}><Text style={styles.headerActionText}>Alerts</Text></Pressable>
       </View>
-      <Text style={styles.subtitle} numberOfLines={1}>
-        {signedInStaff?.ok ? `Signed in as ${signedInStaff.name || "DDD team"}` : "Enter code on Home"} - inbox, calls, texts, dispatch
-      </Text>
       <LinearGradient colors={rainbowColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.heroGlow} />
     </LinearGradient>
   );
@@ -623,8 +626,10 @@ function HomeTab({
   onSaveBaseUrl,
   onSaveSettings,
   onUnlockAdmin,
+  onSignOut,
   onSendTestNotification
 }) {
+  const [accountOpen, setAccountOpen] = useState(false);
   const activeDay = activity?.insights?.sections?.latestActiveDay || activity?.insights?.sections?.daily || {};
   const todayCalls = activeDay.calls ?? activity?.calls?.length ?? 0;
   const weeklyBookings = activity?.insights?.sections?.weekly?.bookings ?? 0;
@@ -634,7 +639,7 @@ function HomeTab({
   const routeLabel = routeMode === "humans" ? "Ring team" : routeMode === "ai" ? "AI only" : "AI + backup";
   return (
     <>
-      <Card title="Sign in once">
+      <Card title={isSignedIn ? "Account" : "Sign in"}>
         <View style={styles.accessBanner}>
           <View style={styles.flexText}>
             <Text style={styles.accessTitle}>{isSignedIn ? `Signed in as ${signedInStaff.name || "DDD team"}` : hasAdminPin ? "Code saved" : "Locked"}</Text>
@@ -650,7 +655,8 @@ function HomeTab({
             {isSignedIn ? "Verified" : hasAdminPin ? "Saved" : "Need code"}
           </Text>
         </View>
-        <View style={styles.pinLoginRow}>
+        {isSignedIn ? <ActionButton label={accountOpen ? "Close account controls" : "Account controls"} onPress={() => setAccountOpen(!accountOpen)} variant="light" /> : null}
+        {(!isSignedIn || accountOpen) ? <View style={styles.pinLoginRow}>
           <View style={styles.pinFieldWrap}>
             <Field
               label="Access code"
@@ -665,7 +671,8 @@ function HomeTab({
           <View style={styles.pinButtonWrap}>
             <ActionButton disabled={loading || !hasAdminPin} label={loading ? "Checking..." : "Unlock"} onPress={onUnlockAdmin} />
           </View>
-        </View>
+        </View> : null}
+        {accountOpen && isSignedIn ? <ActionButton label="Sign out / switch account" variant="light" onPress={onSignOut} /> : null}
         <Text style={styles.muted}>
           {isAdmin
             ? "Admin can edit AI settings, routing, team view, and app setup."
@@ -811,13 +818,12 @@ function HomeTab({
   );
 }
 
-function MoreTab({ activity, onSelect, settings }) {
+function MoreTab({ activity, onSelect, settings, isAdmin }) {
   return (
     <>
       <Card title="More controls">
-        <Text style={styles.muted}>Less clutter up front. Use these when you want to tune how the receptionist talks, asks questions, texts, and learns.</Text>
         <View style={styles.moreGrid}>
-          {adminMoreTabs.map((tab) => (
+          {(isAdmin ? adminMoreTabs : [{ name: "Home", color: "#7657ff", label: "Account & alerts" }, { name: "Insights", color: "#23c779" }]).map((tab) => (
             <Pressable key={tab.name} onPress={() => onSelect(tab.name)} style={styles.moreTile}>
               <LinearGradient colors={[tab.color, "#16b8ff"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.moreTileGradient}>
                 <Text style={styles.moreTileText}>{tab.label || tab.name}</Text>
@@ -1069,12 +1075,15 @@ function TeamTab({ adminPin, editMode, saving, setEditMode, signedInStaff, onSav
   );
 }
 
-function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setStatus, settings, staffPhone }) {
+function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setStatus, settings, staffPhone, initialPhone }) {
+  const [composing, setComposing] = useState(false);
+  const [search, setSearch] = useState("");
   const [drafts, setDrafts] = useState({});
   const [manualPhone, setManualPhone] = useState("");
   const [selectedPhone, setSelectedPhone] = useState("");
   const [workingThread, setWorkingThread] = useState("");
-  const activeConversations = (conversations || []).slice(0, 20);
+  useEffect(() => { if (initialPhone) { setManualPhone(initialPhone); setSelectedPhone(normalizeE164(initialPhone)); } }, [initialPhone]);
+  const activeConversations = (conversations || []).filter((item) => `${getConversationName(item)} ${getConversationCustomer(item)} ${getConversationPreview(item)}`.toLowerCase().includes(search.toLowerCase()));
   const manualNormalizedPhone = normalizeE164(manualPhone);
   const manualConversation =
     manualNormalizedPhone && !activeConversations.some((conversation) => normalizeE164(getConversationCustomer(conversation)) === manualNormalizedPhone)
@@ -1089,7 +1098,6 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
   const selectedConversation =
     activeConversations.find((conversation) => normalizeE164(getConversationCustomer(conversation)) === selectedPhone) ||
     (selectedPhone === manualNormalizedPhone ? manualConversation : null) ||
-    activeConversations[0] ||
     null;
   const selectedCustomerPhone = selectedConversation ? getConversationCustomer(selectedConversation) : "";
 
@@ -1108,6 +1116,9 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
     try {
       await apiPost(apiBaseUrl, "/api/sms/reply", { to, message }, adminPin);
       setDrafts((current) => ({ ...current, [to]: "" }));
+      setManualPhone(to);
+      setSelectedPhone(to);
+      setComposing(false);
       setStatus("Text sent from DDD.");
       onRefresh();
     } catch (error) {
@@ -1159,8 +1170,8 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
 
   return (
     <>
-      <Card title="New text or call">
-        <Text style={styles.muted}>Start a thread or outbound callback with any customer number. Replies still send from DDD.</Text>
+      {!selectedConversation ? <View style={styles.buttonRow}><ActionButton label={composing ? "Close" : "New text / call"} onPress={() => setComposing(!composing)} /><ActionButton label="Refresh" onPress={onRefresh} variant="light" /></View> : <ActionButton label="Back to inbox" variant="light" onPress={() => { setSelectedPhone(""); setManualPhone(""); setComposing(false); }} />}
+      {composing && !selectedConversation ? <ScrollView><Card title="New conversation">
         <View style={styles.manualContactBox}>
           <Text style={styles.linkLabel}>Customer number</Text>
           <Field
@@ -1169,7 +1180,6 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
             onChangeText={(value) => {
               setManualPhone(value);
               const normalized = normalizeE164(value);
-              if (normalized) setSelectedPhone(normalized);
             }}
             value={manualPhone}
           />
@@ -1200,18 +1210,12 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
             />
           </View>
         </View>
-      </Card>
-      <Card title="Shared inbox">
+      </Card></ScrollView> : null}
+      {!selectedConversation && !composing ? <View style={styles.inboxList}>
         {!hasPin ? <Text style={styles.warningText}>Enter your admin or tech access code on Home once to load protected inbox messages.</Text> : null}
         {!normalizeE164(staffPhone) ? <Text style={styles.warningText}>Add your call-back phone on Home before using Call Customer.</Text> : null}
-        <View style={styles.summaryGrid}>
-          <SummaryTile label="Threads" value={activeConversations.length} />
-          <SummaryTile label="Open texts" value={activeConversations.filter((item) => item.messages?.length).length} />
-        </View>
-        <View style={styles.buttonRow}>
-          <ActionButton label="Refresh inbox" onPress={onRefresh} />
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.conversationPicker}>
+        <Field label="Search customers" value={search} onChangeText={setSearch} />
+        <ScrollView contentContainerStyle={styles.conversationPicker}>
           {activeConversations.map((conversation, index) => {
             const customerPhone = getConversationCustomer(conversation);
             const normalized = normalizeE164(customerPhone);
@@ -1231,13 +1235,15 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
                 <Text style={[styles.conversationPreview, active && styles.conversationNumberActive]} numberOfLines={1}>
                   {getConversationPreview(conversation)}
                 </Text>
+                <Text style={styles.conversationNumber}>{formatDateTime(getConversationTime(conversation))}</Text>
               </Pressable>
             );
           })}
         </ScrollView>
-      </Card>
+        {!activeConversations.length ? <Text style={styles.muted}>No conversations found.</Text> : null}
+      </View> : null}
       {selectedConversation ? (
-        <Card title="Conversation">
+        <KeyboardAvoidingView style={{ flex: 1 }} keyboardVerticalOffset={100} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <ConversationCard
             conversation={selectedConversation}
             draft={drafts[normalizeE164(getConversationCustomer(selectedConversation))] || ""}
@@ -1251,17 +1257,17 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
             settings={settings}
             workingThread={workingThread}
           />
-        </Card>
-      ) : (
-        <Card title="Conversation">
-          <Text style={styles.muted}>Texts will appear after SMS is fully live on Twilio.</Text>
-        </Card>
-      )}
+        </KeyboardAvoidingView>
+      ) : null}
     </>
   );
 }
 
 function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChange, onSend, settings, workingThread }) {
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const booking = conversation.bookings?.[0];
   const customerPhone = getConversationCustomer(conversation);
   const normalizedPhone = normalizeE164(customerPhone);
   const recentMessages = conversation.messages || [];
@@ -1270,7 +1276,7 @@ function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChang
   const archiveBusy = workingThread === `archive:${normalizedPhone}`;
   const quickReplies = buildQuickReplies(conversation, settings);
   return (
-    <LinearGradient colors={["#fffaff", "#f7fffb"]} style={styles.conversationBox}>
+    <View style={styles.conversationBox}>
       <View style={styles.listHeader}>
         <View style={styles.flexText}>
           <Text style={styles.listTitle} numberOfLines={1}>{getConversationName(conversation)}</Text>
@@ -1278,6 +1284,13 @@ function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChang
         </View>
         <Text style={styles.pill}>{conversation.messages?.length || 0} msgs</Text>
       </View>
+      <View style={styles.buttonRow}>
+        <ActionButton disabled={callBusy} label={callBusy ? "Calling..." : "Call"} onPress={() => onCall(customerPhone)} variant="light" />
+        <ActionButton label="Customer details" onPress={() => setDetailsOpen(!detailsOpen)} variant="light" />
+        <ActionButton label="More" onPress={() => setMenuOpen(!menuOpen)} variant="light" />
+      </View>
+      {detailsOpen ? <View><Text style={styles.record}>{booking?.serviceType || "No booking"}</Text><Text style={styles.record}>{booking?.vehicle || "Vehicle not saved"}</Text><Text style={styles.record}>{booking?.location || "Location not saved"}</Text>{booking?.customerStatusUrl ? <ActionButton label="Open booking" onPress={() => Linking.openURL(booking.customerStatusUrl)} /> : null}</View> : null}
+      {menuOpen ? <ActionButton disabled={archiveBusy} label="Archive conversation" onPress={() => onArchive(customerPhone)} variant="light" /> : null}
       <ScrollView style={styles.messageThread} contentContainerStyle={styles.messageThreadContent} nestedScrollEnabled>
         {recentMessages.length ? recentMessages.map((message, index) => (
           <View key={`${message.createdAt || index}-${message.direction}`} style={[styles.textBubble, message.direction === "outbound" && styles.textBubbleOutbound]}>
@@ -1285,54 +1298,46 @@ function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChang
               {message.direction === "outbound" ? message.agentName || "DDD" : "Customer"}
             </Text>
             <Text style={[styles.textBubbleBody, message.direction === "outbound" && styles.textBubbleBodyOutbound]}>{cleanConversationBody(message.body || message.text || "")}</Text>
+            <Text style={styles.messageMeta}>{formatDateTime(message.createdAt)}{message.direction === "outbound" ? ` · ${formatMessageStatus(message.status)}` : ""}</Text>
             {getDeliveryIssue(message) ? (
               <Text style={[styles.deliveryIssue, message.direction === "outbound" && styles.deliveryIssueOutbound]}>{getDeliveryIssue(message)}</Text>
             ) : null}
           </View>
         )) : <Text style={styles.record} numberOfLines={3}>{getConversationPreview(conversation)}</Text>}
       </ScrollView>
-      <View style={styles.quickReplyGrid}>
+      <ActionButton label={suggestionsOpen ? "Hide suggested replies" : "Suggested replies"} onPress={() => setSuggestionsOpen(!suggestionsOpen)} variant="light" />
+      {suggestionsOpen ? <View style={styles.quickReplyGrid}>
         {quickReplies.map((reply) => (
           <Pressable key={reply.label} onPress={() => onDraftChange(customerPhone, reply.text)} style={styles.quickReplyButton}>
             <Text style={styles.quickReplyText}>{reply.label}</Text>
           </Pressable>
         ))}
-      </View>
+      </View> : null}
       <Field
         label="Reply from DDD"
         multiline
         onChangeText={(message) => onDraftChange(customerPhone, message)}
         value={draft}
       />
-      <Text style={styles.muted}>Replies send from DDD and include STOP language automatically if needed.</Text>
       <View style={styles.buttonRow}>
-        <ActionButton disabled={smsBusy} label={smsBusy ? "Sending..." : "Send text"} onPress={() => onSend(customerPhone)} />
-        <ActionButton disabled={callBusy} label={callBusy ? "Calling..." : "Call customer"} onPress={() => onCall(customerPhone)} variant="light" />
-        <ActionButton disabled={archiveBusy} label={archiveBusy ? "Archiving..." : "Archive"} onPress={() => onArchive(customerPhone)} variant="light" />
+        <ActionButton disabled={smsBusy || !draft.trim()} label={smsBusy ? "Sending..." : "Send text"} onPress={() => onSend(customerPhone)} />
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
 function BookingsTab({ bookings = [] }) {
+  const [history, setHistory] = useState(false);
   const recentBookings = (bookings || []).slice(0, 30);
   const openBookings = recentBookings.filter((booking) => !/complete|cancel|clear|done|closed/i.test(getBookingStatusLabel(booking))).length;
   return (
     <>
-      <Card title="Bookings">
-        <View style={styles.summaryGrid}>
-          <SummaryTile label="Recent" value={recentBookings.length} />
-          <SummaryTile label="Open" value={openBookings} />
-          <SummaryTile label="Today" value={recentBookings.filter((booking) => isSameDay(booking.createdAt, new Date())).length} />
-          <SummaryTile label="Photos" value={recentBookings.filter((booking) => Number(booking.photoCount || 0) > 0).length} />
-        </View>
-      </Card>
-      <Card title="Newest requests">
-        {recentBookings.map((booking, index) => (
+      <View style={styles.buttonRow}><ActionButton label={history ? "Show active jobs" : "Show history"} variant="light" onPress={() => setHistory(!history)} /></View>
+      <Text style={styles.screenHeading}>{history ? "Completed & canceled" : "Upcoming & active"}</Text>
+        {recentBookings.filter((booking) => /complete|cancel|clear|done|closed/i.test(getBookingStatusLabel(booking)) === history).map((booking, index) => (
           <BookingCard booking={booking} key={booking.bookingId || booking.id || index} />
         ))}
         {recentBookings.length ? null : <Text style={styles.muted}>New bookings will show here with the service time and date.</Text>}
-      </Card>
     </>
   );
 }
@@ -1343,7 +1348,7 @@ function BookingCard({ booking = {} }) {
   const statusLabel = getBookingStatusLabel(booking);
   const requestedFor = getBookingRequestedLabel(booking);
   return (
-    <LinearGradient colors={["#fffaff", "#f7fffb"]} style={styles.listCard}>
+    <View style={[styles.listCard, { backgroundColor: "#e3e8ed", borderRadius: 8 }]}>
       <View style={styles.listHeader}>
         <Text style={styles.listTitle} numberOfLines={1}>{booking.name || booking.customerName || "Customer"}</Text>
         <Text style={styles.pill}>{statusLabel}</Text>
@@ -1357,7 +1362,7 @@ function BookingCard({ booking = {} }) {
         <Text style={styles.smallChip}>Saved: {formatDateTime(booking.createdAt)}</Text>
       </View>
       {missing.length ? <Text style={styles.warningText}>Needs: {missing.join(", ")}</Text> : null}
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -1389,17 +1394,11 @@ function getBookingRequestedLabel(booking = {}) {
   );
 }
 
-function CallsTab({ adminPin, apiBaseUrl, calls, insights, setStatus, setStaffPhone, staffPhone }) {
+function CallsTab({ adminPin, apiBaseUrl, calls, insights, setStatus, setStaffPhone, staffPhone, onText }) {
+  const [dialerOpen, setDialerOpen] = useState(false);
   const [dialPhone, setDialPhone] = useState("");
   const [calling, setCalling] = useState(false);
-  const callGroups = useMemo(() => groupCallsByCaller(calls || []).slice(0, 10), [calls]);
-  const recentCalls = callGroups.map((group) => group.latest).filter(Boolean);
-  const completed = recentCalls.filter((call) => call.completion === "complete" || call.bookings?.length).length;
-  const needsReview = recentCalls.filter((call) => call.completion === "needs-review" || call.smsStatus === "failed").length;
-  const daily = insights?.sections?.daily || {};
-  const activeDay = insights?.sections?.latestActiveDay || daily;
-  const weekly = insights?.sections?.weekly || {};
-  const monthly = insights?.sections?.monthly || {};
+  const callGroups = useMemo(() => groupCallsByCaller(calls || []), [calls]);
 
   async function startOutboundCall() {
     const to = normalizeE164(dialPhone);
@@ -1427,7 +1426,8 @@ function CallsTab({ adminPin, apiBaseUrl, calls, insights, setStatus, setStaffPh
 
   return (
     <>
-      <Card title="Outbound dialer">
+      <ActionButton label={dialerOpen ? "Close dialer" : "Dial a number"} onPress={() => setDialerOpen(!dialerOpen)} />
+      {dialerOpen ? <Card title="Call from DDD">
         <Text style={styles.muted}>Call any customer from DDD. Your phone rings first, then the customer sees the DDD caller ID.</Text>
         <Field keyboardType="phone-pad" label="Customer phone" onChangeText={setDialPhone} value={dialPhone} />
         <Field
@@ -1439,31 +1439,21 @@ function CallsTab({ adminPin, apiBaseUrl, calls, insights, setStatus, setStaffPh
           value={staffPhone}
         />
         <ActionButton disabled={calling} label={calling ? "Calling..." : "Call from DDD"} onPress={startOutboundCall} />
-      </Card>
-      <Card title="Call summary">
-        <View style={styles.summaryGrid}>
-          <SummaryTile label="Recent" value={recentCalls.length} />
-          <SummaryTile label="Booked" value={completed} />
-          <SummaryTile label="Review" value={needsReview} tone="warn" />
-          <SummaryTile label="SMS sent" value={recentCalls.filter((call) => call.smsStatus === "sent").length} />
-        </View>
-      </Card>
-      <Card title="Call insights">
-        <PeriodInsight label={activeDay.label || "Today"} period={activeDay} />
-        <PeriodInsight label="Week" period={weekly} />
-        <PeriodInsight label="Month" period={monthly} />
-      </Card>
-      <Card title="Recent calls">
+      </Card> : null}
+      <Text style={styles.screenHeading}>Recent calls</Text>
         {callGroups.map((group, index) => (
-          <CallCard call={group.latest} callGroup={group} key={group.key || group.latest?.id || group.latest?.callId || index} />
+          <CallCard onText={onText} onCall={(phone) => { setDialPhone(phone); setDialerOpen(true); }} call={group.latest} callGroup={group} key={group.key || group.latest?.id || group.latest?.callId || index} />
         ))}
         {callGroups.length ? null : <Text style={styles.muted}>Forwarded calls will appear here.</Text>}
-      </Card>
     </>
   );
 }
 
-function CallCard({ call, callGroup }) {
+function CallCard({ call: latestCall, callGroup, onText, onCall }) {
+  const [expanded, setExpanded] = useState(false);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const call = callGroup?.calls?.[selectedIndex] || latestCall;
   const complete = call.completion === "complete" || call.bookings?.length;
   const incomplete = call.completion === "incomplete" || call.outcome?.hungUpEarly;
   const transcript = formatCallTranscript(call);
@@ -1471,11 +1461,16 @@ function CallCard({ call, callGroup }) {
   const missing = call.bookings?.[0]?.confidence?.missing || call.leads?.[0]?.confidence?.missing || [];
   const repeatCalls = callGroup?.calls || [call];
   return (
-    <LinearGradient colors={complete ? ["#f5fff8", "#fffaff"] : incomplete ? ["#fff7ed", "#fffaff"] : ["#fffaff", "#f7fffb"]} style={styles.listCard}>
+    <View style={[styles.listCard, { backgroundColor: "#e3e8ed", borderRadius: 8 }]}>
+      <Pressable onPress={() => setExpanded(!expanded)} accessibilityRole="button" accessibilityLabel="Expand call details">
       <View style={styles.listHeader}>
         <Text style={styles.listTitle} numberOfLines={1}>{formatPhone(call.caller || call.from || "Unknown caller")}</Text>
         <Text style={styles.pill}>{repeatCalls.length > 1 ? `${repeatCalls.length} calls` : call.durationLabel || formatDuration(call.durationSeconds) || "No time"}</Text>
       </View>
+      <Text style={styles.muted}>{formatDateTime(call.startedAt || call.createdAt)} · {call.displayStatus || "Call received"}</Text>
+      </Pressable>
+      {expanded ? <>
+      <View style={styles.buttonRow}><ActionButton label="Text back" onPress={() => onText(call.caller || call.from)} /><ActionButton label="Call back" onPress={() => onCall(call.caller || call.from)} variant="light" /></View>
       <View style={styles.callChipRow}>
         <Text style={[styles.smallChip, complete && styles.smallChipOk, incomplete && styles.smallChipWarn]}>{call.displayStatus || call.outcome?.label || "Logged"}</Text>
         <Text style={styles.smallChip}>{call.outcome?.callerStayedOn ? "Stayed on" : call.outcome?.hungUpEarly ? "Hung up early" : "Review time"}</Text>
@@ -1488,20 +1483,23 @@ function CallCard({ call, callGroup }) {
       {repeatCalls.length > 1 ? (
         <View style={styles.transcriptBox}>
           <Text style={styles.linkLabel}>Caller history</Text>
-          {repeatCalls.slice(0, 5).map((item, index) => (
-            <Text style={styles.record} key={item.id || item.callId || index}>
+          {repeatCalls.map((item, index) => (
+            <Pressable onPress={() => { setSelectedIndex(index); setTranscriptOpen(false); }} key={item.id || item.callId || index}><Text style={styles.record}>
               {index === 0 ? "Latest: " : ""}{formatDateTime(item.startedAt || item.createdAt)} - {item.displayStatus || item.outcome?.label || "Logged"}{item.durationLabel ? ` - ${item.durationLabel}` : ""}{item.smsStatus && item.smsStatus !== "none" ? ` - SMS ${item.smsStatus}` : ""}
-            </Text>
+            </Text></Pressable>
           ))}
         </View>
       ) : null}
-      <View style={styles.transcriptBox}>
+      {call.recordingUrl ? <ActionButton label="Play recording" onPress={() => Linking.openURL(call.recordingUrl)} variant="light" /> : null}
+      <ActionButton label={transcriptOpen ? "Hide transcript" : "Full transcript"} onPress={() => setTranscriptOpen(!transcriptOpen)} variant="light" />
+      {transcriptOpen ? <View style={styles.transcriptBox}>
         <Text style={styles.linkLabel}>Transcript</Text>
         <ScrollView style={styles.transcriptScroll} nestedScrollEnabled>
           <Text style={styles.transcriptText}>{transcript || "Transcript will appear after the call is processed."}</Text>
         </ScrollView>
-      </View>
-    </LinearGradient>
+      </View> : null}
+      </> : null}
+    </View>
   );
 }
 
@@ -1613,11 +1611,11 @@ function InsightsTab({ calls = [], hasPin, insights, onRefresh }) {
 
 function Card({ children, title }) {
   return (
-    <LinearGradient colors={["rgba(255, 255, 255, 0.96)", "rgba(255, 255, 255, 0.78)"]} style={styles.card}>
+    <View style={styles.card}>
       <LinearGradient colors={rainbowColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.cardBar} />
       <Text style={styles.cardTitle}>{title}</Text>
       {children}
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -2034,8 +2032,9 @@ function formatMessageStatus(value = "") {
   if (!status) return "";
   if (/staff-sms-reply/.test(status) && /failed/.test(status)) return "Text reply failed";
   if (/sms/.test(status) && /failed/.test(status)) return "Text failed";
-  if (/failed/.test(status)) return "Failed";
-  if (/delivered|sent/.test(status)) return "Sent";
+  if (/failed|undelivered/.test(status)) return "Couldn't deliver";
+  if (status === "delivered") return "Delivered";
+  if (status === "sent") return "Sent";
   if (/queued|sending|accepted/.test(status)) return "Sending";
   if (/received/.test(status)) return "";
   if (/email-sent/.test(status) && /push-\d+/.test(status)) return "Alerts sent";
@@ -2259,7 +2258,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     overflow: "hidden",
     borderColor: "rgba(255, 62, 165, 0.32)",
-    borderRadius: 18,
+    borderRadius: 8,
     borderWidth: 1,
     backgroundColor: "#171a32",
     padding: 9,
@@ -2379,9 +2378,9 @@ const styles = StyleSheet.create({
     gap: 11,
     overflow: "hidden",
     borderColor: "rgba(255, 62, 165, 0.28)",
-    borderRadius: 20,
+    borderRadius: 8,
     borderWidth: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.88)",
+    backgroundColor: "#e3e8ed",
     padding: 13,
     shadowColor: "#000000",
     shadowOffset: { width: 0, height: 12 },
@@ -2531,14 +2530,14 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 240, 250, 0.72)",
     padding: 11
   },
-  conversationPicker: { gap: 8, paddingVertical: 2, paddingRight: 2 },
+  conversationPicker: { gap: 8, paddingVertical: 2 },
   conversationChoice: {
-    width: 178,
+    width: "100%",
     minHeight: 76,
     borderColor: "rgba(118, 87, 255, 0.18)",
-    borderRadius: 18,
+    borderRadius: 8,
     borderWidth: 1,
-    backgroundColor: "#fffaff",
+    backgroundColor: "#edf1f5",
     padding: 10
   },
   conversationChoiceActive: {
@@ -2551,21 +2550,29 @@ const styles = StyleSheet.create({
   conversationNumberActive: { color: "#ffffff" },
   conversationPreview: { color: "#686a80", fontSize: 11, fontWeight: "700", marginTop: 7 },
   conversationBox: {
+    flex: 1,
     gap: 10,
     borderColor: "rgba(217, 211, 238, 0.9)",
-    borderRadius: 18,
+    borderRadius: 8,
     borderWidth: 1,
-    backgroundColor: "#fffaff",
+    backgroundColor: "#edf1f5",
     padding: 12
   },
   messageThread: {
-    maxHeight: 310,
+    flex: 1,
+    minHeight: 100,
     borderColor: "rgba(118, 87, 255, 0.12)",
     borderRadius: 18,
     borderWidth: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.7)"
+    backgroundColor: "#e0e7ec"
   },
   messageThreadContent: { gap: 8, padding: 10 },
+  messageMeta: { fontSize: 11, color: "#465064", marginTop: 6 },
+  inboxContent: { flex: 1, padding: 10, paddingBottom: 78, gap: 8 },
+  inboxList: { flex: 1, gap: 8 },
+  screenHeading: { color: "#f4f7fa", fontSize: 20, fontWeight: "700" },
+  headerAction: { minHeight: 44, justifyContent: "center", paddingHorizontal: 8 },
+  headerActionText: { color: "#8ce2ff", fontWeight: "700", fontSize: 12 },
   quickReplyGrid: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
   quickReplyButton: {
     borderColor: "rgba(22, 184, 255, 0.18)",
