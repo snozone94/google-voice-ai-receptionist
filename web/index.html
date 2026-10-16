@@ -159,10 +159,11 @@
       <nav class="tabbar simplified-tabbar" aria-label="Admin sections">
         <button class="tab-button active" type="button" data-tab-target="inbox">Inbox</button>
         <button class="tab-button" type="button" data-tab-target="calls">Calls</button>
-        <button class="tab-button" type="button" data-tab-target="overview">Home</button>
-        <button class="tab-button" type="button" data-tab-target="usage">Usage</button>
-        <button class="tab-button" type="button" data-tab-target="team">Team</button>
+        <button class="tab-button" type="button" data-tab-target="bookings">Bookings</button>
         <button id="advancedMenuButton" class="tab-button more-tab-button" type="button" aria-expanded="false">More</button>
+        <button class="tab-button advanced-tab" type="button" data-tab-target="overview">Home & routing</button>
+        <button class="tab-button advanced-tab" type="button" data-tab-target="usage">Usage</button>
+        <button class="tab-button advanced-tab" type="button" data-tab-target="team">Team</button>
         <button class="tab-button advanced-tab" type="button" data-tab-target="voice">Voice</button>
         <button class="tab-button advanced-tab" type="button" data-tab-target="script">AI Script</button>
         <button class="tab-button advanced-tab" type="button" data-tab-target="intake">Questions</button>
@@ -179,6 +180,8 @@
         </label>
         <p id="stickyAccessSessionStatus">Enter a code to unlock tabs.</p>
         <button id="stickyLoginButton" type="button">Sign in</button>
+        <button id="accountControlsButton" type="button">Account</button>
+        <button id="signOutButton" type="button" hidden>Sign out</button>
       </section>
 
       <section class="panel tab-panel" data-tab-panel="overview">
@@ -649,12 +652,14 @@
             <p class="eyebrow">Shared DDD inbox</p>
             <h2>Texts</h2>
           </div>
-          <button id="refreshInboxPanelButton" type="button">Refresh</button>
+          <div class="inbox-toolbar"><button id="newConversationButton" type="button">New text</button><button id="inboxDialButton" type="button">Call</button><button id="refreshInboxPanelButton" type="button">Refresh</button></div>
         </div>
-        <div class="inbox-access-note">Inbox uses the access code saved at the top. Each tech can use their own code and status.</div>
+        <label class="inbox-search">Search customers<input id="conversationSearch" type="search" placeholder="Name or phone" /></label>
+        <form id="newConversationForm" hidden><label>Customer phone<input id="newConversationPhone" type="tel" required placeholder="Phone number" /></label><button type="submit">Open conversation</button></form>
         <div class="inbox-shell">
           <aside class="conversation-list" id="conversationList"></aside>
           <div class="conversation-panel">
+            <button id="backToInboxButton" class="back-to-inbox" type="button">Back to inbox</button>
             <div class="conversation-header">
               <div>
                 <strong id="selectedConversationTitle">Select a conversation</strong>
@@ -662,17 +667,23 @@
               </div>
               <div id="conversationConfidence" class="confidence-pill muted">No booking selected</div>
             </div>
-            <div id="conversationDetails" class="conversation-details"></div>
+            <div class="inbox-toolbar"><button id="conversationCallButton" type="button">Call customer</button><button id="conversationArchiveButton" type="button">Archive</button></div>
+            <details class="customer-details"><summary>Customer details & booking</summary><div id="conversationDetails" class="conversation-details"></div></details>
             <div class="message-list" id="messageList"></div>
             <div id="typingStatus" class="typing-status"></div>
             <form id="replyForm" class="reply-form">
-              <div class="quick-replies" id="quickReplies"></div>
+              <details class="reply-suggestions"><summary>Suggested replies</summary><div class="quick-replies" id="quickReplies"></div></details>
               <textarea id="replyMessageInput" rows="3" maxlength="1000" placeholder="Type a reply from DDD..."></textarea>
               <button id="sendReplyButton" type="submit" disabled>Send text</button>
             </form>
             <p id="inboxStatus">Texts will appear here after the number ports to Twilio.</p>
           </div>
         </div>
+      </section>
+
+      <section class="panel tab-panel" data-tab-panel="bookings">
+        <div class="section-title-row"><h2>Bookings</h2><select id="bookingView" aria-label="Booking view"><option value="active">Active jobs</option><option value="history">History</option></select></div>
+        <div id="dispatchBookings"></div>
       </section>
 
       <section class="panel tab-panel" data-tab-panel="calls">

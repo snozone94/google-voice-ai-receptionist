@@ -166,7 +166,7 @@ const tabButtons = [...document.querySelectorAll("[data-tab-target]")];
 const tabPanels = [...document.querySelectorAll("[data-tab-panel]")];
 const simplifiedTabbar = document.querySelector(".simplified-tabbar");
 const advancedMenuButton = document.querySelector("#advancedMenuButton");
-const advancedTabNames = new Set(["voice", "script", "intake", "followup", "insights", "qa", "activity"]);
+const advancedTabNames = new Set(["overview", "usage", "team", "voice", "script", "intake", "followup", "insights", "qa", "activity"]);
 
 let peerConnection;
 let localStream;
@@ -219,6 +219,8 @@ advancedMenuButton?.addEventListener("click", () => {
 });
 
 function setActiveTab(tabName) {
+  document.body.dataset.view = tabName;
+  if (tabName === "bookings") loadDispatchBookings().catch((error) => { document.querySelector("#dispatchBookings").textContent = error.message; });
   if (advancedTabNames.has(tabName)) {
     simplifiedTabbar?.classList.add("show-advanced");
     if (advancedMenuButton) {
@@ -1493,6 +1495,8 @@ function updateSignedInUi() {
   const verified = isAccessVerified();
   const role = signedInStaff?.role || "";
   document.body.dataset.access = verified ? role || "staff" : "locked";
+  document.body.classList.toggle("workspace-signed-in", verified);
+  document.body.classList.toggle("workspace-admin", verified && isAdminStaff());
   if (inboxLoginButton) inboxLoginButton.textContent = verified ? "Signed in" : "Open inbox";
   if (stickyLoginButton) stickyLoginButton.textContent = verified ? "Signed in" : "Sign in";
   let message = "Enter a code to unlock your workspace.";
@@ -2051,6 +2055,61 @@ function normalizeStaffStatus(status) {
   return ["available", "busy", "on-call", "active-call"].includes(value) ? value : "available";
 }
 
+document.querySelector("#accountControlsButton")?.addEventListener("click", () => {
+  document.body.classList.toggle("account-controls-open");
+  document.querySelector("#signOutButton").hidden = !document.body.classList.contains("account-controls-open");
+});
+document.querySelector("#signOutButton")?.addEventListener("click", () => {
+  [adminPinInput, stickyAccessCodeInput, staffPinInput].forEach((input) => { if (input) input.value = ""; });
+  ["dddAccessCode", "dddAdminPin", "dddStaffCode"].forEach((key) => localStorage.removeItem(key));
+  setSignedInStaff(null);
+  conversations = [];
+  selectedConversationPhone = "";
+  document.body.classList.remove("account-controls-open", "thread-open");
+  document.querySelector("#signOutButton").hidden = true;
+  updateSignedInUi();
+  renderConversations();
+  setActiveTab("inbox");
+});
+document.querySelector("#conversationSearch")?.addEventListener("input", renderConversations);
+document.querySelector("#backToInboxButton")?.addEventListener("click", () => document.body.classList.remove("thread-open"));
+document.querySelector("#newConversationButton")?.addEventListener("click", () => {
+  const form = document.querySelector("#newConversationForm");
+  form.hidden = !form.hidden;
+  if (!form.hidden) document.querySelector("#newConversationPhone").focus();
+});
+document.querySelector("#newConversationForm")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const phone = normalizePhoneForRoute(document.querySelector("#newConversationPhone").value);
+  if (!phone) { setInboxStatus("Enter a valid phone number."); return; }
+  if (!conversations.some((item) => item.phone === phone)) conversations.unshift({ phone, messages: [], bookings: [], lastBody: "", lastMessageAt: new Date().toISOString() });
+  selectedConversationPhone = phone;
+  document.body.classList.add("thread-open");
+  document.querySelector("#newConversationForm").hidden = true;
+  renderConversations();
+  replyMessageInput.focus();
+});
+function openCustomerDialer(phone = "") {
+  setActiveTab("overview");
+  if (phone) outboundCustomerPhoneInput.value = formatPhone(phone);
+  document.querySelector("#outboundCallButton")?.scrollIntoView({ block: "center" });
+  outboundCustomerPhoneInput?.focus();
+}
+document.querySelector("#inboxDialButton")?.addEventListener("click", () => openCustomerDialer());
+document.querySelector("#conversationCallButton")?.addEventListener("click", () => openCustomerDialer(selectedConversationPhone));
+document.querySelector("#conversationArchiveButton")?.addEventListener("click", () => {
+  if (selectedConversationPhone) archiveInboxConversation(selectedConversationPhone).then(() => document.body.classList.remove("thread-open")).catch((error) => setInboxStatus(error.message));
+});
+document.querySelector("#bookingView")?.addEventListener("change", () => loadDispatchBookings().catch((error) => { document.querySelector("#dispatchBookings").textContent = error.message; }));
+async function loadDispatchBookings() {
+  const response = await fetch("/api/bookings", { headers: staffHeaders() });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || "Sign in to view bookings.");
+  const history = document.querySelector("#bookingView").value === "history";
+  const bookings = (payload.bookings || []).filter((booking) => /complete|cancel|clear|done|closed/i.test(booking.platformStatus || booking.externalStatus || booking.dddStatus || booking.dispatchStatus || booking.status || "") === history);
+  document.querySelector("#dispatchBookings").innerHTML = bookings.length ? bookings.map((booking) => `<article class="dispatch-booking"><header><strong>${escapeHtml(booking.name || booking.customerName || "Customer")}</strong><span>${escapeHtml(booking.platformStatus || booking.externalStatus || booking.status || "Requested")}</span></header><p>${escapeHtml(booking.serviceType || booking.service || "Service")}</p><p>${escapeHtml(booking.vehicle || "")} ${escapeHtml(booking.vehicleColor || "")}</p><p>${escapeHtml(booking.location || "")}</p><p>Appointment: ${escapeHtml(booking.requestedFor || booking.appointmentAt || booking.scheduledAt || booking.preferredTime || "ASAP / not set")}</p><small>Received ${escapeHtml(formatTime(booking.createdAt))}</small></article>`).join("") : `<p class="empty-state">No ${history ? "completed or canceled" : "active"} bookings.</p>`;
+}
+
 function renderConversations() {
   conversationList.innerHTML = "";
   if (!conversations.length) {
@@ -2068,6 +2127,8 @@ function renderConversations() {
 
   for (const conversation of conversations) {
     const booking = getLatestConversationBooking(conversation);
+    const search = document.querySelector("#conversationSearch")?.value.trim().toLowerCase() || "";
+    if (search && !`${booking?.name || conversation.customerName || ""} ${conversation.phone}`.toLowerCase().includes(search)) continue;
     const confidence = booking?.confidence || estimateConversationConfidence(conversation);
     const row = document.createElement("div");
     row.className = "conversation-swipe";
@@ -2076,14 +2137,15 @@ function renderConversations() {
     button.className = conversation.phone === selectedConversationPhone ? "conversation-item selected" : "conversation-item";
     button.innerHTML = `
       <div class="conversation-item-top">
-        <strong>${formatPhone(conversation.phone)}</strong>
+        <strong>${escapeHtml(booking?.name || conversation.customerName || formatPhone(conversation.phone))}</strong>
         <small>${formatTime(conversation.lastMessageAt)}</small>
       </div>
       <span>${escapeHtml(cleanConversationBody(conversation.lastBody || "No message body"))}</span>
-      <em class="mini-confidence ${confidenceClass(confidence)}">${escapeHtml(confidence.label)}</em>
+      <small>${escapeHtml(formatPhone(conversation.phone))}</small>
     `;
     button.addEventListener("click", () => {
       selectedConversationPhone = conversation.phone;
+      document.body.classList.add("thread-open");
       renderConversations();
     });
     let touchStartX = 0;
@@ -2157,7 +2219,7 @@ function renderSelectedConversation() {
 
   const booking = getLatestConversationBooking(conversation);
   const confidence = booking?.confidence || estimateConversationConfidence(conversation);
-  selectedConversationTitle.textContent = formatPhone(conversation.phone);
+  selectedConversationTitle.textContent = booking?.name || conversation.customerName || formatPhone(conversation.phone);
   selectedConversationMeta.textContent = `${conversation.messages.length} message${conversation.messages.length === 1 ? "" : "s"} · ${booking?.serviceType || "No booking yet"}`;
   if (outboundCustomerPhoneInput && !outboundCustomerPhoneInput.value.trim()) {
     outboundCustomerPhoneInput.value = formatPhone(conversation.phone);
@@ -2184,7 +2246,7 @@ function renderSelectedConversation() {
       .join(" · ");
     bubble.innerHTML = `
       <p>${escapeHtml(cleanConversationBody(message.body || ""))}</p>
-      ${deliveryIssue ? `<p class="delivery-issue">${escapeHtml(deliveryIssue)}</p>` : ""}
+      ${deliveryIssue ? `<details class="delivery-issue"><summary>Couldn't deliver</summary>${escapeHtml(deliveryIssue)}</details>` : ""}
       <small>${escapeHtml(meta)}</small>
     `;
     messageList.append(bubble);
@@ -2786,7 +2848,7 @@ function renderSelectedCall() {
     </div>
     ${
       canCorrectCall
-        ? `<div class="call-correction-panel">
+        ? `<details><summary>Correct outcome / admin note</summary><div class="call-correction-panel">
             <div>
               <label for="callOutcomeCorrection">Correct outcome</label>
               <select id="callOutcomeCorrection">
@@ -2799,7 +2861,7 @@ function renderSelectedCall() {
             </div>
             <button type="button" data-action="save-call-correction" data-call-id="${escapeAttribute(call.id)}">Save correction</button>
             <p id="callCorrectionStatus">${correction.updatedAt ? `Last corrected ${escapeHtml(formatTime(correction.updatedAt))}` : "Corrections update this call's status and insight counts."}</p>
-          </div>`
+          </div></details>`
         : ""
     }
     <div class="call-metrics">
@@ -2816,20 +2878,20 @@ function renderSelectedCall() {
       <div><dt>Duration</dt><dd>${escapeHtml(call.durationLabel || "Unknown")}</dd></div>
       <div><dt>Recording</dt><dd>${recording}</dd></div>
     </dl>
-    <div class="call-section">
-      <h4>Saved intake</h4>
+    <details class="call-section">
+      <summary>Saved intake</summary>
       ${renderRelatedRecords("Bookings", call.bookings)}
       ${renderRelatedRecords("Leads", call.leads)}
-    </div>
+    </details>
     ${repeatCallHtml}
     <div class="call-section">
       <h4>Synopsis</h4>
       <div class="call-synopsis">${synopsis.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div>
     </div>
-    <div class="call-section">
-      <h4>Transcript</h4>
+    <details class="call-section">
+      <summary>Full transcript</summary>
       <div class="transcript-box">${transcriptHtml}</div>
-    </div>
+    </details>
   `;
   const saveCorrectionButton = callDetail.querySelector('[data-action="save-call-correction"]');
   saveCorrectionButton?.addEventListener("click", saveSelectedCallCorrection);
@@ -3022,8 +3084,9 @@ function formatMessageStatus(value = "") {
   if (!status) return "";
   if (/staff-sms-reply/.test(status) && /failed/.test(status)) return "Text reply failed";
   if (/sms/.test(status) && /failed/.test(status)) return "Text failed";
-  if (/failed/.test(status)) return "Failed";
-  if (/delivered|sent/.test(status)) return "Sent";
+  if (/failed|undelivered/.test(status)) return "Couldn't deliver";
+  if (status === "delivered") return "Delivered";
+  if (status === "sent") return "Sent";
   if (/queued|sending|accepted/.test(status)) return "Sending";
   if (/received/.test(status)) return "";
   if (/email-sent/.test(status) && /push-\d+/.test(status)) return "Alerts sent";
