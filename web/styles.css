@@ -5467,6 +5467,9 @@ body[data-access="reviewer"] .login-card .pin-field {
 }
 
 /* Focused dispatch workspace. */
+.simplified-tabbar .tab-button { color: #ffffff !important; font-size: 15px !important; font-weight: 800; text-shadow: none !important; background: linear-gradient(115deg, #303d46, #34313e) !important; }
+.simplified-tabbar .tab-button.active { color: #10212b !important; background: linear-gradient(115deg, #c6eaf3, #e1d7f2) !important; }
+.simplified-tabbar .more-tab-button { background: linear-gradient(115deg, #34313e, #35464a) !important; }
 main { grid-template-columns: minmax(0, 1fr); }
 main > *, .conversation-panel > * { min-width: 0; max-width: 100%; box-sizing: border-box; }
 .sticky-access-bar p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
