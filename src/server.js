@@ -426,11 +426,11 @@ app.post("/api/twilio/sms-status", express.urlencoded({ extended: false }), asyn
     const from = normalizeE164(req.body.From || req.body.from || "");
     const errorCode = String(req.body.ErrorCode || req.body.errorCode || "").trim();
     const errorMessage = String(req.body.ErrorMessage || req.body.errorMessage || "").trim();
-    if (/failed|undelivered/.test(status)) {
+    if (status && (req.body.MessageSid || req.body.SmsSid)) {
       await saveOutgoingSms({
         to,
         from,
-        body: "Text delivery failed",
+        body: "",
         messageSid: req.body.MessageSid || req.body.SmsSid || "",
         status: status || "failed",
         agentName: "Twilio delivery",
@@ -439,6 +439,8 @@ app.post("/api/twilio/sms-status", express.urlencoded({ extended: false }), asyn
         errorCode,
         errorMessage
       });
+    }
+    if (/failed|undelivered/.test(status)) {
       await notifyTeamTracked({
         title: "DDD text delivery failed",
         body: `Text to ${formatPhoneForAlert(to)} was ${status || "failed"}${errorMessage ? `: ${errorMessage}` : "."}`,

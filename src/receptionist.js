@@ -1035,7 +1035,19 @@ export async function saveOutgoingSms(message) {
 }
 
 export async function listSms(limit = 50) {
-  return listRecords(smsPath, limit);
+  const records = await listRecords(smsPath, Math.max(limit, 1000));
+  const receipts = new Map();
+  for (const record of records) {
+    if (record.source !== "delivery_status" || !record.messageSid) continue;
+    const previous = receipts.get(record.messageSid);
+    if (!previous || record.status === "delivered" || (previous.status !== "delivered" && record.createdAt > previous.createdAt)) {
+      receipts.set(record.messageSid, record);
+    }
+  }
+  return records.filter((record) => record.source !== "delivery_status").map((record) => {
+    const receipt = receipts.get(record.messageSid);
+    return receipt ? { ...record, status: receipt.status, errorCode: receipt.errorCode, errorMessage: receipt.errorMessage } : record;
+  }).slice(0, limit);
 }
 
 export async function savePushToken(subscription = {}) {
@@ -1085,7 +1097,7 @@ export async function listPushTokens(limit = 100) {
 }
 
 export async function listConversations(limit = 200) {
-  const messages = await listRecords(smsPath, limit);
+  const messages = await listSms(limit);
   const bookings = await listRecords(bookingsPath, 1000);
   const calls = await listRecords(callsPath, 1000);
   const archivedPhones = await listArchivedConversationPhones();
@@ -1123,6 +1135,7 @@ export async function listConversations(limit = 200) {
     if (direction === "inbound") conversation.unread += 1;
   }
   for (const call of [...calls].reverse()) {
+    if (call.type === "ddd.notification") continue;
     const key = normalizeConversationPhone(call.from);
     if (!key) continue;
     const status = call.status || (call.durationSeconds ? `completed in ${formatDuration(call.durationSeconds)}` : "call received");
