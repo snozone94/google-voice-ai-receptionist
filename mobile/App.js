@@ -7,6 +7,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   KeyboardAvoidingView,
   Image,
   Linking,
@@ -292,6 +293,22 @@ export default function App() {
     }
   }, [activeTab, allowedTabNames]);
 
+  useEffect(() => {
+    if (!pushToken || !adminPin || Platform.OS === "web") return;
+    const clearBadge = () => {
+      apiPost(cleanBaseUrl, "/api/push/read", { token: pushToken }, adminPin)
+        .then(() => Notifications.setBadgeCountAsync(0)).catch(() => {});
+    };
+    clearBadge();
+    const listener = AppState.addEventListener("change", (state) => {
+      if (state === "active") clearBadge();
+    });
+    const received = Notifications.addNotificationReceivedListener(() => {
+      if (AppState.currentState === "active") clearBadge();
+    });
+    return () => { listener.remove(); received.remove(); };
+  }, [pushToken, adminPin, cleanBaseUrl, activeTab]);
+
   async function saveBaseUrl() {
     const next = normalizeBaseUrl(apiBaseUrl);
     await AsyncStorage.setItem(apiStorageKey, next);
@@ -567,10 +584,10 @@ function BottomTabs({ activeTab, onSelect, tabs = staffPrimaryTabs }) {
               style={[
                 styles.tabButton,
                 { borderColor: active ? tab.color : "rgba(118, 87, 255, 0.14)" },
-                active && { backgroundColor: tab.color }
+                active && { backgroundColor: "#d9edf2" }
               ]}
             >
-              <View style={[styles.tabDot, { backgroundColor: tab.color }]} />
+              <LinearGradient colors={[tab.color, "#8fdde4"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.tabAccent} />
               <Text style={[styles.tabText, active && styles.tabTextActive]}>{tab.label || tab.name}</Text>
             </Pressable>
           );
@@ -1264,6 +1281,9 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
 }
 
 function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChange, onSend, settings, workingThread }) {
+  const messageScrollRef = useRef(null);
+  const followLatestRef = useRef(true);
+  useEffect(() => { followLatestRef.current = true; }, [conversation.phone]);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1291,7 +1311,11 @@ function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChang
       </View>
       {detailsOpen ? <View><Text style={styles.record}>{booking?.serviceType || "No booking"}</Text><Text style={styles.record}>{booking?.vehicle || "Vehicle not saved"}</Text><Text style={styles.record}>{booking?.location || "Location not saved"}</Text>{booking?.customerStatusUrl ? <ActionButton label="Open booking" onPress={() => Linking.openURL(booking.customerStatusUrl)} /> : null}</View> : null}
       {menuOpen ? <ActionButton disabled={archiveBusy} label="Archive conversation" onPress={() => onArchive(customerPhone)} variant="light" /> : null}
-      <ScrollView style={styles.messageThread} contentContainerStyle={styles.messageThreadContent} nestedScrollEnabled>
+      <ScrollView ref={messageScrollRef} style={styles.messageThread} contentContainerStyle={styles.messageThreadContent} nestedScrollEnabled
+        onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+          followLatestRef.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 100;
+        }} scrollEventThrottle={100}
+        onContentSizeChange={() => { if (followLatestRef.current) messageScrollRef.current?.scrollToEnd({ animated: false }); }}>
         {recentMessages.length ? recentMessages.map((message, index) => (
           <View key={`${message.createdAt || index}-${message.direction}`} style={[styles.textBubble, message.direction === "outbound" && styles.textBubbleOutbound]}>
             <Text style={[styles.textBubbleLabel, message.direction === "outbound" && styles.textBubbleLabelOutbound]}>
@@ -2359,7 +2383,7 @@ const styles = StyleSheet.create({
   tabButton: {
     alignItems: "center",
     flex: 1,
-    minHeight: 48,
+    minHeight: 52,
     flexDirection: "column",
     gap: 3,
     justifyContent: "center",
@@ -2371,8 +2395,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4
   },
   tabDot: { width: 8, height: 8, borderRadius: 999 },
-  tabText: { color: "#e8e4ff", fontSize: 10, fontWeight: "900", textAlign: "center" },
-  tabTextActive: { color: "#ffffff" },
+  tabAccent: { position: "absolute", top: 0, left: 0, right: 0, height: 4 },
+  tabText: { color: "#ffffff", fontSize: 13, fontWeight: "800", textAlign: "center" },
+  tabTextActive: { color: "#10212b" },
   content: { gap: 11, padding: 12, paddingBottom: 82 },
   card: {
     gap: 11,
