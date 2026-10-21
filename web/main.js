@@ -2201,7 +2201,13 @@ async function archiveInboxConversation(phone) {
   setInboxStatus(`${formatPhone(normalizedPhone)} archived. It is hidden from the active inbox but still saved in history.`);
 }
 
+document.body.dataset.view ||= "inbox";
+let renderedConversationPhone = "";
 function renderSelectedConversation() {
+  const changedConversation = renderedConversationPhone !== selectedConversationPhone;
+  const previousScroll = messageList.scrollTop;
+  const followLatest = changedConversation || messageList.scrollHeight - previousScroll - messageList.clientHeight < 100;
+  renderedConversationPhone = selectedConversationPhone;
   const conversation = conversations.find((item) => item.phone === selectedConversationPhone);
   messageList.innerHTML = "";
   if (!conversation) {
@@ -2251,7 +2257,9 @@ function renderSelectedConversation() {
     `;
     messageList.append(bubble);
   }
-  messageList.scrollTop = messageList.scrollHeight;
+  requestAnimationFrame(() => {
+    messageList.scrollTop = followLatest ? messageList.scrollHeight : previousScroll;
+  });
   renderTypingStatus();
 }
 
