@@ -6,6 +6,7 @@ import path from "node:path";
 import tls from "node:tls";
 import OpenAI from "openai";
 import webPush from "web-push";
+import { notificationState } from "./notification-state.js";
 import {
   callAcceptPayload,
   listCalls,
@@ -44,6 +45,7 @@ const port = Number(process.env.PORT || 8787);
 const root = path.resolve(import.meta.dirname, "..");
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, "data");
 const vapidKeysPath = path.join(dataDir, "web-push-vapid.json");
+const notificationLedger = notificationState(dataDir);
 const uploadsDir = path.join(dataDir, "customer-uploads");
 const presence = new Map();
 const appReviewPin = String(process.env.APP_REVIEW_PIN || process.env.REVIEWER_PIN || "").trim();
@@ -407,7 +409,7 @@ app.post("/api/twilio/sms", express.urlencoded({ extended: false }), async (req,
     queueTeamNotification({
       title: "New DDD text",
       body: `${formatPhoneForAlert(record.from)}: ${record.body || "New customer message"}`.slice(0, 160),
-      data: { type: "sms", from: record.from || "", to: record.to || "", message: record.body || "" }
+      data: { type: "sms", messageId: req.body.MessageSid || req.body.SmsSid || "", from: record.from || "", to: record.to || "", message: record.body || "" }
     }, "incoming-sms");
     res.type("text/xml").send("<Response></Response>");
   } catch (error) {
@@ -687,6 +689,20 @@ app.post("/api/push/register", express.json(), async (req, res, next) => {
   } catch (error) {
     res.status(400).json({ ok: false, error: error.message });
   }
+});
+
+app.post("/api/push/read", express.json(), async (req, res, next) => {
+  try {
+    const staff = await getStaffAccess(req);
+    if (!staff.ok) return res.status(403).json({ error: "Forbidden" });
+    const tokens = await listPushTokens(100);
+    const token = String(req.body?.token || "");
+    if (!token || !tokens.some((item) => item.token === token && item.staffName === staff.name)) {
+      return res.status(403).json({ error: "Device not registered for this account" });
+    }
+    await notificationLedger.badge(token, true);
+    res.json({ ok: true, badge: 0 });
+  } catch (error) { next(error); }
 });
 
 app.get("/api/web-push/public-key", async (req, res, next) => {
@@ -1159,6 +1175,7 @@ app.post("/api/twilio/call-status", express.urlencoded({ extended: false }), asy
         }.`,
         data: {
           type: isEarlyHangup ? "early-hangup" : "missed-call",
+          callId: req.body.CallSid || req.body.callSid || "",
           status,
           durationSeconds,
           from: req.body.From || "",
@@ -1170,7 +1187,7 @@ app.post("/api/twilio/call-status", express.urlencoded({ extended: false }), asy
       await notifyTeamTracked({
         title: "DDD call completed",
         body: `${formatPhoneForAlert(req.body.From || "")} completed${durationSeconds ? ` in ${formatAlertDuration(durationSeconds)}` : ""}.`,
-        data: { type: "call-completed", status, durationSeconds, from: req.body.From || "" }
+        data: { type: "call-completed", callId: req.body.CallSid || req.body.callSid || "", status, durationSeconds, from: req.body.From || "" }
       }, "call-completed");
       await sendCompletedCallSmsIfNeeded(req.body.From || "", status);
     }
@@ -2798,10 +2815,10 @@ function emailAlertsReady() {
 }
 
 function splitEmailList(value = "") {
-  return String(value || "")
+  return [...new Set(String(value || "").toLowerCase()
     .split(/[,\s]+/)
     .map((entry) => entry.trim())
-    .filter((entry) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(entry));
+    .filter((entry) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(entry)))];
 }
 
 async function sendAlertEmail({ title = "DDD AI Dispatch alert", body = "", data = {} } = {}) {
@@ -3078,6 +3095,22 @@ function configureWebPush(publicKey, privateKey) {
 }
 
 async function notifyTeam({ title, body, data = {} }) {
+  const eventId = data.messageId || data.callId;
+  const initialCall = data.type === "call" && Boolean(data.from);
+  const eventKey = JSON.stringify([data.type || title, initialCall ? normalizeE164(data.from) : eventId || data.from || "", initialCall || eventId ? "" : body]);
+  const claimed = await notificationLedger.claim(eventKey, initialCall ? 30000 : eventId ? 86400000 : 120000);
+  if (!claimed) return { ok: true, skipped: true, sent: 0, reason: "Duplicate alert suppressed", email: { ok: true, skipped: true } };
+  try {
+    const result = await deliverTeamNotification({ title, body, data });
+    if (!result.ok && !result.sent && !result.email?.ok) await notificationLedger.release(eventKey);
+    return result;
+  } catch (error) {
+    await notificationLedger.release(eventKey);
+    throw error;
+  }
+}
+
+async function deliverTeamNotification({ title, body, data }) {
   const emailResultPromise = sendAlertEmail({ title, body, data });
   let tokens = [];
   try {
@@ -3088,10 +3121,12 @@ async function notifyTeam({ title, body, data = {} }) {
     return { ok: Boolean(emailResult.ok), sent: 0, skipped: !emailResult.ok, email: emailResult, errors: [error.message, emailResult.error].filter(Boolean) };
   }
 
-  const expoMessages = tokens
+  const expoMessages = await Promise.all(tokens
     .filter((subscription) => /^Expo(nent)?PushToken\[[^\]]+\]$/.test(subscription.token || ""))
-    .map((subscription) => ({
+    .filter((subscription, index, all) => all.findIndex((item) => item.token === subscription.token) === index)
+    .map(async (subscription) => ({
       to: subscription.token,
+      badge: await notificationLedger.badge(subscription.token),
       sound: "default",
       priority: "high",
       channelId: "ddd-dispatch",
@@ -3102,7 +3137,7 @@ async function notifyTeam({ title, body, data = {} }) {
         app: "ddd-ai-dispatch",
         ...data
       }
-    }));
+    })));
   const webSubscriptions = tokens.filter(
     (subscription) => subscription.subscription?.endpoint && !/^https:\/\/example\.com\//i.test(subscription.subscription.endpoint)
   );
