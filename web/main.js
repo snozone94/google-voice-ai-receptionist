@@ -2056,6 +2056,7 @@ function normalizeStaffStatus(status) {
 }
 
 document.querySelector("#accountControlsButton")?.addEventListener("click", () => {
+  setActiveTab("overview");
   document.body.classList.toggle("account-controls-open");
   document.querySelector("#signOutButton").hidden = !document.body.classList.contains("account-controls-open");
 });
@@ -2144,6 +2145,7 @@ function renderConversations() {
       <small>${escapeHtml(formatPhone(conversation.phone))}</small>
     `;
     button.addEventListener("click", () => {
+      renderedConversationPhone = "";
       selectedConversationPhone = conversation.phone;
       document.body.classList.add("thread-open");
       renderConversations();
