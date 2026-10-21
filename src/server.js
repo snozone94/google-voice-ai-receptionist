@@ -446,7 +446,7 @@ app.post("/api/twilio/sms-status", express.urlencoded({ extended: false }), asyn
       await notifyTeamTracked({
         title: "DDD text delivery failed",
         body: `Text to ${formatPhoneForAlert(to)} was ${status || "failed"}${errorMessage ? `: ${errorMessage}` : "."}`,
-        data: { type: "sms-delivery-failed", to, from, status, errorCode, errorMessage }
+        data: { type: "sms-delivery-failed", messageId: req.body.MessageSid || req.body.SmsSid || "", to, from, status, errorCode, errorMessage }
       }, "sms-delivery-failed");
     }
     res.type("text/xml").send("<Response></Response>");
@@ -587,6 +587,7 @@ app.post("/api/sms/reply", express.json(), async (req, res, next) => {
         body: `${agentName} replied to ${formatPhoneForAlert(to)}.`,
         data: {
           type: "staff-text-reply",
+          messageId: delivery.sid || "",
           to,
           from: to,
           staff: agentName,
@@ -3211,6 +3212,7 @@ function queueTeamNotification(payload, label = "team-alert") {
 
 async function notifyTeamTracked(payload, label = "team-alert") {
   const result = await notifyTeam(payload);
+  if (result.reason === "Duplicate alert suppressed") return result;
   const errors = Array.isArray(result?.errors) ? result.errors.filter(Boolean) : [];
   const status = result?.ok ? "sent" : result?.skipped ? "skipped" : "failed";
   const emailStatus = result?.email?.ok ? "sent" : result?.email?.skipped ? "skipped" : "failed";
