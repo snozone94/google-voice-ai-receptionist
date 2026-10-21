@@ -3097,9 +3097,8 @@ function configureWebPush(publicKey, privateKey) {
 
 async function notifyTeam({ title, body, data = {} }) {
   const eventId = data.messageId || data.callId;
-  const initialCall = data.type === "call" && Boolean(data.from);
-  const eventKey = JSON.stringify([data.type || title, initialCall ? normalizeE164(data.from) : eventId || data.from || "", initialCall || eventId ? "" : body]);
-  const claimed = await notificationLedger.claim(eventKey, initialCall ? 30000 : eventId ? 86400000 : 120000);
+  const eventKey = JSON.stringify([data.type || title, eventId || data.from || "", eventId ? "" : body]);
+  const claimed = await notificationLedger.claim(eventKey, eventId ? 86400000 : 120000);
   if (!claimed) return { ok: true, skipped: true, sent: 0, reason: "Duplicate alert suppressed", email: { ok: true, skipped: true } };
   try {
     const result = await deliverTeamNotification({ title, body, data });
@@ -3112,7 +3111,7 @@ async function notifyTeam({ title, body, data = {} }) {
 }
 
 async function deliverTeamNotification({ title, body, data }) {
-  const emailResultPromise = sendAlertEmail({ title, body, data });
+  const emailResultPromise = sendTeamAlertEmail({ title, body, data });
   let tokens = [];
   try {
     tokens = await listPushTokens(100);
@@ -3202,6 +3201,19 @@ async function deliverTeamNotification({ title, body, data }) {
     const emailResult = await emailResultPromise;
     return { ok: Boolean(emailResult.ok), sent, skipped: false, email: emailResult, errors: [error.message, ...errors, emailResult.error].filter(Boolean) };
   }
+}
+
+async function sendTeamAlertEmail(payload) {
+  // Twilio and the AI can both announce the same incoming call. Coalesce email
+  // only; a genuine redial with a new call ID must still get its own push alert.
+  if (payload.data.type !== "call" || !payload.data.from) return sendAlertEmail(payload);
+  const key = `incoming-call-email:${normalizeE164(payload.data.from)}`;
+  if (!await notificationLedger.claim(key, 30000)) {
+    return { ok: true, skipped: true, reason: "Incoming-call email already sent" };
+  }
+  const result = await sendAlertEmail(payload);
+  if (!result.ok) await notificationLedger.release(key);
+  return result;
 }
 
 function queueTeamNotification(payload, label = "team-alert") {
