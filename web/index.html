@@ -140,6 +140,14 @@
             </label>
             <button id="outboundCallButton" type="button">Call customer</button>
             <p id="outboundCallStatus">Calls show a Twilio-owned or verified DDD number.</p>
+            <details id="nativeVoiceSetup">
+              <summary>Installed-app calling setup</summary>
+              <p id="nativeVoiceSetupStatus" role="status">Connect Twilio for direct calls in the next installed app build. Incoming calls also require an Apple VoIP certificate.</p>
+              <button id="nativeVoiceSetupButton" type="button">Connect native calling</button>
+              <label>Apple VoIP certificate <input id="nativeVoiceCertificate" type="file" accept=".pem" /></label>
+              <label>Matching private key <input id="nativeVoicePrivateKey" type="file" accept=".key,.pem" /></label>
+              <button id="nativeVoicePushButton" type="button">Connect incoming calls</button>
+            </details>
           </section>
 
           <section class="control-card test-call-card" aria-label="AI test call">
@@ -655,6 +663,7 @@
           <div class="inbox-toolbar"><button id="newConversationButton" type="button">New text</button><button id="inboxDialButton" type="button">Call</button><button id="refreshInboxPanelButton" type="button">Refresh</button></div>
         </div>
         <label class="inbox-search">Search customers<input id="conversationSearch" type="search" placeholder="Name or phone" /></label>
+        <div class="inbox-toolbar"><label>Show <select id="inboxViewFilter"><option value="all">All conversations</option><option value="unread">Unread messages</option><option value="attention">Needs follow-up</option></select></label><strong id="inboxUnreadSummary" aria-live="polite"></strong></div>
         <form id="newConversationForm" hidden><label>Customer phone<input id="newConversationPhone" type="tel" required placeholder="Phone number" /></label><button type="submit">Open conversation</button></form>
         <div class="inbox-shell">
           <aside class="conversation-list" id="conversationList"></aside>

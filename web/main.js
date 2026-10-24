@@ -57,6 +57,40 @@ const outboundCustomerPhoneInput = document.querySelector("#outboundCustomerPhon
 const outboundCallerIdSelect = document.querySelector("#outboundCallerIdSelect");
 const outboundCallButton = document.querySelector("#outboundCallButton");
 const outboundCallStatus = document.querySelector("#outboundCallStatus");
+const nativeVoiceSetupButton = document.querySelector("#nativeVoiceSetupButton");
+nativeVoiceSetupButton?.addEventListener("click", async () => {
+  const status = document.querySelector("#nativeVoiceSetupStatus");
+  nativeVoiceSetupButton.disabled = true;
+  status.textContent = "Connecting secure calling...";
+  try {
+    const response = await fetch("/api/voice/provision", { method: "POST", headers: { ...adminHeaders(), "Content-Type": "application/json" }, body: "{}" });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Calling setup could not be completed.");
+    status.textContent = result.incomingReady ? "Twilio and Apple incoming-call credentials connected. Install the new build to test calling." : "Twilio outgoing calling connected. Apple VoIP certificate and a new installed build are still needed for locked-screen incoming calls.";
+    nativeVoiceSetupButton.textContent = "Connection saved";
+  } catch (error) { status.textContent = error.message; }
+  finally { nativeVoiceSetupButton.disabled = false; }
+});
+document.querySelector("#nativeVoicePushButton")?.addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  const status = document.querySelector("#nativeVoiceSetupStatus");
+  const certificateInput = document.querySelector("#nativeVoiceCertificate");
+  const keyInput = document.querySelector("#nativeVoicePrivateKey");
+  if (!certificateInput.files[0] || !keyInput.files[0]) { status.textContent = "Choose the matching VoIP certificate and private key first."; return; }
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/voice/push-credential", {
+      method: "POST", headers: { ...adminHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ certificate: await certificateInput.files[0].text(), privateKey: await keyInput.files[0].text() })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Incoming calling setup failed.");
+    status.textContent = "Apple VoIP connected. Install the new build, sign in, then test incoming calls with the phone locked.";
+    certificateInput.value = "";
+    keyInput.value = "";
+  } catch (error) { status.textContent = error.message; }
+  finally { button.disabled = false; }
+});
 const humanRouteNumbersInput = document.querySelector("#humanRouteNumbersInput");
 const humanRouteTriggersInput = document.querySelector("#humanRouteTriggersInput");
 const humanRouteCallerMessageInput = document.querySelector("#humanRouteCallerMessageInput");
@@ -2114,6 +2148,11 @@ async function loadDispatchBookings() {
 
 function renderConversations() {
   conversationList.innerHTML = "";
+  const unreadCount = conversations.reduce((sum, conversation) => sum + (conversation.unread || 0), 0);
+  const inboxTab = document.querySelector('[data-tab-target="inbox"]');
+  if (inboxTab) inboxTab.textContent = unreadCount ? `Inbox (${unreadCount > 99 ? "99+" : unreadCount})` : "Inbox";
+  const unreadSummary = document.querySelector("#inboxUnreadSummary");
+  if (unreadSummary) unreadSummary.textContent = unreadCount ? `${unreadCount} unread message${unreadCount === 1 ? "" : "s"}` : "No unread messages";
   if (!conversations.length) {
     const empty = document.createElement("p");
     empty.className = "empty-state";
@@ -2128,6 +2167,8 @@ function renderConversations() {
   }
 
   for (const conversation of conversations) {
+    const view = document.querySelector("#inboxViewFilter")?.value || "all";
+    if (view === "unread" && !conversation.unread || view === "attention" && !conversation.needsFollowUp) continue;
     const booking = getLatestConversationBooking(conversation);
     const search = document.querySelector("#conversationSearch")?.value.trim().toLowerCase() || "";
     if (search && !`${booking?.name || conversation.customerName || ""} ${conversation.phone}`.toLowerCase().includes(search)) continue;
@@ -2144,12 +2185,15 @@ function renderConversations() {
       </div>
       <span>${escapeHtml(cleanConversationBody(conversation.lastBody || "No message body"))}</span>
       <small>${escapeHtml(formatPhone(conversation.phone))}</small>
+      ${conversation.unread ? `<span class="inbox-unread-badge">${conversation.unread} new</span>` : ""}
+      ${conversation.needsFollowUp ? `<small class="inbox-follow-up">${escapeHtml(conversation.followUpReason || "Needs reply")}</small>` : ""}
     `;
     button.addEventListener("click", () => {
       renderedConversationPhone = "";
       selectedConversationPhone = conversation.phone;
       document.body.classList.add("thread-open");
       renderConversations();
+      fetch(`/api/conversations/${encodeURIComponent(conversation.phone)}/state`, { method: "POST", headers: { ...staffHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ action: "read", through: conversation.lastMessageAt }) }).then((response) => { if (response.ok) refreshInbox().catch(() => {}); }).catch(() => {});
     });
     let touchStartX = 0;
     let touchStartY = 0;
@@ -3181,6 +3225,7 @@ refreshActivity().catch(() => {});
 setInterval(() => refreshActivity().catch(() => {}), 15000);
 refreshInbox().catch((error) => setInboxStatus(error.message));
 setInterval(() => refreshInbox().catch(() => {}), 5000);
+document.querySelector("#inboxViewFilter")?.addEventListener("change", renderConversations);
 refreshCallLog().catch((error) => {
   callLogStatus.textContent = error.message;
 });

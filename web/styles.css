@@ -5629,3 +5629,5 @@ summary { cursor: pointer; min-height: 32px; }
   .workspace-signed-in[data-view="inbox"].thread-open .conversation-panel { height: 100%; min-height: 0; }
   .workspace-signed-in[data-view="inbox"].thread-open .inbox-search { display: none; }
 }
+.inbox-unread-badge { display: inline-block; padding: 3px 8px; margin-top: 4px; border-radius: 8px; background: #007a65; color: #fff; font-weight: 800; font-size: 12px; }
+.inbox-follow-up { display: block; color: #ffca75; font-weight: 700; }
