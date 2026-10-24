@@ -2827,7 +2827,7 @@ async function refreshCallLog() {
   announceNewCalls(nextCalls);
   callLog = nextCalls;
   if (!selectedCallId || !callLog.some((call) => call.id === selectedCallId)) {
-    selectedCallId = callLog[0]?.id || "";
+    selectedCallId = groupCallsByCaller(callLog)[0]?.latest?.id || "";
   }
   renderCallLog();
   callLogStatus.textContent = callLog.length ? "Call log is up to date." : "No forwarded calls logged yet.";
@@ -3011,7 +3011,7 @@ function renderRepeatCallHistory(group, selectedId = "") {
   return `
     <div class="call-section">
       <h4>Caller history</h4>
-      <div class="call-synopsis">
+      <div class="call-synopsis call-history-list">
         ${group.calls
           .map((item) => {
             const isCurrent = item.id === selectedId;
@@ -3021,7 +3021,7 @@ function renderRepeatCallHistory(group, selectedId = "") {
               item.durationLabel,
               item.smsStatus && item.smsStatus !== "none" ? `SMS ${item.smsStatus}` : ""
             ].filter(Boolean);
-            return `<button type="button" data-action="select-history-call" data-call-id="${escapeAttribute(item.id)}" aria-pressed="${isCurrent}">${isCurrent ? "Current: " : ""}${escapeHtml(bits.join(" · "))}</button>`;
+            return `<button class="call-history-select" type="button" data-action="select-history-call" data-call-id="${escapeAttribute(item.id)}" aria-pressed="${isCurrent}">${isCurrent ? "Current: " : ""}${escapeHtml(bits.join(" · "))}</button>`;
           })
           .join("")}
       </div>
