@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dddcincy.aireceptionist",
-      "entitlements": { "aps-environment": "production" },
+      "entitlements": { "aps-environment": "production", "com.apple.developer.usernotifications.time-sensitive": true },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSMicrophoneUsageDescription": "DDD Dispatch uses your microphone for business phone calls."
@@ -35,13 +35,21 @@
     "owner": "dddcincy",
     "plugins": [
       "@twilio/voice-react-native-sdk",
+      "./withDddCallSounds.cjs",
       "expo-status-bar",
       [
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
           "color": "#ff3ea5",
-          "defaultChannel": "ddd-dispatch"
+          "defaultChannel": "ddd-dispatch",
+          "sounds": [
+            "./assets/ddd_dispatch_alert.wav",
+            "./assets/ddd_roadside_ring.wav",
+            "./assets/ddd_on_the_move.wav",
+            "./assets/ddd_road_ready.wav",
+            "./assets/ddd_keep_rolling.wav"
+          ]
         }
       ]
     ]

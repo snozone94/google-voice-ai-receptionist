@@ -6,7 +6,8 @@ import * as Notifications from "expo-notifications";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNativePhone } from "./useNativePhone";
-import { Phone, PhoneOff, MessageCircle, CalendarDays, UserRound, Mic, MicOff, Volume2, Ear, Grid3X3, Send, Sparkles } from "lucide-react-native";
+import { alertSounds, soundPackVersion, soundFile, soundChannel, createAlertChannels } from "./alert-sounds";
+import { Phone, PhoneOff, MessageCircle, CalendarDays, UserRound, Mic, MicOff, Volume2, Ear, Grid3X3, Send, Sparkles, Captions, Music2, ChevronDown, Check, X } from "lucide-react-native";
 import {
   ActivityIndicator,
   Alert,
@@ -14,6 +15,7 @@ import {
   KeyboardAvoidingView,
   Image,
   Linking,
+  Modal,
   Platform,
   Pressable,
   SafeAreaView,
@@ -174,7 +176,7 @@ export default function App() {
   const [activity, setActivity] = useState({ calls: [], leads: [], bookings: [], conversations: [], insights: null });
   const [settings, setSettings] = useState(blankSettings);
   const [signedInStaff, setSignedInStaff] = useState(null);
-  const [personalPrefs, setPersonalPrefs] = useState({ texts: true, missedCalls: true, bookings: true, qaIssues: true, newCalls: false, teamActivity: false });
+  const [personalPrefs, setPersonalPrefs] = useState({ texts: true, missedCalls: true, bookings: true, qaIssues: true, newCalls: false, teamActivity: false, alertSound: "ddd-alert", callSound: "ddd-alert", timeSensitive: true });
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const autosaveTimerRef = useRef(null);
   const lastSavedSettingsRef = useRef("");
@@ -182,7 +184,7 @@ export default function App() {
 
   const cleanBaseUrl = useMemo(() => normalizeBaseUrl(apiBaseUrl), [apiBaseUrl]);
   const isAdmin = isAdminStaff(signedInStaff);
-  const phone = useNativePhone({ baseUrl: cleanBaseUrl, accessCode: adminPin, signedIn: Boolean(signedInStaff?.ok) });
+  const phone = useNativePhone({ baseUrl: cleanBaseUrl, accessCode: adminPin, signedIn: Boolean(signedInStaff?.ok), callSound: personalPrefs.callSound });
   const availableTabs = useMemo(() => (isAdmin ? adminPrimaryTabs : staffPrimaryTabs), [isAdmin]);
   const allowedTabNames = useMemo(
     () => new Set([...availableTabs, ...(isAdmin ? adminMoreTabs : [{ name: "Home" }, { name: "Insights" }])].map((tab) => tab.name)),
@@ -287,7 +289,7 @@ export default function App() {
   useEffect(() => {
     if (!prefsLoaded) return;
     AsyncStorage.setItem("ddd-notification-preferences", JSON.stringify(personalPrefs)).catch(() => {});
-    if (pushToken && signedInStaff?.ok) apiPost(cleanBaseUrl, "/api/push/register", { token: pushToken, platform: Platform.OS, preferences: personalPrefs }, adminPin).catch((error) => setPushStatus(error.message));
+    if (pushToken && signedInStaff?.ok) apiPost(cleanBaseUrl, "/api/push/register", { token: pushToken, platform: Platform.OS, preferences: { ...personalPrefs, soundPackVersion } }, adminPin).catch((error) => setPushStatus(error.message));
   }, [personalPrefs, prefsLoaded, pushToken, signedInStaff?.ok, cleanBaseUrl, adminPin]);
 
   useEffect(() => {
@@ -419,6 +421,7 @@ export default function App() {
     if (!quiet) setPushStatus("Requesting notification permission...");
     try {
       if (Platform.OS === "android") {
+        await createAlertChannels(Notifications);
         await Notifications.setNotificationChannelAsync("ddd-dispatch", {
           name: "DDD Dispatch",
           importance: Notifications.AndroidImportance.MAX,
@@ -430,7 +433,7 @@ export default function App() {
       const existing = await Notifications.getPermissionsAsync();
       let finalStatus = existing.status;
       if (existing.status !== "granted") {
-        const requested = await Notifications.requestPermissionsAsync();
+        const requested = await Notifications.requestPermissionsAsync({ ios: { allowAlert: true, allowBadge: true, allowSound: true } });
         finalStatus = requested.status;
       }
       if (finalStatus !== "granted") {
@@ -450,7 +453,7 @@ export default function App() {
         token,
         platform: Platform.OS,
         staffPhone,
-        preferences: personalPrefs
+        preferences: { ...personalPrefs, soundPackVersion }
       }, accessPin);
       setPushStatus("Native push is connected on this phone.");
       if (!quiet) setStatus("Push notifications connected.");
@@ -460,6 +463,19 @@ export default function App() {
     }
   }
 
+  async function previewAlertSound(id) {
+    if (phone.call) return setPushStatus("Finish the current call before previewing a sound.");
+    if (Platform.OS === "web" || Constants.appOwnership === "expo" || Constants.executionEnvironment === "storeClient") return setPushStatus("Custom sounds are available in the installed app build.");
+    try {
+      if (Platform.OS === "android") await createAlertChannels(Notifications);
+      let permission = await Notifications.getPermissionsAsync();
+      if (permission.status !== "granted") permission = await Notifications.requestPermissionsAsync({ ios: { allowAlert: true, allowBadge: true, allowSound: true } });
+      if (permission.status !== "granted") return setPushStatus("Allow notification sounds in your phone settings to preview this alert.");
+      await Notifications.scheduleNotificationAsync({ content: { title: "DDD sound preview", body: alertSounds.find((sound) => sound.id === id)?.label || "System alert", sound: id === "silent" ? null : soundFile(id), interruptionLevel: "active" }, trigger: Platform.OS === "android" ? { channelId: soundChannel(id) } : null });
+      setPushStatus("Preview sent to this phone.");
+    } catch (error) { setPushStatus(error.message); }
+  }
+
   async function sendTestNotification() {
     try {
       if (Platform.OS !== "web") {
@@ -467,11 +483,11 @@ export default function App() {
           content: {
             title: "DDD AI Dispatch",
             body: "This is how new call and text alerts will show on your phone.",
-            sound: "default",
-            interruptionLevel: "timeSensitive",
+            sound: personalPrefs.alertSound === "silent" ? null : soundFile(personalPrefs.alertSound),
+            interruptionLevel: personalPrefs.timeSensitive !== false ? "timeSensitive" : "active",
             data: { type: "local-test" }
           },
-          trigger: null
+          trigger: Platform.OS === "android" ? { channelId: soundChannel(personalPrefs.alertSound) } : null
         });
       }
       if (adminPin) {
@@ -500,10 +516,11 @@ export default function App() {
       <StatusBar style="light" />
       <LinearGradient colors={["#140f2a", "#102d3b", "#33133d"]} style={styles.shell}>
         <Header business={business} settings={settings} signedInStaff={signedInStaff} onProfile={() => setActiveTab("More")} onAlerts={() => enablePushNotifications()} />
-        {phone.call ? <NativeCallBar phone={phone} onError={setStatus} /> : null}
+        {phone.call ? <NativeCallBar phone={phone} onError={setStatus} onTranscript={() => setActiveTab("Calls")} /> : null}
 
         <WorkspaceContent style={activeTab === "Inbox" ? styles.inboxContent : undefined} contentContainerStyle={activeTab === "Inbox" ? undefined : styles.content} showsVerticalScrollIndicator={false}>
           {["Home", "Calls"].includes(activeTab) ? <LiveCallsPanel baseUrl={cleanBaseUrl} accessCode={adminPin} phone={phone} onError={setStatus} onText={(number) => { setContactPhone(number); setActiveTab("Inbox"); }} /> : null}
+          {activeTab === "Calls" && phone.call && !phone.call.liveCallId && phone.call.callSid ? <ActiveCallTranscript baseUrl={cleanBaseUrl} accessCode={adminPin} callId={phone.call.callSid} /> : null}
           {activeTab === "Home" ? (
             <HomeTab
               adminPin={adminPin}
@@ -601,7 +618,7 @@ export default function App() {
               onRefresh={() => loadAll(cleanBaseUrl, adminPin)}
             />
           ) : null}
-          {activeTab === "More" ? <AccountPanel staff={signedInStaff} phone={phone} preferences={personalPrefs} setPreferences={setPersonalPrefs} onEnablePush={() => enablePushNotifications()} pushStatus={pushStatus} onSignOut={signOut} isAdmin={isAdmin} onSelect={setActiveTab} /> : null}
+          {activeTab === "More" ? <AccountPanel staff={signedInStaff} phone={phone} preferences={personalPrefs} setPreferences={setPersonalPrefs} onEnablePush={() => enablePushNotifications()} onPreviewSound={previewAlertSound} pushStatus={pushStatus} onSignOut={signOut} isAdmin={isAdmin} onSelect={setActiveTab} /> : null}
 
           {loading ? <ActivityIndicator color="#7d4dff" /> : null}
           <Text style={styles.status}>{status}</Text>
@@ -623,7 +640,7 @@ function StaffLogin({ code, onCode, loading, status, onSignIn }) {
   </KeyboardAvoidingView></SafeAreaView>;
 }
 
-function NativeCallBar({ phone, onError }) {
+function NativeCallBar({ phone, onError, onTranscript }) {
   const [keypad, setKeypad] = useState(false);
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
@@ -632,7 +649,7 @@ function NativeCallBar({ phone, onError }) {
   const Control = ({ label, Icon, action, danger, disabled }) => <Pressable disabled={disabled} accessibilityRole="button" accessibilityLabel={label} onPress={() => run(action)} style={{ alignItems: "center", justifyContent: "center", minWidth: 64, minHeight: 54, gap: 4, opacity: disabled ? 0.4 : 1 }}><View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: danger ? "#d93458" : "#314450", alignItems: "center", justifyContent: "center" }}><Icon size={18} color="#fff" /></View><Text style={{ fontSize: 11, color: "#eff7fa" }}>{label}</Text></Pressable>;
   return <View style={{ backgroundColor: "#142b32", paddingHorizontal: 16, paddingVertical: 10, gap: 8 }}>
     <Text style={{ color: "#fff", fontWeight: "700", fontSize: 18 }}>{formatPhone(phone.call.to) || "Customer"}</Text>
-    <Text style={{ color: "#a7d8ca", fontSize: 12 }}>{phone.call.status || "Connecting"}{duration ? ` · ${duration}` : ""}{phone.call.mode === "listen" ? " · Your microphone is off" : ""}</Text>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Text style={{ color: "#a7d8ca", fontSize: 12, flex: 1 }}>{phone.call.status || "Connecting"}{duration ? ` · ${duration}` : ""}{phone.call.mode === "listen" ? " · Your microphone is off" : ""}</Text><Pressable accessibilityRole="button" accessibilityLabel="Read live call transcript" onPress={onTranscript} style={{ flexDirection: "row", alignItems: "center", gap: 6, padding: 8, minHeight: 40 }}><Captions size={18} color="#9ce8ee" /><Text style={{ color: "#c2f5f5", fontWeight: "700" }}>Transcript</Text></Pressable></View>
     <View style={{ flexDirection: "row", justifyContent: "space-around" }}>
       {phone.call.incoming ? <><Control label="Answer" Icon={Phone} action={phone.answer} />{phone.call.liveCallId ? <Control label="Listen" Icon={Ear} action={phone.listenIncoming} /> : null}</> : phone.call.mode === "listen" ? <Control label="Take over" Icon={Phone} action={phone.takeOver} /> : <Control label={phone.call.muted ? "Unmute" : "Mute"} Icon={phone.call.muted ? MicOff : Mic} action={phone.mute} />}
       {!phone.call.incoming ? <><Control label="Speaker" Icon={Volume2} action={phone.audioRoute} /><Control label="Keypad" Icon={Grid3X3} action={async () => setKeypad((value) => !value)} disabled={phone.call.mode === "listen"} /></> : null}
@@ -642,11 +659,26 @@ function NativeCallBar({ phone, onError }) {
   </View>;
 }
 
-function AccountPanel({ staff, phone, preferences, setPreferences, onEnablePush, pushStatus, onSignOut, isAdmin, onSelect }) {
+function SoundPicker({ label, value, onChange, onPreview, disabled = false, allowSilent = false }) {
+  const [open, setOpen] = useState(false);
+  const choices = [...alertSounds, { id: "system", label: "System sound" }, ...(allowSilent ? [{ id: "silent", label: "Silent" }] : [])];
+  const selected = choices.find((sound) => sound.id === value) || choices[0];
+  return <View style={{ gap: 8, paddingVertical: 10 }}>
+    <Text style={styles.label}>{label}</Text>
+    <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}><Pressable disabled={disabled} accessibilityRole="button" accessibilityLabel={`${label}: ${selected.label}`} accessibilityState={{ disabled, expanded: open }} onPress={() => setOpen(true)} style={{ flex: 1, flexDirection: "row", alignItems: "center", minHeight: 48, padding: 12, gap: 8, backgroundColor: "#e6eef0", borderRadius: 8, opacity: disabled ? 0.5 : 1 }}><Music2 size={20} color="#9b167b" /><Text style={{ flex: 1, color: "#1d2934", fontWeight: "700" }}>{selected.label}</Text><ChevronDown size={18} color="#253947" /></Pressable><Pressable disabled={disabled} accessibilityRole="button" accessibilityLabel={`Preview ${selected.label}`} onPress={() => onPreview(selected.id)} style={{ width: 48, height: 48, alignItems: "center", justifyContent: "center", opacity: disabled ? 0.5 : 1 }}><Volume2 size={22} color="#ae2488" /></Pressable></View>
+    <Modal transparent visible={open} animationType="fade" onRequestClose={() => setOpen(false)}><View style={{ flex: 1, backgroundColor: "rgba(5,12,24,.75)", justifyContent: "center", padding: 20 }}><View accessibilityViewIsModal style={{ padding: 16, backgroundColor: "#f1f6f8", borderRadius: 8, maxHeight: "85%" }}><View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}><Text style={{ flex: 1, fontWeight: "800", fontSize: 19, color: "#1a2636" }}>{label}</Text><Pressable accessibilityRole="button" accessibilityLabel="Close sound choices" onPress={() => setOpen(false)} style={{ padding: 10 }}><X size={22} color="#263849" /></Pressable></View><ScrollView>{choices.map((sound) => <Pressable accessibilityRole="radio" accessibilityState={{ selected: selected.id === sound.id }} key={sound.id} onPress={() => { onChange(sound.id); setOpen(false); }} style={{ minHeight: 52, paddingVertical: 14, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: "#d4dde4", flexDirection: "row", gap: 10 }}><Text style={{ color: "#273746", flex: 1, fontWeight: selected.id === sound.id ? "800" : "500" }}>{sound.label}</Text>{selected.id === sound.id ? <Check size={20} color="#008778" /> : null}</Pressable>)}</ScrollView></View></View></Modal>
+  </View>;
+}
+
+function AccountPanel({ staff, phone, preferences, setPreferences, onEnablePush, onPreviewSound, pushStatus, onSignOut, isAdmin, onSelect }) {
   return <>
     <Text style={styles.screenHeading}>{staff.name}</Text><Text style={styles.muted}>{isAdmin ? "Administrator" : "Technician"}</Text>
     <Card title="Business phone"><Text style={styles.record}>{phone.status}</Text>{phone.callerIds.length > 1 ? <View style={styles.buttonRow}>{phone.callerIds.map((id) => <ActionButton key={id} label={formatPhone(id)} onPress={() => phone.setCallerId(id)} variant={id === phone.callerId ? undefined : "light"} />)}</View> : null}</Card>
     <Card title="Notifications"><ActionButton label="Enable notifications" onPress={onEnablePush} /><Text style={styles.muted}>{pushStatus}</Text>
+      <SoundPicker label="Notification sound" value={preferences.alertSound} allowSilent onChange={(alertSound) => setPreferences((current) => ({ ...current, alertSound }))} onPreview={onPreviewSound} disabled={Boolean(phone.call)} />
+      <SoundPicker label="Incoming call ringtone" value={preferences.callSound} onChange={(callSound) => setPreferences((current) => ({ ...current, callSound }))} onPreview={onPreviewSound} disabled={Boolean(phone.call)} />
+      <View style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, gap: 8 }}><Text style={[styles.record, { flex: 1 }]}>Time-sensitive customer alerts</Text><Switch value={preferences.timeSensitive !== false} onValueChange={(timeSensitive) => setPreferences((current) => ({ ...current, timeSensitive }))} /></View>
+      <Text style={styles.muted}>Critical Alerts: Apple approval required.</Text>
       {[["texts", "Customer messages"], ["missedCalls", "Missed calls & unfinished requests"], ["bookings", "New bookings"], ["qaIssues", "Delivery & service problems"], ["newCalls", "Every incoming call"], ["teamActivity", "Team replies & call activity"]].map(([key, label]) => <View key={key} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 10, gap: 8 }}><Text style={[styles.record, { flex: 1 }]}>{label}</Text><Switch value={Boolean(preferences[key])} onValueChange={(value) => setPreferences((current) => ({ ...current, [key]: value }))} /></View>)}
     </Card>
     <ActionButton label="Insights" variant="light" onPress={() => onSelect("Insights")} />
@@ -1511,7 +1543,7 @@ function getBookingRequestedLabel(booking = {}) {
 function LiveTranscript({ call }) {
   const scroll = useRef(null);
   const follow = useRef(true);
-  const status = ({ connecting: "Connecting transcript…", live: "Live transcript · Customer / DDD", saved: "Transcript saved", unavailable: "Full transcript unavailable · available AI conversation shown" })[call.transcriptionStatus] || "AI conversation · full-call transcription is off";
+  const status = ({ connecting: "Connecting transcript…", live: "Live transcript · Customer / DDD", saved: "Transcript saved", unavailable: "Full transcript unavailable · available conversation shown", off: "Live transcription is off" })[call.transcriptionStatus] || "AI conversation · full-call transcription is off";
   return <View style={{ gap: 8 }}>
     <Text style={styles.muted}>{status}</Text>
     <ScrollView ref={scroll} nestedScrollEnabled style={[styles.transcriptBox, { maxHeight: 260 }]} contentContainerStyle={{ padding: 12, gap: 12 }} onScroll={({ nativeEvent: event }) => { follow.current = event.contentSize.height - event.layoutMeasurement.height - event.contentOffset.y < 48; }} scrollEventThrottle={100} onContentSizeChange={() => { if (follow.current) scroll.current?.scrollToEnd({ animated: false }); }} accessibilityLabel="Live call transcript">
@@ -1520,8 +1552,28 @@ function LiveTranscript({ call }) {
   </View>;
 }
 
+function ActiveCallTranscript({ baseUrl, accessCode, callId }) {
+  const [call, setCall] = useState({ transcript: [], transcriptionStatus: "connecting" });
+  useEffect(() => {
+    let alive = true;
+    let timer;
+    const refresh = async () => {
+      try {
+        const result = await apiGet(baseUrl, `/api/calls/${encodeURIComponent(callId)}/transcript`, accessCode);
+        if (alive) setCall({ transcript: result.transcript || [], transcriptionStatus: result.status });
+      } catch { if (alive) setCall((value) => ({ ...value, transcriptionStatus: "unavailable" })); }
+      finally { if (alive) timer = setTimeout(refresh, 2000); }
+    };
+    setCall({ transcript: [], transcriptionStatus: "connecting" });
+    refresh();
+    return () => { alive = false; clearTimeout(timer); };
+  }, [baseUrl, accessCode, callId]);
+  return <Card title="Current conversation"><LiveTranscript call={call} /></Card>;
+}
+
 function LiveCallsPanel({ baseUrl, accessCode, phone, onError, onText }) {
   const [calls, setCalls] = useState([]);
+  const [connectionError, setConnectionError] = useState("");
   const [collapsed, setCollapsed] = useState({});
   const [drafts, setDrafts] = useState({});
   const [drafting, setDrafting] = useState(null);
@@ -1531,14 +1583,14 @@ function LiveCallsPanel({ baseUrl, accessCode, phone, onError, onText }) {
     const refresh = async () => {
       try {
         const result = await apiGet(baseUrl, "/api/calls/live", accessCode);
-        if (alive) setCalls(result.calls || []);
-      } catch { if (alive) setCalls([]); }
+        if (alive) { setCalls(result.calls || []); setConnectionError(""); }
+      } catch { if (alive) setConnectionError("Live updates interrupted. Reconnecting…"); }
       finally { if (alive) timer = setTimeout(refresh, 3000); }
     };
     refresh();
     return () => { alive = false; clearTimeout(timer); };
   }, [baseUrl, accessCode]);
-  if (!calls.length) return null;
+  if (!calls.length && !connectionError) return null;
   const run = (operation) => operation().catch((error) => onError(error.message));
   async function getDrafts(call) {
     setDrafting(call.callId);
@@ -1546,7 +1598,7 @@ function LiveCallsPanel({ baseUrl, accessCode, phone, onError, onText }) {
     catch (error) { onError(error.message); }
     finally { setDrafting(null); }
   }
-  return <View style={{ gap: 8 }}>{calls.map((call) => <Card title={`Live · ${formatPhone(call.phone) || "Customer"}`} key={call.callId}>
+  return <View style={{ gap: 8 }}>{connectionError ? <Text style={styles.warningText}>{connectionError}</Text> : null}{calls.map((call) => <Card title={`Live · ${formatPhone(call.phone) || "Customer"}`} key={call.callId}>
     <Text style={styles.record}>{call.status || "AI is answering"}</Text>
     <View style={styles.buttonRow}>
       {call.capabilities.listen && !phone.call ? <ActionButton label="Listen" variant="light" disabled={!phone.ready} onPress={() => run(() => phone.joinLive(call, "listen"))} /> : null}

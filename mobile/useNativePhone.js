@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { AppState, PermissionsAndroid, Platform } from "react-native";
 import Constants from "expo-constants";
+import { callKitOptions } from "./alert-sounds";
 
-export function useNativePhone({ baseUrl, accessCode, signedIn }) {
+export function useNativePhone({ baseUrl, accessCode, signedIn, callSound = "ddd-alert" }) {
   const [state, setState] = useState({ ready: false, incomingReady: false, status: "Connecting phone", callerIds: [], callerId: "", call: null });
   const voice = useRef(null);
   const currentCall = useRef(null);
@@ -11,6 +12,8 @@ export function useNativePhone({ baseUrl, accessCode, signedIn }) {
   const token = useRef("");
   const generation = useRef(0);
   const dialing = useRef(false);
+  const selectedCallSound = useRef(callSound);
+  selectedCallSound.current = callSound;
   const api = async (route, body) => {
     const response = await fetch(`${baseUrl}${route}`, { method: body ? "POST" : "GET", headers: { "Content-Type": "application/json", "x-staff-code": accessCode }, ...(body ? { body: JSON.stringify(body) } : {}) });
     const data = await response.json();
@@ -21,9 +24,9 @@ export function useNativePhone({ baseUrl, accessCode, signedIn }) {
     if (currentCall.current === call) return;
     currentCall.current = call;
     const updateCall = (patch) => { if (currentCall.current === call) setState((value) => ({ ...value, call: { ...value.call, ...patch } })); };
-    setState((value) => ({ ...value, call: { to, status: "Connecting", muted: false, ...context } }));
+    setState((value) => ({ ...value, call: { to, status: "Connecting", muted: false, callSid: call.getSid?.(), ...context } }));
     call.on("ringing", () => updateCall({ status: "Ringing" }));
-    const connected = () => updateCall({ status: context.mode === "listen" ? "Listening" : "On call", connectedAt: call.getInitialConnectedTimestamp?.()?.toISOString?.() || new Date().toISOString() });
+    const connected = () => updateCall({ status: context.mode === "listen" ? "Listening" : "On call", callSid: call.getSid?.(), connectedAt: call.getInitialConnectedTimestamp?.()?.toISOString?.() || new Date().toISOString() });
     call.on("connected", connected);
     if (call.getState?.() === "connected") connected();
     const ended = () => { if (currentCall.current !== call) return; currentCall.current = null; invite.current = null; setState((value) => ({ ...value, call: null })); };
@@ -47,7 +50,7 @@ export function useNativePhone({ baseUrl, accessCode, signedIn }) {
       if (!voice.current) {
         voice.current = new Voice();
         if (Platform.OS === "ios") {
-          await voice.current.setCallKitConfiguration({ callKitIncludesCallsInRecents: false, callKitMaximumCallGroups: 1, callKitMaximumCallsPerCallGroup: 1, callKitSupportedHandleTypes: [0, 1], callKitIconTemplateImageData: "", callKitRingtoneSound: "" });
+          await voice.current.setCallKitConfiguration(callKitOptions(selectedCallSound.current));
           await voice.current.setIncomingCallContactHandleTemplate('${customerPhone}');
         }
         voice.current.on(Voice.Event.Error, (error) => setState((value) => ({ ...value, status: error.message || "Phone disconnected" })));
@@ -98,6 +101,11 @@ export function useNativePhone({ baseUrl, accessCode, signedIn }) {
     const foreground = AppState.addEventListener("change", (value) => { if (value === "active") reconnect(); });
     return () => { alive = false; generation.current++; clearInterval(refresh); foreground.remove(); };
   }, [baseUrl, accessCode, signedIn]);
+
+  useEffect(() => {
+    if (Platform.OS !== "ios" || !voice.current || !state.ready || state.call || currentCall.current || invite.current) return;
+    voice.current.setCallKitConfiguration(callKitOptions(callSound)).catch(() => setState((value) => ({ ...value, status: "Ringtone could not update. Try again when the phone is idle." })));
+  }, [callSound, state.ready, state.call]);
 
   return {
     ...state,
