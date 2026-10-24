@@ -6,8 +6,10 @@ import * as Notifications from "expo-notifications";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNativePhone } from "./useNativePhone";
+import { Phone, PhoneOff, MessageCircle, CalendarDays, UserRound, Mic, MicOff, Volume2, Ear, Grid3X3, Send, Sparkles } from "lucide-react-native";
 import {
   ActivityIndicator,
+  Alert,
   AppState,
   KeyboardAvoidingView,
   Image,
@@ -23,7 +25,7 @@ import {
   View
 } from "react-native";
 
-const defaultApiBaseUrl = "https://google-voice-ai-receptionist.onrender.com";
+const defaultApiBaseUrl = process.env.EXPO_PUBLIC_DISPATCH_API_BASE_URL || "https://google-voice-ai-receptionist.onrender.com";
 const apiStorageKey = "ddd-ai-dispatch-api-base-url";
 const adminPinStorageKey = "ddd-ai-dispatch-admin-pin";
 const staffPhoneStorageKey = "ddd-ai-dispatch-staff-phone";
@@ -113,7 +115,7 @@ const blankSettings = {
   smsFollowUp: {
     enabled: true,
     message:
-      "Thanks for calling DDD. Reply with the service, vehicle, and location, or book here: {{link}}. DDD Mobile: iPhone {{iosAppLink}} Android {{androidAppLink}}. Reply STOP to stop."
+      "Thanks for calling DDD. Reply with your service, vehicle, and location.\n\nBook online:\n{{link}}\n\nDDD Mobile for iPhone:\n{{iosAppLink}}\n\nDDD Mobile for Android:\n{{androidAppLink}}\n\nReply STOP to stop."
   },
   reviewFollowUp: {
     enabled: true,
@@ -501,6 +503,7 @@ export default function App() {
         {phone.call ? <NativeCallBar phone={phone} onError={setStatus} /> : null}
 
         <WorkspaceContent style={activeTab === "Inbox" ? styles.inboxContent : undefined} contentContainerStyle={activeTab === "Inbox" ? undefined : styles.content} showsVerticalScrollIndicator={false}>
+          {["Home", "Calls"].includes(activeTab) ? <LiveCallsPanel baseUrl={cleanBaseUrl} accessCode={adminPin} phone={phone} onError={setStatus} onText={(number) => { setContactPhone(number); setActiveTab("Inbox"); }} /> : null}
           {activeTab === "Home" ? (
             <HomeTab
               adminPin={adminPin}
@@ -621,13 +624,21 @@ function StaffLogin({ code, onCode, loading, status, onSignIn }) {
 }
 
 function NativeCallBar({ phone, onError }) {
+  const [keypad, setKeypad] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const run = (operation) => operation().catch((error) => onError(error.message));
-  return <View style={{ backgroundColor: "#223b35", padding: 12, gap: 8 }}>
-    <Text style={{ color: "#fff", fontWeight: "700" }}>{phone.call.status} · {formatPhone(phone.call.to) || phone.call.to}</Text>
-    <View style={styles.buttonRow}>
-      {phone.call.incoming ? <ActionButton label="Answer" onPress={() => run(phone.answer)} /> : <><ActionButton label={phone.call.muted ? "Unmute" : "Mute"} onPress={() => run(phone.mute)} variant="light" /><ActionButton label="Audio" onPress={() => run(phone.audioRoute)} variant="light" /></>}
-      <ActionButton label={phone.call.incoming ? "Decline" : "End call"} onPress={() => run(phone.end)} />
+  const duration = phone.call.connectedAt ? formatDuration(Math.max(0, Math.floor((now - Date.parse(phone.call.connectedAt)) / 1000))) : "";
+  const Control = ({ label, Icon, action, danger, disabled }) => <Pressable disabled={disabled} accessibilityRole="button" accessibilityLabel={label} onPress={() => run(action)} style={{ alignItems: "center", justifyContent: "center", minWidth: 64, minHeight: 54, gap: 4, opacity: disabled ? 0.4 : 1 }}><View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: danger ? "#d93458" : "#314450", alignItems: "center", justifyContent: "center" }}><Icon size={18} color="#fff" /></View><Text style={{ fontSize: 11, color: "#eff7fa" }}>{label}</Text></Pressable>;
+  return <View style={{ backgroundColor: "#142b32", paddingHorizontal: 16, paddingVertical: 10, gap: 8 }}>
+    <Text style={{ color: "#fff", fontWeight: "700", fontSize: 18 }}>{formatPhone(phone.call.to) || "Customer"}</Text>
+    <Text style={{ color: "#a7d8ca", fontSize: 12 }}>{phone.call.status || "Connecting"}{duration ? ` · ${duration}` : ""}{phone.call.mode === "listen" ? " · Your microphone is off" : ""}</Text>
+    <View style={{ flexDirection: "row", justifyContent: "space-around" }}>
+      {phone.call.incoming ? <><Control label="Answer" Icon={Phone} action={phone.answer} />{phone.call.liveCallId ? <Control label="Listen" Icon={Ear} action={phone.listenIncoming} /> : null}</> : phone.call.mode === "listen" ? <Control label="Take over" Icon={Phone} action={phone.takeOver} /> : <Control label={phone.call.muted ? "Unmute" : "Mute"} Icon={phone.call.muted ? MicOff : Mic} action={phone.mute} />}
+      {!phone.call.incoming ? <><Control label="Speaker" Icon={Volume2} action={phone.audioRoute} /><Control label="Keypad" Icon={Grid3X3} action={async () => setKeypad((value) => !value)} disabled={phone.call.mode === "listen"} /></> : null}
+      <Control label={phone.call.incoming ? "Decline" : phone.call.mode === "listen" ? "Stop listening" : "End"} Icon={PhoneOff} action={phone.end} danger />
     </View>
+    {keypad && !phone.call.incoming ? <View style={{ flexDirection: "row", flexWrap: "wrap" }}>{["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"].map((digit) => <Pressable key={digit} accessibilityRole="button" accessibilityLabel={`Send ${digit}`} onPress={() => run(() => phone.sendDigits(digit))} style={{ width: "33.33%", height: 38, alignItems: "center", justifyContent: "center" }}><Text style={{ color: "#fff", fontSize: 20 }}>{digit}</Text></Pressable>)}</View> : null}
   </View>;
 }
 
@@ -651,6 +662,7 @@ function BottomTabs({ activeTab, onSelect, tabs = staffPrimaryTabs, unread = 0 }
       <View style={styles.tabContent}>
         {tabs.map((tab) => {
           const active = activePrimary === tab.name;
+          const Icon = { Inbox: MessageCircle, Calls: Phone, Bookings: CalendarDays, More: UserRound }[tab.name] || UserRound;
           return (
             <Pressable
               key={tab.name}
@@ -662,7 +674,9 @@ function BottomTabs({ activeTab, onSelect, tabs = staffPrimaryTabs, unread = 0 }
               ]}
             >
               <LinearGradient colors={[tab.color, "#8fdde4"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.tabAccent} />
-              <Text style={[styles.tabText, active && styles.tabTextActive]}>{tab.label || tab.name}{tab.name === "Inbox" && unread ? ` (${unread > 99 ? "99+" : unread})` : ""}</Text>
+              <Icon size={19} color={active ? "#10212b" : tab.color} />
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={[styles.tabText, active && styles.tabTextActive]}>{tab.label || tab.name}</Text>
+              {tab.name === "Inbox" && unread > 0 ? <Text style={{ color: active ? "#10212b" : "#fff", fontSize: 11, fontWeight: "700" }}>{unread > 99 ? "99+" : unread} new</Text> : null}
             </Pressable>
           );
         })}
@@ -1232,7 +1246,7 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
     }
     setWorkingThread(`call:${to}`);
     try {
-      await nativePhone.call(to);
+      await nativePhone.dial(to);
       setStatus("Calling from DDD.");
     } catch (error) {
       setStatus(error.message);
@@ -1378,7 +1392,7 @@ function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChang
       <View style={styles.listHeader}>
         <View style={styles.flexText}>
           <Text style={styles.listTitle} numberOfLines={1}>{getConversationName(conversation)}</Text>
-          <Text style={styles.muted} numberOfLines={1}>{formatPhone(customerPhone) || "Unknown customer"} - {getConversationTime(conversation)}</Text>
+          <Text style={styles.muted} numberOfLines={1}>{formatPhone(customerPhone) || "Unknown customer"} · {formatDateTime(getConversationTime(conversation))}</Text>
         </View>
         <Text style={styles.pill}>{conversation.messages?.length || 0} msgs</Text>
       </View>
@@ -1386,10 +1400,9 @@ function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChang
         <ActionButton disabled={callBusy} label={callBusy ? "Calling..." : "Call"} onPress={() => onCall(customerPhone)} variant="light" />
         <ActionButton label="Customer details" onPress={() => setDetailsOpen(!detailsOpen)} variant="light" />
         <ActionButton label="More" onPress={() => setMenuOpen(!menuOpen)} variant="light" />
-        {conversation.needsFollowUp ? <ActionButton label="Mark handled" onPress={onHandled} variant="light" /> : null}
       </View>
       {detailsOpen ? <View><Text style={styles.record}>{booking?.serviceType || "No booking"}</Text><Text style={styles.record}>{booking?.vehicle || "Vehicle not saved"}</Text><Text style={styles.record}>{booking?.location || "Location not saved"}</Text>{booking?.customerStatusUrl ? <ActionButton label="Open booking" onPress={() => Linking.openURL(booking.customerStatusUrl)} /> : null}</View> : null}
-      {menuOpen ? <ActionButton disabled={archiveBusy} label="Archive conversation" onPress={() => onArchive(customerPhone)} variant="light" /> : null}
+      {menuOpen ? <View style={styles.buttonRow}><ActionButton disabled={archiveBusy} label="Archive conversation" onPress={() => onArchive(customerPhone)} variant="light" />{conversation.needsFollowUp ? <ActionButton label="Mark handled" onPress={onHandled} variant="light" /> : null}</View> : null}
       <ScrollView ref={messageScrollRef} style={styles.messageThread} contentContainerStyle={styles.messageThreadContent} nestedScrollEnabled
         onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
           followLatestRef.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 100;
@@ -1400,7 +1413,7 @@ function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChang
             <Text style={[styles.textBubbleLabel, message.direction === "outbound" && styles.textBubbleLabelOutbound]}>
               {message.direction === "outbound" ? message.agentName || "DDD" : "Customer"}
             </Text>
-            <Text style={[styles.textBubbleBody, message.direction === "outbound" && styles.textBubbleBodyOutbound]}>{cleanConversationBody(message.body || message.text || "")}</Text>
+            <MessageBody body={cleanConversationBody(message.body || message.text || "")} outbound={message.direction === "outbound"} />
             <Text style={styles.messageMeta}>{formatDateTime(message.createdAt)}{message.direction === "outbound" ? ` · ${formatMessageStatus(message.status)}` : ""}</Text>
             {getDeliveryIssue(message) ? (
               <Text style={[styles.deliveryIssue, message.direction === "outbound" && styles.deliveryIssueOutbound]}>{getDeliveryIssue(message)}</Text>
@@ -1408,7 +1421,6 @@ function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChang
           </View>
         )) : <Text style={styles.record} numberOfLines={3}>{getConversationPreview(conversation)}</Text>}
       </ScrollView>
-      <ActionButton label={suggestionsOpen ? "Hide suggested replies" : "Suggested replies"} onPress={() => setSuggestionsOpen(!suggestionsOpen)} variant="light" />
       {suggestionsOpen ? <View style={styles.quickReplyGrid}>
         {quickReplies.map((reply) => (
           <Pressable key={reply.label} onPress={() => onDraftChange(customerPhone, reply.text)} style={styles.quickReplyButton}>
@@ -1416,14 +1428,10 @@ function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChang
           </Pressable>
         ))}
       </View> : null}
-      <Field
-        label="Reply from DDD"
-        multiline
-        onChangeText={(message) => onDraftChange(customerPhone, message)}
-        value={draft}
-      />
-      <View style={styles.buttonRow}>
-        <ActionButton disabled={smsBusy || !draft.trim()} label={smsBusy ? "Sending..." : "Send text"} onPress={() => onSend(customerPhone)} />
+      <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end" }}>
+        <Pressable accessibilityRole="button" accessibilityLabel={suggestionsOpen ? "Hide suggested replies" : "Suggested replies"} onPress={() => setSuggestionsOpen(!suggestionsOpen)} style={{ minWidth: 40, minHeight: 44, justifyContent: "center", alignItems: "center" }}><Sparkles size={22} color="#8c2387" /></Pressable>
+        <TextInput accessibilityLabel="Reply from DDD" placeholder="Message customer..." placeholderTextColor="#687785" multiline onChangeText={(message) => onDraftChange(customerPhone, message)} value={draft} style={{ flex: 1, minHeight: 44, maxHeight: 110, borderRadius: 8, borderWidth: 1, borderColor: "#c3d5dd", backgroundColor: "#fff", color: "#203040", padding: 12, fontSize: 15 }} />
+        <Pressable disabled={smsBusy || !draft.trim()} accessibilityRole="button" accessibilityLabel={smsBusy ? "Sending" : "Send text"} onPress={() => onSend(customerPhone)} style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "#007c69", opacity: smsBusy || !draft.trim() ? 0.4 : 1, justifyContent: "center", alignItems: "center" }}><Send size={20} color="#fff" /></Pressable>
       </View>
     </View>
   );
@@ -1497,6 +1505,62 @@ function getBookingRequestedLabel(booking = {}) {
   );
 }
 
+function LiveCallsPanel({ baseUrl, accessCode, phone, onError, onText }) {
+  const [calls, setCalls] = useState([]);
+  const [expanded, setExpanded] = useState(null);
+  const [drafts, setDrafts] = useState({});
+  const [drafting, setDrafting] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    let timer;
+    const refresh = async () => {
+      try {
+        const result = await apiGet(baseUrl, "/api/calls/live", accessCode);
+        if (alive) setCalls(result.calls || []);
+      } catch { if (alive) setCalls([]); }
+      finally { if (alive) timer = setTimeout(refresh, 3000); }
+    };
+    refresh();
+    return () => { alive = false; clearTimeout(timer); };
+  }, [baseUrl, accessCode]);
+  if (!calls.length) return null;
+  const run = (operation) => operation().catch((error) => onError(error.message));
+  async function getDrafts(call) {
+    setDrafting(call.callId);
+    try { const result = await apiPost(baseUrl, `/api/live-calls/${encodeURIComponent(call.callId)}/drafts`, {}, accessCode); setDrafts((value) => ({ ...value, [call.callId]: result.replies || [] })); }
+    catch (error) { onError(error.message); }
+    finally { setDrafting(null); }
+  }
+  return <View style={{ gap: 8 }}>{calls.map((call) => <Card title={`Live · ${formatPhone(call.phone) || "Customer"}`} key={call.callId}>
+    <Text style={styles.record}>{call.status || "AI is answering"}</Text>
+    <View style={styles.buttonRow}>
+      {call.capabilities.listen && !phone.call ? <ActionButton label="Listen" variant="light" disabled={!phone.ready} onPress={() => run(() => phone.joinLive(call, "listen"))} /> : null}
+      {call.capabilities.takeOver && !phone.call ? <ActionButton label="Answer" disabled={!phone.ready} onPress={() => run(() => phone.joinLive(call, "answer"))} /> : null}
+      {call.capabilities.takeOver && phone.call?.liveCallId === call.callId && phone.call.mode === "listen" ? <ActionButton label="Take over from AI" onPress={() => run(phone.takeOver)} /> : null}
+      {call.phone ? <ActionButton label="Text customer" variant="light" onPress={() => onText(call.phone)} /> : null}
+    </View>
+    <ActionButton label={expanded === call.callId ? "Hide conversation" : "View live conversation"} onPress={() => setExpanded((value) => value === call.callId ? null : call.callId)} variant="light" />
+    {expanded === call.callId ? <View style={{ gap: 10 }}>{call.transcript.length ? call.transcript.map((turn, index) => <Text selectable key={`${turn.itemId}-${index}`} style={styles.record}><Text style={{ fontWeight: "800" }}>{turn.speaker}: </Text>{turn.text}</Text>) : <Text style={styles.muted}>Waiting for the conversation to begin.</Text>}</View> : null}
+    <ActionButton label={drafting === call.callId ? "Preparing replies..." : "Suggest replies"} disabled={drafting === call.callId || !call.transcript.length} variant="light" onPress={() => getDrafts(call)} />
+    {(drafts[call.callId] || []).map((reply, index) => <Text key={index} selectable style={styles.record}>{reply}</Text>)}
+  </Card>)}</View>;
+}
+
+function MessageBody({ body, outbound }) {
+  const open = async (url) => {
+    try { await Linking.openURL(url); }
+    catch { Alert.alert("Link unavailable", "Please try again in your browser."); }
+  };
+  return <Text selectable style={[styles.textBubbleBody, outbound && styles.textBubbleBodyOutbound]}>{body.split(/(https?:\/\/[^\s<>]+)/g).map((part, index) => {
+      if (!/^https?:\/\//.test(part)) return part;
+      const url = part.replace(/[.,;!?)]+$/, "");
+      let host;
+      try { host = new URL(url).hostname; } catch { return part; }
+      const label = host === "apps.apple.com" ? "Open iPhone app" : host === "play.google.com" ? "Open Android app" : host === "dddcincy.com" && url.includes("book-service") ? "Book service" : host === "dddcincy.com" && url.includes("login") ? "View booking" : host === "dddcincy.com" ? "Open DDD link" : `Open ${host}`;
+      return <Text accessibilityRole="link" accessibilityLabel={label} key={`${index}-${url}`} onPress={() => open(url)} style={{ color: "#005e7a", fontWeight: "700", textDecorationLine: "underline" }}>{label}{part.slice(url.length)}</Text>;
+    })}</Text>;
+}
+
 function CallsTab({ adminPin, apiBaseUrl, calls, insights, setStatus, setStaffPhone, staffPhone, onText, nativePhone }) {
   const [dialerOpen, setDialerOpen] = useState(false);
   const [dialPhone, setDialPhone] = useState("");
@@ -1511,7 +1575,7 @@ function CallsTab({ adminPin, apiBaseUrl, calls, insights, setStatus, setStaffPh
     }
     setCalling(true);
     try {
-      await nativePhone.call(to);
+      await nativePhone.dial(to);
       setStatus("Calling from DDD.");
     } catch (error) {
       setStatus(error.message);
@@ -1526,19 +1590,21 @@ function CallsTab({ adminPin, apiBaseUrl, calls, insights, setStatus, setStaffPh
       {dialerOpen ? <Card title="Call from DDD">
         <Text style={styles.muted}>{nativePhone.status}</Text>
         <Field keyboardType="phone-pad" label="Customer phone" onChangeText={setDialPhone} value={dialPhone} />
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>{["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"].map((digit) => <Pressable key={digit} accessibilityRole="button" accessibilityLabel={`Dial ${digit}`} onPress={() => setDialPhone((value) => `${value}${digit}`)} style={{ width: "30%", flexGrow: 1, height: 48, alignItems: "center", justifyContent: "center", backgroundColor: "#20343d", borderRadius: 8 }}><Text style={{ color: "#fff", fontSize: 22 }}>{digit}</Text></Pressable>)}</View>
+        <ActionButton label="Delete last digit" variant="light" onPress={() => setDialPhone((value) => value.slice(0, -1))} />
         {nativePhone.callerIds.length > 1 ? <View style={styles.buttonRow}>{nativePhone.callerIds.map((id) => <ActionButton key={id} label={formatPhone(id)} onPress={() => nativePhone.setCallerId(id)} variant={id === nativePhone.callerId ? undefined : "light"} />)}</View> : null}
-        <ActionButton disabled={calling} label={calling ? "Calling..." : "Call from DDD"} onPress={startOutboundCall} />
+        <ActionButton disabled={calling || Boolean(nativePhone.call) || !nativePhone.ready} label={calling ? "Calling..." : nativePhone.call ? "Call in progress" : "Call from DDD"} onPress={startOutboundCall} />
       </Card> : null}
       <Text style={styles.screenHeading}>Recent calls</Text>
         {callGroups.map((group, index) => (
-          <CallCard onText={onText} onCall={(phone) => { setDialPhone(phone); setDialerOpen(true); }} call={group.latest} callGroup={group} key={group.key || group.latest?.id || group.latest?.callId || index} />
+          <CallCard onText={onText} onRecording={async (call) => { try { const result = await apiPost(apiBaseUrl, `/api/calls/${encodeURIComponent(call.callId || call.id)}/recording-link`, {}, adminPin); await Linking.openURL(result.url); } catch (error) { setStatus(error.message); } }} onCall={(phone) => { setDialPhone(phone); setDialerOpen(true); }} call={group.latest} callGroup={group} key={group.key || group.latest?.id || group.latest?.callId || index} />
         ))}
         {callGroups.length ? null : <Text style={styles.muted}>Forwarded calls will appear here.</Text>}
     </>
   );
 }
 
-function CallCard({ call: latestCall, callGroup, onText, onCall }) {
+function CallCard({ call: latestCall, callGroup, onText, onCall, onRecording }) {
   const [expanded, setExpanded] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -1579,7 +1645,7 @@ function CallCard({ call: latestCall, callGroup, onText, onCall }) {
           ))}
         </View>
       ) : null}
-      {call.recordingUrl ? <ActionButton label="Play recording" onPress={() => Linking.openURL(call.recordingUrl)} variant="light" /> : null}
+      {call.recordingUrl ? <ActionButton label="Play recording" onPress={() => onRecording(call)} variant="light" /> : null}
       <ActionButton label={transcriptOpen ? "Hide transcript" : "Full transcript"} onPress={() => setTranscriptOpen(!transcriptOpen)} variant="light" />
       {transcriptOpen ? <View style={styles.transcriptBox}>
         <Text style={styles.linkLabel}>Transcript</Text>
@@ -2095,7 +2161,7 @@ function getConversationTime(conversation = {}) {
 }
 
 function cleanConversationBody(value = "") {
-  const raw = String(value || "").replace(/\s+/g, " ").trim();
+  const raw = String(value || "").replace(/\r\n?/g, "\n").replace(/[^\S\n]+/g, " ").trim();
   if (!raw) return "";
   const withoutCallPrefix = raw.replace(/^Call:\s*/i, "").trim();
   const statusLabel = formatMessageStatus(withoutCallPrefix);
@@ -2113,7 +2179,7 @@ function getDeliveryIssue(message = {}) {
   if (reason && code) return `Delivery issue ${code}: ${reason}`;
   if (reason) return `Delivery issue: ${reason}`;
   if (code) return `Delivery issue ${code}`;
-  return "Delivery issue: Twilio could not send this text.";
+  return "This text could not be sent. Check the number and try again.";
 }
 
 function formatMessageStatus(value = "") {
@@ -2144,7 +2210,7 @@ function buildQuickReplies(conversation = {}, settings = blankSettings) {
     },
     {
       label: "Booking link",
-      text: "Book here: https://dddcincy.com/book-service/ DDD Mobile: iPhone https://apps.apple.com/app/id6762315831 Android https://play.google.com/store/apps/details?id=com.dddroadside.mobile Reply STOP to stop."
+      text: "Book online:\nhttps://dddcincy.com/book-service/\n\nDDD Mobile for iPhone:\nhttps://apps.apple.com/app/id6762315831\n\nDDD Mobile for Android:\nhttps://play.google.com/store/apps/details?id=com.dddroadside.mobile\n\nReply STOP to stop."
     },
     {
       label: "Google review",
@@ -2389,7 +2455,8 @@ const styles = StyleSheet.create({
   metricStrip: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 12 },
   metric: {
     width: "48.5%",
-    minHeight: 52,
+    minHeight: 56,
+    minWidth: 0,
     borderColor: "rgba(118, 87, 255, 0.14)",
     borderRadius: 16,
     borderWidth: 1,
