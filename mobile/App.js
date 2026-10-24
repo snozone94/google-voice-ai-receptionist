@@ -173,6 +173,7 @@ export default function App() {
   const [signedInStaff, setSignedInStaff] = useState(null);
   const autosaveTimerRef = useRef(null);
   const lastSavedSettingsRef = useRef("");
+  const accessGenerationRef = useRef(0);
 
   const cleanBaseUrl = useMemo(() => normalizeBaseUrl(apiBaseUrl), [apiBaseUrl]);
   const isAdmin = isAdminStaff(signedInStaff);
@@ -185,12 +186,14 @@ export default function App() {
   const refreshOperations = useCallback(async (baseUrl = cleanBaseUrl, accessPin = adminPin) => {
     const targetBaseUrl = normalizeBaseUrl(baseUrl);
     if (!accessPin) return;
+    const generation = accessGenerationRef.current;
     const [callsResponse, conversationsResponse, insightsResponse, bookingsResponse] = await Promise.all([
       apiGet(targetBaseUrl, "/api/call-log?limit=75", accessPin).catch(() => ({ calls: [] })),
       apiGet(targetBaseUrl, "/api/conversations", accessPin).catch(() => ({ conversations: [] })),
       apiGet(targetBaseUrl, "/api/insights", accessPin).catch(() => null),
-      apiGet(targetBaseUrl, "/api/bookings?limit=75").catch(() => ({ bookings: [] }))
+      apiGet(targetBaseUrl, "/api/bookings?limit=75", accessPin).catch(() => ({ bookings: [] }))
     ]);
+    if (generation !== accessGenerationRef.current) return;
     setActivity((current) => ({
       ...current,
       calls: callsResponse.calls || current.calls || [],
@@ -205,20 +208,27 @@ export default function App() {
 
   const loadAll = useCallback(async (baseUrl = cleanBaseUrl, accessPin = adminPin) => {
     const targetBaseUrl = normalizeBaseUrl(baseUrl);
+    const generation = ++accessGenerationRef.current;
     setLoading(true);
     try {
+      const access = accessPin ? await apiGet(targetBaseUrl, "/api/access-check", accessPin).catch(() => null) : null;
+      if (generation !== accessGenerationRef.current) return;
+      if (!access?.ok) {
+        setSignedInStaff(null);
+        setActivity({ calls: [], leads: [], bookings: [], conversations: [], insights: null });
+      }
       const [settingsResponse, setupResponse, businessResponse, callsResponse, leadsResponse, bookingsResponse, conversationsResponse, insightsResponse] =
         await Promise.all([
           apiGet(targetBaseUrl, "/api/settings", accessPin),
           apiGet(targetBaseUrl, "/api/setup-status"),
           apiGet(targetBaseUrl, "/api/business"),
-          apiGet(targetBaseUrl, "/api/call-log", accessPin).catch(() => ({ calls: [] })),
-          apiGet(targetBaseUrl, "/api/leads"),
-          apiGet(targetBaseUrl, "/api/bookings"),
-          apiGet(targetBaseUrl, "/api/conversations", accessPin).catch(() => ({ conversations: [], locked: true })),
-          apiGet(targetBaseUrl, "/api/insights", accessPin).catch(() => null)
+          access?.ok ? apiGet(targetBaseUrl, "/api/call-log", accessPin).catch(() => ({ calls: [] })) : { calls: [] },
+          access?.ok ? apiGet(targetBaseUrl, "/api/leads", accessPin).catch(() => ({ leads: [] })) : { leads: [] },
+          access?.ok ? apiGet(targetBaseUrl, "/api/bookings", accessPin).catch(() => ({ bookings: [] })) : { bookings: [] },
+          access?.ok ? apiGet(targetBaseUrl, "/api/conversations", accessPin).catch(() => ({ conversations: [], locked: true })) : { conversations: [], locked: true },
+          access?.ok ? apiGet(targetBaseUrl, "/api/insights", accessPin).catch(() => null) : null
         ]);
-
+      if (generation !== accessGenerationRef.current) return;
       const nextSettings = toFormSettings(settingsResponse);
       setSettings(nextSettings);
       lastSavedSettingsRef.current = JSON.stringify(fromFormSettings(nextSettings));
@@ -232,7 +242,6 @@ export default function App() {
         insights: insightsResponse || null
       });
       if (accessPin) {
-        const access = await apiGet(targetBaseUrl, "/api/access-check", accessPin).catch(() => null);
         setSignedInStaff(access?.ok ? access : null);
         setStatus(access?.ok ? `Signed in as ${access.name || "DDD team"} (${access.role || "staff"}).` : "Connected. Code not recognized yet.");
         if (access?.ok) {
@@ -490,7 +499,7 @@ export default function App() {
               onSaveBaseUrl={saveBaseUrl}
               onSaveSettings={() => saveSettings("manual")}
               onUnlockAdmin={() => loadAll(cleanBaseUrl, adminPin)}
-              onSignOut={() => { setAdminPin(""); setSignedInStaff(null); setActivity({ calls: [], leads: [], bookings: [], conversations: [], insights: null }); AsyncStorage.removeItem(adminPinStorageKey); }}
+              onSignOut={() => { accessGenerationRef.current += 1; setAdminPin(""); setSignedInStaff(null); setActivity({ calls: [], leads: [], bookings: [], conversations: [], insights: null }); AsyncStorage.removeItem(adminPinStorageKey); }}
               onSendTestNotification={sendTestNotification}
             />
           ) : null}
@@ -550,7 +559,7 @@ export default function App() {
               staffPhone={staffPhone}
             />
           ) : null}
-          {activeTab === "Bookings" ? <BookingsTab bookings={activity.bookings} /> : null}
+          {activeTab === "Bookings" ? signedInStaff?.ok ? <BookingsTab bookings={activity.bookings} /> : <Card title="Staff sign-in required"><Text style={styles.muted}>Sign in with your DDD staff code to view bookings.</Text><ActionButton label="Sign in" onPress={() => setActiveTab("Home")} /></Card> : null}
           {activeTab === "Insights" ? (
             <InsightsTab
               calls={activity.calls}
