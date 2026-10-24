@@ -7,13 +7,14 @@ const phone = (value) => {
   const digits = String(value || "").replace(/\D/g, "");
   return digits.length === 10 ? `+1${digits}` : digits.length === 11 && digits.startsWith("1") ? `+${digits}` : /^\+[1-9]\d{7,14}$/.test(value || "") ? value : "";
 };
+const staffReply = (message) => message.direction === "outbound" && !message.source && !/^(AI receptionist|DDD AI|DDD AI Dispatch|Call-start fallback|Missed-call fallback)$/i.test(message.agentName || "") && !/failed|undelivered/.test(message.status || "");
 
 export function decorateConversations(conversations, calls, state = {}) {
   return conversations.map((conversation) => {
     const key = phone(conversation.phone);
     const saved = state[key] || {};
     const messages = conversation.messages || [];
-    const latestReply = messages.filter((message) => message.direction === "outbound" && !message.source && !/failed|undelivered/.test(message.status || "")).at(-1);
+    const latestReply = messages.filter(staffReply).at(-1);
     const readThrough = Math.max(time(saved.readThrough), time(latestReply?.createdAt));
     const unread = messages.filter((message) => message.direction === "inbound" && time(message.createdAt) > readThrough).length;
     const latestCall = calls.filter((call) => phone(call.caller) === key).sort((a, b) => time(b.startedAt) - time(a.startedAt))[0];
@@ -23,7 +24,7 @@ export function decorateConversations(conversations, calls, state = {}) {
     const subsequentlyBooked = conversation.bookings?.some((booking) => time(booking.createdAt) >= time(latestCall?.startedAt));
     const terminal = /completed|failed|busy|no-answer|cancelled|canceled|missed/.test(latestCall?.status || "");
     const incompleteCall = latestCall && terminal && !subsequentlyBooked && /missed|incomplete|needs-review/.test(latestCall.completion || "");
-    const staffReplied = messages.some((message) => message.direction === "outbound" && !message.source && !/failed|undelivered/.test(message.status || "") && time(message.createdAt) > time(latestCall?.startedAt));
+    const staffReplied = messages.some((message) => staffReply(message) && time(message.createdAt) > time(latestCall?.startedAt));
     const needsFollowUp = time(saved.handledThrough) < latestTime && (unread > 0 || failedText || (incompleteCall && !staffReplied));
     return { ...conversation, unread, needsFollowUp: Boolean(needsFollowUp), followUpReason: needsFollowUp ? failedText ? "Text not delivered" : unread ? "Customer waiting" : "Call needs follow-up" : "", lastSmsStatus: lastOutbound?.status || "none" };
   });
@@ -34,7 +35,7 @@ export function pendingTextReminders(conversations, { now = Date.now(), minutes 
     const messages = conversation.messages || [];
     const inbound = messages.filter((message) => message.direction === "inbound").at(-1);
     if (!inbound || time(inbound.createdAt) < since || /^\s*(stop|unsubscribe|cancel|end|quit|start|help)\s*$/i.test(inbound.body || "")) return [];
-    const replied = messages.some((message) => message.direction === "outbound" && !message.source && !/failed|undelivered/.test(message.status || "") && time(message.createdAt) >= time(inbound.createdAt));
+    const replied = messages.some((message) => staffReply(message) && time(message.createdAt) >= time(inbound.createdAt));
     const age = now - time(inbound.createdAt);
     if (replied || age < minutes * 60000 || age > 86400000) return [];
     return [{ phone: conversation.phone, message: inbound, minutesWaiting: Math.floor(age / 60000), key: `${conversation.phone}:${inbound.messageSid || inbound.createdAt}` }];
