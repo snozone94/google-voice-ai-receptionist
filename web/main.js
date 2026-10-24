@@ -2984,6 +2984,10 @@ function renderSelectedCall() {
     </details>
   `;
   const saveCorrectionButton = callDetail.querySelector('[data-action="save-call-correction"]');
+  for (const button of callDetail.querySelectorAll('[data-action="select-history-call"]')) button.addEventListener("click", () => {
+    selectedCallId = button.dataset.callId;
+    renderCallLog();
+  });
   saveCorrectionButton?.addEventListener("click", saveSelectedCallCorrection);
   callDetail.querySelector('[data-action="play-recording"]')?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
@@ -3017,7 +3021,7 @@ function renderRepeatCallHistory(group, selectedId = "") {
               item.durationLabel,
               item.smsStatus && item.smsStatus !== "none" ? `SMS ${item.smsStatus}` : ""
             ].filter(Boolean);
-            return `<p>${isCurrent ? "Current: " : ""}${escapeHtml(bits.join(" · "))}</p>`;
+            return `<button type="button" data-action="select-history-call" data-call-id="${escapeAttribute(item.id)}" aria-pressed="${isCurrent}">${isCurrent ? "Current: " : ""}${escapeHtml(bits.join(" · "))}</button>`;
           })
           .join("")}
       </div>
