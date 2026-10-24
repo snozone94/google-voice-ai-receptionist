@@ -8,6 +8,9 @@ import OpenAI from "openai";
 import webPush from "web-push";
 import { notificationState } from "./notification-state.js";
 import { requireStaffRecords } from "./staff-record-access.js";
+import { decorateConversations, workspaceStore, pendingTextReminders } from "./dispatch-workspace.js";
+import { actionableNotification, notificationPreference } from "./call-evidence.js";
+import { mountNativeVoice, nativeVoiceStatus } from "./native-voice.js";
 import {
   callAcceptPayload,
   listCalls,
@@ -48,6 +51,7 @@ const root = path.resolve(import.meta.dirname, "..");
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, "data");
 const vapidKeysPath = path.join(dataDir, "web-push-vapid.json");
 const notificationLedger = notificationState(dataDir);
+const workspace = workspaceStore(dataDir);
 const uploadsDir = path.join(dataDir, "customer-uploads");
 const presence = new Map();
 const appReviewPin = String(process.env.APP_REVIEW_PIN || process.env.REVIEWER_PIN || "").trim();
@@ -163,6 +167,32 @@ app.use((req, res, next) => {
 function openAIClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
+
+const nativeVoice = mountNativeVoice(app, {
+  express, authenticate: getStaffAccess, directory: dataDir, callerIds: outboundCallerIds, saveCallEvent,
+  authorizedStaff: async () => [
+    ...(process.env.ADMIN_PIN ? [{ name: process.env.ADMIN_STAFF_NAME || "Brianna", role: "admin" }] : []),
+    ...(await getStaffDirectory()).team
+  ]
+});
+
+app.get("/api/operations", staffRecordsOnly, async (_req, res, next) => {
+  try {
+    const staff = res.locals.staff;
+    const [conversations, calls, bookings, state] = await Promise.all([listConversations(500), listCallLog(300), listBookings(150), workspace.get(staff)]);
+    const threads = decorateConversations(conversations, calls, state);
+    const attention = { unread: threads.filter((thread) => thread.unread > 0).length, followUp: threads.filter((thread) => thread.needsFollowUp).length };
+    attention.count = threads.filter((thread) => thread.unread > 0 || thread.needsFollowUp).length;
+    res.json({ staff, conversations: threads, calls, bookings, attention, voice: nativeVoiceStatus(), updatedAt: new Date().toISOString() });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/conversations/:phone/state", express.json(), staffRecordsOnly, async (req, res) => {
+  try {
+    const state = await workspace.mark(res.locals.staff, req.params.phone, req.body.action, req.body.through);
+    res.json({ ok: true, state });
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
 
 function requireOpenAIKey(req, res, next) {
   if (!process.env.OPENAI_API_KEY) {
@@ -482,12 +512,14 @@ app.get("/api/conversations", async (req, res, next) => {
 
     const limit = Math.min(Number(req.query.limit) || 200, 500);
     const teamInfo = await getVisibleTeamInfo(req);
+    const threads = reviewAccess ? appReviewConversations.slice(0, limit) : decorateConversations(await listConversations(limit), await listCallLog(300), await workspace.get(staff));
+    res.set("Cache-Control", "no-store, private");
     res.json({
       staff,
       team: teamInfo.team,
       teamSource: teamInfo.source,
       presence: listPresence(),
-      conversations: reviewAccess ? appReviewConversations.slice(0, limit) : await listConversations(limit)
+      conversations: threads
     });
   } catch (error) {
     next(error);
@@ -685,8 +717,10 @@ app.post("/api/push/register", express.json(), async (req, res, next) => {
       subscription: req.body?.subscription,
       platform: req.body?.platform,
       staffName: staff.name,
+      staffId: staff.id || "",
       staffRole: staff.role,
-      staffPhone: req.body?.staffPhone
+      staffPhone: req.body?.staffPhone,
+      preferences: req.body?.preferences
     });
     res.status(201).json({ ok: true, staff, subscription: maskPushSubscription(subscription) });
   } catch (error) {
@@ -705,6 +739,15 @@ app.post("/api/push/read", express.json(), async (req, res, next) => {
     }
     await notificationLedger.badge(token, true);
     res.json({ ok: true, badge: 0 });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/push/unregister", express.json(), staffRecordsOnly, async (req, res, next) => {
+  try {
+    const subscriptions = await listPushTokens(1000);
+    const owned = subscriptions.find((item) => item.token === req.body.token && item.staffName === res.locals.staff.name);
+    if (owned) await savePushToken({ ...owned, enabled: false });
+    res.json({ ok: true });
   } catch (error) { next(error); }
 });
 
@@ -994,19 +1037,19 @@ async function handleTwilioVoice(req, res, next) {
       }
     });
     queueCallStartSms(req.body?.From || req.query?.From || "");
-    await withNotificationDeadline(notifyTeamTracked({
+    queueTeamNotification({
       title: "New DDD call",
       body: `${formatPhoneForAlert(req.body?.From || req.query?.From)} is calling DDD AI Dispatch.`,
       data: { type: "call", callId: req.body?.CallSid || req.query?.CallSid || "", from: req.body?.From || req.query?.From || "" }
-    }, "incoming-call"), "incoming-call");
+    }, "incoming-call");
 
     if (routeMode === "humans" || settings.enabled === false) {
-      res.type("text/xml").send(buildHumanDialTwiml(settings, { recordingCallback, statusCallback }));
+      res.type("text/xml").send(await buildHumanDialTwiml(settings, { recordingCallback, statusCallback, customerPhone: req.body?.From || req.query?.From || "" }));
       return;
     }
 
     if (!sipUri) {
-      res.type("text/xml").send(buildHumanDialTwiml(settings, { recordingCallback, statusCallback }));
+      res.type("text/xml").send(await buildHumanDialTwiml(settings, { recordingCallback, statusCallback, customerPhone: req.body?.From || req.query?.From || "" }));
       return;
     }
 
@@ -1043,6 +1086,10 @@ app.post("/api/twilio/human-fallback", express.urlencoded({ extended: false }), 
         ]
       }
     });
+    if (String(req.body?.DialCallStatus || "").toLowerCase() === "completed") {
+      res.type("text/xml").send("<Response><Hangup/></Response>");
+      return;
+    }
     const publicBaseUrl = (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
     const secret = encodeURIComponent(req.query.secret || "");
     const recordingCallback = publicBaseUrl
@@ -1051,7 +1098,7 @@ app.post("/api/twilio/human-fallback", express.urlencoded({ extended: false }), 
     const statusCallback = publicBaseUrl
       ? `${publicBaseUrl}/api/twilio/call-status?secret=${secret}`
       : `/api/twilio/call-status?secret=${secret}`;
-    res.type("text/xml").send(buildHumanDialTwiml(settings, { recordingCallback, statusCallback }));
+    res.type("text/xml").send(await buildHumanDialTwiml(settings, { recordingCallback, statusCallback, customerPhone: req.body?.From || "" }));
   } catch (error) {
     next(error);
   }
@@ -1065,12 +1112,13 @@ function getInitialVoiceRouteStatus({ routeMode, sipUri, humanNumbers }) {
   return humanNumbers.length ? "routing-to-ai-with-human-fallback" : "routing-to-ai";
 }
 
-function buildHumanDialTwiml(settings, { recordingCallback = "", statusCallback = "" } = {}) {
+async function buildHumanDialTwiml(settings, { recordingCallback = "", statusCallback = "", customerPhone = "" } = {}) {
   const route = settings.humanRouting || {};
   const numbers = Array.isArray(route.numbers) ? route.numbers : [];
   const timeout = Math.min(45, Math.max(8, Number(route.timeoutSeconds || 22)));
   const callerId = normalizeE164(process.env.TWILIO_VOICE_FROM || process.env.TWILIO_SMS_FROM || process.env.AI_FORWARDING_NUMBER || process.env.GOOGLE_VOICE_NUMBER);
-  if (!numbers.length) {
+  const identities = await nativeVoice.routingIdentities();
+  if (!numbers.length && !identities.length) {
     return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">${xmlEscape(route.fallbackMessage || "DDD could not reach the team live, but your call was logged. Please text DDD and the team will follow up.")}</Say>
@@ -1080,7 +1128,7 @@ function buildHumanDialTwiml(settings, { recordingCallback = "", statusCallback 
 
   const numberTwiML = numbers
     .map((entry) => `<Number>${xmlEscape(entry.phone)}</Number>`)
-    .join("");
+    .join("") + identities.map((identity) => `<Client><Identity>${xmlEscape(identity)}</Identity><Parameter name="customerPhone" value="${xmlEscape(customerPhone)}"/></Client>`).join("");
   const callbackAttrs = [
     callerId ? `callerId="${xmlEscape(callerId)}"` : "",
     statusCallback ? `statusCallback="${xmlEscape(statusCallback)}"` : "",
@@ -1094,7 +1142,7 @@ function buildHumanDialTwiml(settings, { recordingCallback = "", statusCallback 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">${xmlEscape(route.callerMessage || "Please hold while I connect you with DDD.")}</Say>
-  <Dial timeout="${timeout}" answerOnBridge="true" record="record-from-answer" ${callbackAttrs}>${numberTwiML}</Dial>
+  <Dial timeout="${timeout}" answerOnBridge="true" action="/api/voice/human-result" method="POST" record="record-from-answer" ${callbackAttrs}>${numberTwiML}</Dial>
   <Say voice="alice">${xmlEscape(route.fallbackMessage || "DDD could not reach the team live, but your call was logged. Please text DDD and the team will follow up.")}</Say>
   <Hangup/>
 </Response>`;
@@ -1130,6 +1178,7 @@ app.post("/api/twilio/recording", express.urlencoded({ extended: false }), async
       type: "twilio.recording.completed",
       data: {
         call_id: req.body.CallSid || req.body.callSid || "",
+        parent_call_id: req.body.ParentCallSid || "",
         status: req.body.RecordingStatus || req.body.recordingStatus || "",
         recording_url: req.body.RecordingUrl || req.body.recordingUrl || "",
         sip_headers: [
@@ -1157,6 +1206,7 @@ app.post("/api/twilio/call-status", express.urlencoded({ extended: false }), asy
       type: "twilio.call.status",
       data: {
         call_id: req.body.CallSid || req.body.callSid || "",
+        parent_call_id: req.body.ParentCallSid || "",
         status,
         durationSeconds,
         sip_headers: [
@@ -1915,11 +1965,11 @@ function isAdminRole(role = "") {
 
 function normalizeStaffRole(role = "", staff = {}) {
   if (isAdminRole(role)) return "admin";
-  const adminNames = splitEnvList(process.env.ADMIN_STAFF_NAMES || process.env.ADMIN_STAFF_NAME || "Brianna,Bria");
+  const adminNames = splitEnvList(process.env.ADMIN_STAFF_NAMES || process.env.ADMIN_STAFF_NAME || "");
   const adminEmails = splitEnvList(process.env.ADMIN_STAFF_EMAILS || "");
   const name = String(staff.name || staff.tech_label || staff.full_name || staff.display_name || "").trim().toLowerCase();
   const email = String(staff.email || staff.user_email || "").trim().toLowerCase();
-  if (adminNames.some((adminName) => adminName && (name === adminName || name.includes(adminName)))) return "admin";
+  if (adminNames.includes(name)) return "admin";
   if (adminEmails.includes(email)) return "admin";
   return String(role || "staff").trim() || "staff";
 }
@@ -3113,7 +3163,7 @@ async function notifyTeam({ title, body, data = {} }) {
 }
 
 async function deliverTeamNotification({ title, body, data }) {
-  const emailResultPromise = sendTeamAlertEmail({ title, body, data });
+  const emailResultPromise = sendTeamAlertEmail({ title, body, data }).catch((error) => ({ ok: false, skipped: false, error: error.message }));
   let tokens = [];
   try {
     tokens = await listPushTokens(100);
@@ -3123,12 +3173,17 @@ async function deliverTeamNotification({ title, body, data }) {
     return { ok: Boolean(emailResult.ok), sent: 0, skipped: !emailResult.ok, email: emailResult, errors: [error.message, emailResult.error].filter(Boolean) };
   }
 
+  const preference = notificationPreference(data);
+  const quietDefaults = { newCalls: false, teamActivity: false };
+  tokens = tokens.filter((subscription) => !preference || (subscription.preferences?.[preference] ?? quietDefaults[preference] ?? true));
+  const [threadsForBadges, callsForBadges] = await Promise.all([listConversations(500).catch(() => []), listCallLog(300).catch(() => [])]);
+
   const expoMessages = await Promise.all(tokens
     .filter((subscription) => /^Expo(nent)?PushToken\[[^\]]+\]$/.test(subscription.token || ""))
     .filter((subscription, index, all) => all.findIndex((item) => item.token === subscription.token) === index)
     .map(async (subscription) => ({
       to: subscription.token,
-      badge: await notificationLedger.badge(subscription.token),
+      badge: decorateConversations(threadsForBadges, callsForBadges, await workspace.get({ id: subscription.staffId, name: subscription.staffName, role: subscription.staffRole }).catch(() => ({}))).filter((thread) => thread.unread || thread.needsFollowUp).length,
       sound: "default",
       priority: "high",
       channelId: "ddd-dispatch",
@@ -3206,6 +3261,7 @@ async function deliverTeamNotification({ title, body, data }) {
 }
 
 async function sendTeamAlertEmail(payload) {
+  if (!actionableNotification(payload.data)) return { ok: true, skipped: true, reason: "Routine update stays in the workspace" };
   // Twilio and the AI can both announce the same incoming call. Coalesce email
   // only; a genuine redial with a new call ID must still get its own push alert.
   if (payload.data.type !== "call" || !payload.data.from) return sendAlertEmail(payload);
@@ -3317,8 +3373,25 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ ok: false, error: error.message });
 });
 
+let reminderScanRunning = false;
+async function checkUnansweredTexts() {
+  if (reminderScanRunning || process.env.REPLY_REMINDERS_ENABLED === "false") return;
+  reminderScanRunning = true;
+  try {
+    const minutes = Math.min(60, Math.max(1, Number(process.env.REPLY_REMINDER_MINUTES) || 5));
+    const pending = pendingTextReminders(await listConversations(500), { minutes });
+    for (const item of pending) {
+      const key = `unanswered-text:${item.key}`;
+      if (!await notificationLedger.claim(key, 7 * 86400000)) continue;
+      queueTeamNotification({ title: "Customer needs a reply", body: `${formatPhoneForAlert(item.phone)} has been waiting ${item.minutesWaiting} minutes. ${String(item.message.body || "").slice(0, 160)}`, data: { type: "unanswered-text", from: item.phone, messageSid: item.message.messageSid || "", reminderKey: item.key } }, "unanswered-text");
+    }
+  } catch (error) { console.error("Unanswered-text reminder scan failed", error.message); }
+  finally { reminderScanRunning = false; }
+}
+
 app.listen(port, () => {
   console.log(`AI receptionist listening on http://localhost:${port}`);
+  setInterval(checkUnansweredTexts, 60000).unref();
 });
 
 function escapeHtml(value) {

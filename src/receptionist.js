@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { cleanTranscript, callIdResolver } from "./call-evidence.js";
 
 const root = path.resolve(import.meta.dirname, "..");
 const businessPath = path.join(root, "config", "business.json");
@@ -11,6 +12,7 @@ const summariesPath = path.join(dataDir, "summaries.jsonl");
 const bookingsPath = path.join(dataDir, "bookings.jsonl");
 const smsPath = path.join(dataDir, "sms.jsonl");
 const pushTokensPath = path.join(dataDir, "push-tokens.jsonl");
+let pushTokenWrites = Promise.resolve();
 const settingsPath = path.join(dataDir, "settings.json");
 const bundledSettingsPath = path.join(bundledDataDir, "settings.json");
 const callCorrectionsPath = path.join(dataDir, "call-corrections.json");
@@ -32,7 +34,7 @@ export const voiceOptions = [
 
 const supportedVoiceIds = new Set(voiceOptions.map((voice) => voice.id));
 const customerBusinessName = "Triple D Roadside";
-const defaultGreeting = `Thank you for calling ${customerBusinessName}. I can help book service or get your message to the team. What can I help with today?`;
+const defaultGreeting = `Thanks for calling ${customerBusinessName}. I can get your request started quickly. What do you need help with?`;
 const defaultCustomInstructions =
   "Act like a polished front desk receptionist. Be warm, direct, and fast. Use Triple D Roadside only in the opening greeting so the business is pronounced correctly; after that, DDD is okay. Reflect the caller's exact request before asking questions. If they name a service like oil change, brakes, battery install, tire help, jump start, lockout, or fuel delivery, treat it as a bookable DDD service immediately. For oil changes, brakes, rotors, hub bearings, and battery installs, ask whether the customer already has the parts/materials or needs DDD to confirm parts. For brake, rotor, tire replacement, tire plug, or spare tire calls, ask quantity/position only if they have not already said it: one wheel, front axle, rear axle, both axles/all four, or spare/tire-specific need. Accept what the customer says and use it for the booking notes and rough starting-price math when possible. For tire-related work, ask whether the vehicle has a wheel lock/special key and whether they have it available. Reassure them once that this will be quick and that you can make the booking for them when booking applies. If callers ask how they can pay, say DDD accepts cash, card, tap pay, and installments, but does not accept checks. Do not ask generic category questions after they already named the service. Do not repeat that reassurance. Do not keep emergency callers on the phone longer than needed. Collect the key details, point them to the right DDD link, and save a clear next step.";
 const defaultBusinessKnowledge =
@@ -423,13 +425,15 @@ export async function listCallLog(limit = 50) {
     listRecords(summariesPath, 1000),
     listRecords(leadsPath, 1000),
     listRecords(bookingsPath, 1000),
-    listRecords(smsPath, 1000)
+    listSms(1000)
   ]);
   const corrections = await readJsonObject(callCorrectionsPath, {});
-  const callsByCall = groupByCallId(calls);
-  const summariesByCall = groupByCallId(summaries);
-  const leadsByCall = groupByCallId(leads);
-  const bookingsByCall = groupByCallId(bookings);
+  const canonicalId = callIdResolver(calls);
+  const linked = (records) => records.map((record) => ({ ...record, callId: canonicalId(record.callId) }));
+  const callsByCall = groupByCallId(linked(calls.filter((call) => call.type !== "ddd.notification")));
+  const summariesByCall = groupByCallId(linked(summaries));
+  const leadsByCall = groupByCallId(linked(leads));
+  const bookingsByCall = groupByCallId(linked(bookings));
   return [...callsByCall.entries()]
     .map(([callId, events]) => {
       const sortedEvents = events.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
@@ -441,8 +445,8 @@ export async function listCallLog(limit = 50) {
       const summary = relatedSummaries[0] || {};
       const transcript = relatedSummaries.flatMap((item) => normalizeTranscript(item.transcript));
       const caller = firstTruthy(
-        latestEvent.from,
         firstEvent.from,
+        latestEvent.from,
         extractSipHeader(latestEvent.sipHeaders, "from"),
         extractSipHeader(firstEvent.sipHeaders, "from"),
         relatedBookings[0]?.phone,
@@ -986,6 +990,8 @@ export async function saveCallEvent(event) {
     createdAt: new Date().toISOString(),
     type: event.type,
     callId: event.data?.call_id,
+    parentCallId: event.data?.parent_call_id || extractSipHeader(event.data?.sip_headers || [], "x-twilio-callsid") || "",
+    direction: event.data?.direction || "inbound",
     from: normalizeE164(from) || from,
     to: normalizeE164(to) || to,
     status: cleanText(event.data?.status || event.data?.call_status || "", "", 80),
@@ -1051,6 +1057,12 @@ export async function listSms(limit = 50) {
 }
 
 export async function savePushToken(subscription = {}) {
+  const result = pushTokenWrites.then(() => savePushTokenNow(subscription));
+  pushTokenWrites = result.catch(() => {});
+  return result;
+}
+
+async function savePushTokenNow(subscription = {}) {
   const token = cleanText(subscription.token, "", 180);
   const webSubscription = subscription.subscription && typeof subscription.subscription === "object" ? subscription.subscription : null;
   const endpoint = cleanLongText(webSubscription?.endpoint || "", "", 900);
@@ -1080,14 +1092,17 @@ export async function savePushToken(subscription = {}) {
       : null,
     platform: cleanText(subscription.platform, "", 40),
     staffName: cleanText(subscription.staffName, "DDD team", 80),
+    staffId: String(subscription.staffId || ""),
     staffRole: cleanText(subscription.staffRole, "staff", 40),
     staffPhone: normalizeE164(subscription.staffPhone || ""),
+    preferences: normalizeNotificationPreferences(subscription.preferences || {}),
     enabled: subscription.enabled !== false
   };
   const identity = record.token || record.subscription?.endpoint || "";
   const withoutToken = existing.filter((item) => (item.token || item.subscription?.endpoint || "") !== identity);
   await ensureDataDir();
-  await fs.writeFile(pushTokensPath, `${[record, ...withoutToken].map((item) => JSON.stringify(item)).join("\n")}\n`);
+  await fs.writeFile(`${pushTokensPath}.tmp`, `${[record, ...withoutToken].map((item) => JSON.stringify(item)).join("\n")}\n`);
+  await fs.rename(`${pushTokensPath}.tmp`, pushTokensPath);
   return record;
 }
 
@@ -1097,7 +1112,8 @@ export async function listPushTokens(limit = 100) {
 }
 
 export async function listConversations(limit = 200) {
-  const messages = await listSms(limit);
+  // A thread limit must not truncate the inbox to only that many text messages.
+  const messages = await listSms(Math.max(10000, limit * 20));
   const bookings = await listRecords(bookingsPath, 1000);
   const calls = await listRecords(callsPath, 1000);
   const archivedPhones = await listArchivedConversationPhones();
@@ -1254,7 +1270,7 @@ function groupByCallId(records) {
 
 function normalizeTranscript(transcript) {
   if (!Array.isArray(transcript)) return [];
-  return transcript
+  return cleanTranscript(transcript)
     .map((item) => ({
       at: item.at || item.createdAt || "",
       type: item.type || "transcript",
@@ -1414,6 +1430,9 @@ Voice and manner:
 - Use "Triple D Roadside" only in the opening greeting so the business is pronounced correctly. After the greeting, DDD is okay, and DDD Mobile app stays the app name.
 - Keep answers short enough for a phone call, usually one or two sentences.
 - Ask one question at a time.
+- Keep each spoken turn to one short sentence and one question whenever possible. Do not repeat the caller's full request before every question.
+- If the caller asks to text, dislikes AI, or cannot continue talking, offer texting immediately, save what they already shared, and finish without further intake questions.
+- Email is optional: never hold up roadside intake to collect it. Do not request a detail already supplied or confirmed by history.
 - Let the caller finish before responding, and do not over-explain.
 - Default to English for every call.
 - Never switch to Spanish or any other language just because of the caller's accent, race, name, nationality, country, dialect, or because English is not their first language.
@@ -2448,7 +2467,7 @@ function normalizeSoundPreferences(value = {}) {
 
 function normalizeNoiseHandling(value = {}) {
   const mode = ["fast", "balanced", "patient"].includes(value.mode) ? value.mode : defaultNoiseHandling.mode;
-  const eagerness = ["low", "medium", "high", "auto"].includes(value.eagerness) ? value.eagerness : mode === "fast" ? "medium" : "low";
+  const eagerness = ["low", "medium", "high", "auto"].includes(value.eagerness) ? value.eagerness : "medium";
   const interruptResponse = mode === "fast" && value.interruptResponse === true;
   return {
     mode,
@@ -2460,7 +2479,8 @@ function normalizeNoiseHandling(value = {}) {
 
 function normalizeNotificationPreferences(value = {}) {
   return {
-    newCalls: value.newCalls !== false,
+    newCalls: value.newCalls === true,
+    teamActivity: value.teamActivity === true,
     missedCalls: value.missedCalls !== false,
     bookings: value.bookings !== false,
     texts: value.texts !== false,
