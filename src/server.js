@@ -168,13 +168,7 @@ function openAIClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
-const nativeVoice = mountNativeVoice(app, {
-  express, authenticate: getStaffAccess, directory: dataDir, callerIds: outboundCallerIds, saveCallEvent,
-  authorizedStaff: async () => [
-    ...(process.env.ADMIN_PIN ? [{ name: process.env.ADMIN_STAFF_NAME || "Brianna", role: "admin" }] : []),
-    ...(await getStaffDirectory()).team
-  ]
-});
+const nativeVoice = mountNativeVoice(app, { express, authenticate: getStaffAccess, directory: dataDir, callerIds: outboundCallerIds, saveCallEvent });
 
 app.get("/api/operations", staffRecordsOnly, async (_req, res, next) => {
   try {
@@ -3383,7 +3377,10 @@ async function checkUnansweredTexts() {
     for (const item of pending) {
       const key = `unanswered-text:${item.key}`;
       if (!await notificationLedger.claim(key, 7 * 86400000)) continue;
-      queueTeamNotification({ title: "Customer needs a reply", body: `${formatPhoneForAlert(item.phone)} has been waiting ${item.minutesWaiting} minutes. ${String(item.message.body || "").slice(0, 160)}`, data: { type: "unanswered-text", from: item.phone, messageSid: item.message.messageSid || "", reminderKey: item.key } }, "unanswered-text");
+      try {
+        const result = await notifyTeamTracked({ title: "Customer needs a reply", body: `${formatPhoneForAlert(item.phone)} has been waiting ${item.minutesWaiting} minutes. ${String(item.message.body || "").slice(0, 160)}`, data: { type: "unanswered-text", from: item.phone, messageId: `reminder:${item.key}`, message: item.message.body || "", reminderKey: item.key } }, "unanswered-text");
+        if (!result.ok && !result.sent && !result.email?.ok) await notificationLedger.release(key);
+      } catch (error) { await notificationLedger.release(key); throw error; }
     }
   } catch (error) { console.error("Unanswered-text reminder scan failed", error.message); }
   finally { reminderScanRunning = false; }
