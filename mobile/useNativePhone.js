@@ -62,8 +62,15 @@ export function useNativePhone({ baseUrl, accessCode, signedIn, callSound = "ddd
           const customer = params.customerPhone || incoming.getFrom() || "Customer";
           const context = { liveCallId: params.liveCallId, mode: params.liveMode || "answer" };
           setState((value) => ({ ...value, call: { to: customer, status: "Incoming call", incoming: true, ...context } }));
-          incoming.on("accepted", (call) => attachCall(call, customer, { ...context, mode: inviteMode.current }));
-          const clear = () => { invite.current = null; setState((value) => ({ ...value, call: null })); };
+          incoming.on("accepted", (call) => {
+            if (invite.current === incoming) invite.current = null;
+            attachCall(call, customer, { ...context, mode: inviteMode.current });
+          });
+          const clear = () => {
+            if (invite.current !== incoming) return;
+            invite.current = null;
+            if (!currentCall.current) setState((value) => ({ ...value, call: null }));
+          };
           incoming.on("cancelled", clear);
           incoming.on("rejected", clear);
         });
@@ -158,6 +165,9 @@ export function useNativePhone({ baseUrl, accessCode, signedIn, callSound = "ddd
     async audioRoute() { if (Platform.OS === "ios") await voice.current?.showAvRoutePickerView(); },
     async signOut() {
       generation.current++;
+      const pendingInvite = invite.current;
+      invite.current = null;
+      if (pendingInvite && !currentCall.current) await pendingInvite.reject().catch(() => {});
       await api("/api/voice/session", { active: false, signedOut: true }).catch(() => {});
       if (voice.current && token.current) await voice.current.unregister(token.current).catch(() => {});
       await currentCall.current?.disconnect().catch(() => {});
