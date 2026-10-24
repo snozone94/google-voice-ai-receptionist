@@ -7,7 +7,7 @@ import { createLiveCalls } from "../src/live-calls.js";
 
 const id = `CA${"a".repeat(32)}`;
 const conferenceSid = `CF${"b".repeat(32)}`;
-async function fixture(t) {
+async function fixture(t, overrides = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "ddd-live-test-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const actions = [];
@@ -15,6 +15,7 @@ async function fixture(t) {
   const participants = (sid) => ({ update: async (patch) => { actions.push(["update", sid, patch]); if (failUnmute && patch.muted === false && sid !== "ai-leg") throw new Error("phone disconnected"); }, remove: async () => { actions.push(["remove", sid]); } });
   participants.create = async (options) => { actions.push(["create", options]); return { callSid: options.label === "ddd-ai" ? "ai-leg" : options.label }; };
   const dependencies = { directory, client: () => ({ conferences: () => ({ participants }), calls: () => ({ fetch: async () => ({ status: "in-progress" }), update: async () => {} }) }), baseUrl: () => "https://dispatch.example.test", routingIdentities: async () => ["tech-one"], saveCallEvent: async (event) => actions.push(["event", event]), stopAssistant: () => actions.push(["stop-ai"]) };
+  Object.assign(dependencies, overrides);
   const calls = createLiveCalls(dependencies);
   await calls.start({ id, phone: "+15135550100", businessPhone: "+15134091342", aiUri: "sip:project@example.test;transport=tls", recordingCallback: "https://dispatch.example.test/recording" });
   const event = (label, sid, type = "participant-join") => calls.events(id, { ConferenceSid: conferenceSid, FriendlyName: `ddd-${id}`, ParticipantLabel: label, CallSid: sid, StatusCallbackEvent: type });
@@ -74,8 +75,27 @@ test("sessions and call configuration survive restart without exposing join secr
   const { calls, dependencies } = await fixture(t);
   await calls.config({ enabled: true, ringTeam: false });
   const restarted = createLiveCalls(dependencies);
-  assert.deepEqual(await restarted.config(), { enabled: true, ringTeam: false });
+  assert.deepEqual(await restarted.config(), { enabled: true, ringTeam: false, transcribeCalls: true });
   assert.equal((await restarted.list("one"))[0].phone, "+15135550100");
   assert.equal(await restarted.linkAi(id, "invalid", "rt-call"), null);
   await assert.rejects(restarted.events(id, { ConferenceSid: "wrong", FriendlyName: `ddd-${id}` }), /mismatch/);
+});
+
+test("transcript provider failure does not interrupt AI pickup or team takeover", async (t) => {
+  const { calls, event, actions } = await fixture(t, { startTranscription: async () => { throw new Error("transcription offline"); } });
+  assert.equal(actions.filter(([kind, options]) => kind === "create" && options.label === "ddd-ai").length, 1);
+  await calls.join(id, "one", "leg-one", "listen");
+  await event("staff-one", "leg-one");
+  await calls.takeOver(id, "one");
+  assert.equal((await calls.list("one"))[0].ownedByYou, true);
+});
+
+test("full-call transcript continues after the AI is removed", async (t) => {
+  const turns = [{ text: "AI greeting", speaker: "DDD" }];
+  const { calls, event } = await fixture(t, { getTranscription: async () => ({ status: "live", turns: [...turns] }) });
+  await calls.join(id, "one", "leg-one", "listen");
+  await event("staff-one", "leg-one");
+  await calls.takeOver(id, "one");
+  turns.push({ text: "Hello, this is Bria", speaker: "DDD" }, { text: "Thank you", speaker: "Customer" });
+  assert.equal((await calls.list("one"))[0].transcript.length, 3);
 });
