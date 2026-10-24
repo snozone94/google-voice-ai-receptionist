@@ -5651,7 +5651,24 @@ summary { cursor: pointer; min-height: 32px; }
 .live-conversation { max-height: 300px; overflow: auto; margin-top: 12px; padding: 12px; background: #10212b; border-radius: 8px; }
 .live-draft { padding: 10px; background: #223c45; border-left: 3px solid #d9b0ef; }
 .message-bubble p { white-space: pre-wrap; overflow-wrap: anywhere; }
-.message-bubble p a { color: #005e7a; text-decoration: underline; font-weight: 700; }
+.message-bubble p a { color: #8ee7ff; text-decoration: underline; font-weight: 700; }
+
+/* Each customer keeps a stable rainbow accent without coloring the message text. */
+.conversation-item { display: flex; align-items: flex-start; gap: 12px; text-align: left; border-left: 3px solid var(--thread-accent, #62cfff) !important; }
+.conversation-item .thread-avatar { flex: 0 0 40px; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: var(--thread-accent, #62cfff); color: #151720 !important; font-weight: 800; font-size: 14px; overflow: hidden; }
+.thread-copy { flex: 1; min-width: 0; }
+.conversation-item .thread-preview { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; margin: 6px 0; font-weight: 400; }
+.conversation-item.selected { background: #343044 !important; border-color: var(--thread-accent, #62cfff) !important; }
+.conversation-item:hover { background: #34313f !important; }
+.inbox-unread-badge { background: #ff62ab !important; color: #231124 !important; border-radius: 6px; padding: 3px 7px; font-weight: 800; }
+.conversation-panel .conversation-header { border-top: 3px solid #ff62ab; background: #302b3c !important; }
+.message-list { background: #201f2b !important; }
+.message-bubble { background: #343442 !important; border-left: 2px solid #c59aff; }
+.message-bubble.outbound { background: #214347 !important; border-left: 0; border-right: 2px solid #59dfb1; }
+.thread-call-note { align-self: center; margin: 6px 0; padding: 7px 10px; border-left: 2px solid #ffb85c; color: #e7dbf1; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: no-preference) {
+  .conversation-item { transition: background-color 160ms ease, border-color 160ms ease; }
+}
 @media (max-width: 600px) { .live-workspace { margin: 0 0 10px; padding: 10px; } .live-workspace #livePhoneStatus { display: block; margin: 4px 0 0; } .live-phone-tools form { width: 100%; } .live-phone-tools label { flex: 1; min-width: 120px; } .live-phone-tools input, .live-phone-tools select { width: 100%; max-width: none; } }
 .inbox-follow-up { display: block; color: #ffca75; font-weight: 700; }
 .inbox-filterbar { display: flex; gap: 8px; align-items: center; flex-shrink: 0; margin-bottom: 10px; }

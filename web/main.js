@@ -2180,15 +2180,22 @@ function renderConversations() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = conversation.phone === selectedConversationPhone ? "conversation-item selected" : "conversation-item";
+    const name = booking?.name || conversation.customerName || "";
+    const initials = name ? name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("") : conversation.phone.slice(-2);
+    const accents = ["#ff62ab", "#ffb85c", "#f2d65c", "#59dfb1", "#62cfff", "#c59aff"];
+    button.style.setProperty("--thread-accent", accents[Number(conversation.phone.slice(-2)) % accents.length]);
     button.innerHTML = `
+      <span class="thread-avatar" aria-hidden="true">${escapeHtml(initials)}</span>
+      <div class="thread-copy">
       <div class="conversation-item-top">
-        <strong>${escapeHtml(booking?.name || conversation.customerName || formatPhone(conversation.phone))}</strong>
+        <strong>${escapeHtml(name || formatPhone(conversation.phone))}</strong>
         <small>${formatTime(conversation.lastMessageAt)}</small>
       </div>
-      <span>${escapeHtml(cleanConversationBody(conversation.lastBody || "No message body"))}</span>
+      <span class="thread-preview">${escapeHtml(cleanConversationBody(conversation.lastBody || "No texts yet").replace(/https?:\/\/\S+/g, "[link]"))}</span>
       <small>${escapeHtml(formatPhone(conversation.phone))}</small>
       ${conversation.unread ? `<span class="inbox-unread-badge">${conversation.unread} new</span>` : ""}
       ${conversation.needsFollowUp ? `<small class="inbox-follow-up">${escapeHtml(conversation.followUpReason || "Needs reply")}</small>` : ""}
+      </div>
     `;
     button.addEventListener("click", () => {
       renderedConversationPhone = "";
@@ -2275,7 +2282,9 @@ function renderSelectedConversation() {
   const booking = getLatestConversationBooking(conversation);
   const confidence = booking?.confidence || estimateConversationConfidence(conversation);
   selectedConversationTitle.textContent = booking?.name || conversation.customerName || formatPhone(conversation.phone);
-  selectedConversationMeta.textContent = `${conversation.messages.length} message${conversation.messages.length === 1 ? "" : "s"} · ${booking?.serviceType || "No booking yet"}`;
+  const textCount = conversation.messages.filter((message) => message.direction !== "call").length;
+  const callCount = conversation.messages.length - textCount;
+  selectedConversationMeta.textContent = `${formatPhone(conversation.phone)} · ${textCount} texts · ${callCount} calls`;
   if (outboundCustomerPhoneInput && !outboundCustomerPhoneInput.value.trim()) {
     outboundCustomerPhoneInput.value = formatPhone(conversation.phone);
   }
@@ -2289,6 +2298,13 @@ function renderSelectedConversation() {
   sendPresence().catch(() => {});
 
   for (const message of conversation.messages) {
+    if (message.direction === "call") {
+      const note = document.createElement("p");
+      note.className = "thread-call-note";
+      note.textContent = `Call · ${formatTime(message.createdAt)} · ${cleanConversationBody(message.body || "Call received")}`;
+      messageList.append(note);
+      continue;
+    }
     const bubble = document.createElement("article");
     bubble.className = `message-bubble ${message.direction === "outbound" ? "outbound" : "inbound"}`;
     const deliveryIssue = getDeliveryIssue(message);
@@ -3158,6 +3174,7 @@ function cleanCallText(value = "") {
 function cleanConversationBody(value = "") {
   const raw = String(value || "").replace(/\r\n?/g, "\n").replace(/[^\S\n]+/g, " ").trim();
   if (!raw) return "";
+  if (/^Call:\s*.*(?:\bsips?:|\bSIP\b|\bPSTN\b|twilio\.)/i.test(raw)) return "Call received";
   const withoutCallPrefix = raw.replace(/^Call:\s*/i, "").trim();
   const statusLabel = formatMessageStatus(withoutCallPrefix);
   if (statusLabel && (withoutCallPrefix !== raw || /staff-sms-reply|email-sent|push-\d+|sms-[\w-]+/i.test(raw))) {
