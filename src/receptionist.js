@@ -1117,7 +1117,7 @@ export async function listConversations(limit = 200) {
   // A thread limit must not truncate the inbox to only that many text messages.
   const messages = await listSms(Math.max(10000, limit * 20));
   const bookings = await listRecords(bookingsPath, 1000);
-  const calls = await listRecords(callsPath, 1000);
+  const calls = await listCallLog(1000);
   const archivedPhones = await listArchivedConversationPhones();
   const bookingsByPhone = new Map();
   for (const booking of bookings) {
@@ -1154,7 +1154,7 @@ export async function listConversations(limit = 200) {
   }
   for (const call of [...calls].reverse()) {
     if (call.type === "ddd.notification") continue;
-    const key = normalizeConversationPhone(call.from);
+    const key = normalizeConversationPhone(call.caller);
     if (!key) continue;
     const status = call.status || (call.durationSeconds ? `completed in ${formatDuration(call.durationSeconds)}` : "call received");
     const callNote = formatConversationCallNote(call, status);
@@ -1175,7 +1175,7 @@ export async function listConversations(limit = 200) {
         createdAt: call.createdAt,
         direction: "call",
         from: key,
-        to: call.to || "",
+        to: call.destination || "",
         body: callNote,
         messageSid: `call:${call.callId || call.createdAt}`,
         status,
@@ -1358,6 +1358,9 @@ function getCallDisplayStatus(status, outcome = {}, bookings = [], leads = []) {
 
 function getCleanStatusLabel(value = "") {
   const status = String(value).toLowerCase();
+  if (/hung up early/.test(status)) return "Caller hung up early";
+  if (/booking captured|booking saved/.test(status)) return "Booking saved";
+  if (/message saved/.test(status)) return "Message saved";
   if (/staff-sms-reply/.test(status) && /failed/.test(status)) return "Text reply failed";
   if (/sms/.test(status) && /failed/.test(status)) return "Text failed";
   if (/email-sent/.test(status) && /push-\d+/.test(status)) return "Alerts sent";
@@ -2785,11 +2788,15 @@ function normalizeE164(value) {
   return "";
 }
 
-function normalizeConversationPhone(value) {
-  const normalized = normalizeE164(value);
-  if (normalized) return normalized;
-  const digits = String(value || "").replace(/\D/g, "");
+export function normalizeConversationPhone(value) {
+  let text = String(value || "").trim();
+  // Only the telephone user part belongs in an inbox, never a project or client ID.
+  const sip = text.match(/^(?:[^<]*<)?sips?:([^@;>?\s]+)/i);
+  if (sip) text = sip[1];
+  else text = text.replace(/^tel:/i, "");
+  if (!/^\+?[\d\s().-]+$/.test(text)) return "";
+  const digits = text.replace(/\D/g, "");
   if (digits.length === 10) return `+1${digits}`;
   if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  return cleanText(value, "", 40);
+  return "";
 }
