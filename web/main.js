@@ -1,3 +1,5 @@
+import { initializeLiveWorkspace } from "./live-calls.js";
+
 const callButton = document.querySelector("#callButton");
 const hangupButton = document.querySelector("#hangupButton");
 const statusEl = document.querySelector("#status");
@@ -66,7 +68,7 @@ nativeVoiceSetupButton?.addEventListener("click", async () => {
     const response = await fetch("/api/voice/provision", { method: "POST", headers: { ...adminHeaders(), "Content-Type": "application/json" }, body: "{}" });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Calling setup could not be completed.");
-    status.textContent = result.incomingReady ? "Twilio and Apple incoming-call credentials connected. Install the new build to test calling." : "Twilio outgoing calling connected. Apple VoIP certificate and a new installed build are still needed for locked-screen incoming calls.";
+    status.textContent = result.incomingReady ? "App calling is connected. Test incoming and outgoing calls in the installed app." : "Outgoing app calls are connected. Incoming calls still need setup.";
     nativeVoiceSetupButton.textContent = "Connection saved";
   } catch (error) { status.textContent = error.message; }
   finally { nativeVoiceSetupButton.disabled = false; }
@@ -2302,6 +2304,21 @@ function renderSelectedConversation() {
       ${deliveryIssue ? `<details class="delivery-issue"><summary>Couldn't deliver</summary>${escapeHtml(deliveryIssue)}</details>` : ""}
       <small>${escapeHtml(meta)}</small>
     `;
+    const body = bubble.querySelector("p");
+    body.replaceChildren(...cleanConversationBody(message.body || "").split(/(https?:\/\/[^\s<>]+)/g).map((part) => {
+      if (!/^https?:\/\//.test(part)) return document.createTextNode(part);
+      const url = part.replace(/[.,;!?)]+$/, "");
+      let parsed;
+      try { parsed = new URL(url); } catch { return document.createTextNode(part); }
+      const link = document.createElement("a");
+      link.href = parsed.href;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = parsed.hostname === "apps.apple.com" ? "Open iPhone app" : parsed.hostname === "play.google.com" ? "Open Android app" : parsed.hostname === "dddcincy.com" && parsed.pathname.includes("book-service") ? "Book service" : parsed.hostname === "dddcincy.com" && parsed.pathname.includes("login") ? "View booking" : `Open ${parsed.hostname}`;
+      const fragment = document.createDocumentFragment();
+      fragment.append(link, document.createTextNode(part.slice(url.length)));
+      return fragment;
+    }));
     messageList.append(bubble);
   }
   requestAnimationFrame(() => {
@@ -2318,7 +2335,7 @@ function getDeliveryIssue(message = {}) {
   if (reason && code) return `Delivery issue ${code}: ${reason}`;
   if (reason) return `Delivery issue: ${reason}`;
   if (code) return `Delivery issue ${code}`;
-  return "Delivery issue: Twilio could not send this text.";
+  return "This text could not be sent. Check the number and try again.";
 }
 
 function getLatestConversationBooking(conversation = {}) {
@@ -2881,7 +2898,7 @@ function renderSelectedCall() {
     return;
   }
   const recording = call.recordingUrl
-    ? `<a href="${escapeHtml(call.recordingUrl)}" target="_blank" rel="noreferrer">Open recording</a>`
+    ? `<button type="button" data-action="play-recording">Play recording</button>`
     : "No recording link stored yet";
   const transcriptHtml = renderGroupedTranscript(call.transcript || []);
   const synopsis = buildCallSynopsis(call);
@@ -2950,6 +2967,21 @@ function renderSelectedCall() {
   `;
   const saveCorrectionButton = callDetail.querySelector('[data-action="save-call-correction"]');
   saveCorrectionButton?.addEventListener("click", saveSelectedCallCorrection);
+  callDetail.querySelector('[data-action="play-recording"]')?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const response = await fetch(`/api/calls/${encodeURIComponent(call.callId || call.id)}/recording-link`, { method: "POST", headers: { ...staffHeaders(), "Content-Type": "application/json" }, body: "{}" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Recording unavailable.");
+      const player = document.createElement("audio");
+      player.controls = true;
+      player.src = result.url;
+      player.style.maxWidth = "100%";
+      button.replaceWith(player);
+      player.play().catch(() => {});
+    } catch (error) { button.textContent = error.message; button.disabled = false; }
+  });
 }
 
 function renderRepeatCallHistory(group, selectedId = "") {
@@ -3124,7 +3156,7 @@ function cleanCallText(value = "") {
 }
 
 function cleanConversationBody(value = "") {
-  const raw = String(value || "").replace(/\s+/g, " ").trim();
+  const raw = String(value || "").replace(/\r\n?/g, "\n").replace(/[^\S\n]+/g, " ").trim();
   if (!raw) return "";
   const withoutCallPrefix = raw.replace(/^Call:\s*/i, "").trim();
   const statusLabel = formatMessageStatus(withoutCallPrefix);
@@ -3222,6 +3254,7 @@ function inferServiceFromText(text = "") {
 }
 
 refreshActivity().catch(() => {});
+initializeLiveWorkspace({ code: accessCodeValue, staff: () => isAccessVerified() ? signedInStaff : null });
 setInterval(() => refreshActivity().catch(() => {}), 15000);
 refreshInbox().catch((error) => setInboxStatus(error.message));
 setInterval(() => refreshInbox().catch(() => {}), 5000);

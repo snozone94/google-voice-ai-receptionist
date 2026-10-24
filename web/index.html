@@ -118,7 +118,7 @@
             <div>
               <p class="eyebrow">Call customers</p>
               <h2>Callback bridge</h2>
-              <p>Twilio calls your phone first, then connects the customer with the selected DDD caller ID.</p>
+              <p>Your phone rings first. Answer to connect with the customer using your selected DDD number.</p>
             </div>
             <div class="mini-fields">
               <label>
@@ -139,10 +139,10 @@
               </select>
             </label>
             <button id="outboundCallButton" type="button">Call customer</button>
-            <p id="outboundCallStatus">Calls show a Twilio-owned or verified DDD number.</p>
+            <p id="outboundCallStatus">Customers see your selected business number.</p>
             <details id="nativeVoiceSetup">
               <summary>Installed-app calling setup</summary>
-              <p id="nativeVoiceSetupStatus" role="status">Connect Twilio for direct calls in the next installed app build. Incoming calls also require an Apple VoIP certificate.</p>
+              <p id="nativeVoiceSetupStatus" role="status">Check the connection for calls in the installed app.</p>
               <button id="nativeVoiceSetupButton" type="button">Connect native calling</button>
               <label>Apple VoIP certificate <input id="nativeVoiceCertificate" type="file" accept=".pem" /></label>
               <label>Matching private key <input id="nativeVoicePrivateKey" type="file" accept=".key,.pem" /></label>
@@ -190,6 +190,32 @@
         <button id="stickyLoginButton" type="button">Sign in</button>
         <button id="accountControlsButton" type="button">Account</button>
         <button id="signOutButton" type="button" hidden>Sign out</button>
+      </section>
+
+      <section id="liveWorkspace" class="live-workspace" aria-label="Business phone" hidden>
+        <details class="live-phone-menu">
+          <summary>Business phone <span id="livePhoneStatus" role="status">Ready to connect</span></summary>
+          <div class="live-phone-tools">
+            <button id="connectBrowserPhone" type="button">Connect browser phone</button>
+            <form id="browserDialForm">
+              <label>Customer number<input id="browserDialNumber" type="tel" autocomplete="tel" placeholder="Phone number" required /></label>
+              <label>Call from<select id="browserCallerId" aria-label="Outgoing business number"></select></label>
+              <button type="submit">Call</button>
+            </form>
+            <details id="liveCallConfiguration" hidden>
+              <summary>Incoming call options</summary>
+              <label><input type="checkbox" id="liveCallEnabled" /> Allow listening and taking over from AI</label>
+              <label><input type="checkbox" id="liveRingTeam" /> Ring signed-in team phones while AI answers</label>
+              <button type="button" id="saveLiveCallOptions">Save call options</button>
+              <label>Number to connect<select id="liveRouteNumber" aria-label="Number to connect"></select></label>
+              <button type="button" id="connectLiveNumber">Connect number to Dispatch</button>
+              <button type="button" id="restoreLiveNumber">Restore previous number routing</button>
+              <p id="liveNumberRouteStatus" role="status"></p>
+            </details>
+          </div>
+        </details>
+        <div id="livePhoneControls" aria-live="polite"></div>
+        <div id="liveCallsArea" aria-label="Live calls"></div>
       </section>
 
       <section class="panel tab-panel" data-tab-panel="overview">
@@ -688,7 +714,7 @@
               <textarea id="replyMessageInput" rows="3" maxlength="1000" placeholder="Type a reply from DDD..."></textarea>
               <button id="sendReplyButton" type="submit" disabled>Send text</button>
             </form>
-            <p id="inboxStatus">Texts will appear here after the number ports to Twilio.</p>
+            <p id="inboxStatus">Customer messages appear here.</p>
           </div>
         </div>
       </section>
@@ -828,6 +854,7 @@
         <p id="leadStatus"></p>
       </section>
     </main>
+    <script src="/vendor/twilio-voice.js" defer></script>
     <script src="/main.js" type="module"></script>
   </body>
 </html>
