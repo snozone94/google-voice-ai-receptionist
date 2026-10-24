@@ -3,6 +3,7 @@ import path from "node:path";
 import { cleanTranscript, callIdResolver } from "./call-evidence.js";
 import { analyzeConversationQuality } from "./conversation-quality.js";
 import { readStoredCallTranscript } from "./call-transcripts.js";
+import { normalizeAlertAudio } from "./notification-sounds.js";
 
 const root = path.resolve(import.meta.dirname, "..");
 const businessPath = path.join(root, "config", "business.json");
@@ -2500,6 +2501,7 @@ function normalizeNoiseHandling(value = {}) {
 
 function normalizeNotificationPreferences(value = {}) {
   return {
+    ...normalizeAlertAudio(value),
     newCalls: value.newCalls === true,
     teamActivity: value.teamActivity === true,
     missedCalls: value.missedCalls !== false,

@@ -12,6 +12,7 @@ import { notificationState } from "./notification-state.js";
 import { requireStaffRecords } from "./staff-record-access.js";
 import { decorateConversations, workspaceStore, pendingTextReminders } from "./dispatch-workspace.js";
 import { actionableNotification, notificationPreference } from "./call-evidence.js";
+import { notificationAudio } from "./notification-sounds.js";
 import { mountNativeVoice, nativeVoiceStatus, voiceIdentity, configuredAiSipUri } from "./native-voice.js";
 import { createLiveCalls } from "./live-calls.js";
 import { createCallTranscripts } from "./call-transcripts.js";
@@ -245,6 +246,15 @@ app.get("/api/calls/live", staffRecordsOnly, async (_req, res, next) => {
     const calls = await liveCalls.list(voiceIdentity(res.locals.staff));
     const known = new Set(calls.map((call) => call.phone));
     res.json({ calls: [...calls, ...listLiveCalls().filter((call) => !known.has(call.phone))], updatedAt: new Date().toISOString() });
+  } catch (error) { next(error); }
+});
+
+app.get("/api/calls/:id/transcript", staffRecordsOnly, async (req, res, next) => {
+  try {
+    if (res.locals.staff.role === "reviewer") return res.status(403).json({ error: "Staff sign-in required." });
+    if (!/^CA[0-9a-f]{32}$/i.test(req.params.id)) return res.status(400).json({ error: "Invalid call." });
+    const transcript = await callTranscripts.get(req.params.id);
+    res.json({ callId: req.params.id, status: transcript?.status || ((await liveCalls.config()).transcribeCalls ? "connecting" : "off"), transcript: transcript?.turns || [] });
   } catch (error) { next(error); }
 });
 
@@ -3267,10 +3277,8 @@ async function deliverTeamNotification({ title, body, data }) {
     .map(async (subscription) => ({
       to: subscription.token,
       badge: decorateConversations(threadsForBadges, callsForBadges, await workspace.get({ id: subscription.staffId, name: subscription.staffName, role: subscription.staffRole }).catch(() => ({}))).filter((thread) => thread.unread || thread.needsFollowUp).length,
-      sound: "default",
+      ...notificationAudio(subscription, preference),
       priority: "high",
-      channelId: "ddd-dispatch",
-      interruptionLevel: "time-sensitive",
       title,
       body,
       data: {
