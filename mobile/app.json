@@ -10,6 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dddcincy.aireceptionist",
+      "buildNumber": "16",
       "entitlements": { "aps-environment": "production", "com.apple.developer.usernotifications.time-sensitive": true },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
