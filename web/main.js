@@ -2979,6 +2979,7 @@ function renderSelectedCall() {
     </div>
     <details class="call-section">
       <summary>Full transcript</summary>
+      ${call.transcriptionStatus === "unavailable" ? '<p class="muted">Full-call transcription was unavailable. Available conversation is shown below.</p>' : ""}
       <div class="transcript-box">${transcriptHtml}</div>
     </details>
   `;

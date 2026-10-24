@@ -5649,6 +5649,11 @@ summary { cursor: pointer; min-height: 32px; }
 .live-call-item h3 { color: #fff; font-size: 18px; margin: 0 0 4px; }
 .live-call-item p { color: #d3e2e6; margin: 8px 0; }
 .live-conversation { max-height: 300px; overflow: auto; margin-top: 12px; padding: 12px; background: #10212b; border-radius: 8px; }
+.live-conversation { color: #f4f9fb; overscroll-behavior: contain; overflow-wrap: anywhere; line-height: 1.6; scrollbar-gutter: stable; }
+.live-conversation p { margin: 0 0 12px; color: inherit; white-space: pre-wrap; }
+.live-conversation strong { color: #8fe5e4; }
+.live-transcript-status { font-size: 13px; color: #bae8e5; margin: 12px 0 0; }
+.transcript-interim { opacity: .65; font-style: italic; }
 .live-draft { padding: 10px; background: #223c45; border-left: 3px solid #d9b0ef; }
 .message-bubble p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .message-bubble p a { color: #8ee7ff; text-decoration: underline; font-weight: 700; }

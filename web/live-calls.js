@@ -14,7 +14,7 @@ export function initializeLiveWorkspace({ code, staff }) {
   let live = [];
   let generation = 0;
   let closed = false;
-  const expanded = new Set();
+  const collapsed = new Set();
   const drafts = new Map();
   const busyDrafts = new Set();
   const api = async (route, body) => {
@@ -95,6 +95,7 @@ export function initializeLiveWorkspace({ code, staff }) {
     finally { dialing = false; }
   }
   function renderCalls() {
+    const positions = new Map([...callsArea.querySelectorAll(".live-conversation")].map((element) => [element.dataset.call, { top: element.scrollTop, follow: element.scrollHeight - element.clientHeight - element.scrollTop < 48 }]));
     callsArea.replaceChildren();
     for (const call of live) {
       const article = document.createElement("article");
@@ -107,7 +108,7 @@ export function initializeLiveWorkspace({ code, staff }) {
       actions.className = "live-call-actions";
       if (call.capabilities?.listen && !currentCall) actions.append(button("Listen", () => join(call, "listen")));
       if (call.capabilities?.takeOver && !currentCall) actions.append(button("Answer", () => join(call, "answer")));
-      actions.append(button(expanded.has(call.callId) ? "Hide conversation" : "Live conversation", () => { expanded.has(call.callId) ? expanded.delete(call.callId) : expanded.add(call.callId); renderCalls(); }));
+      actions.append(button(collapsed.has(call.callId) ? "Show transcript" : "Hide transcript", () => { collapsed.has(call.callId) ? collapsed.delete(call.callId) : collapsed.add(call.callId); renderCalls(); }));
       if (call.transcript?.length) actions.append(button(busyDrafts.has(call.callId) ? "Preparing replies..." : "Suggest replies", async () => {
         if (busyDrafts.has(call.callId)) return;
         busyDrafts.add(call.callId);
@@ -115,17 +116,29 @@ export function initializeLiveWorkspace({ code, staff }) {
         finally { busyDrafts.delete(call.callId); renderCalls(); }
       }));
       article.append(heading, detail, actions);
-      if (expanded.has(call.callId)) {
+      if (!collapsed.has(call.callId)) {
+        const transcriptStatus = document.createElement("p");
+        transcriptStatus.className = "live-transcript-status";
+        transcriptStatus.textContent = ({ connecting: "Connecting transcript…", live: "Live transcript · Customer / DDD", saved: "Transcript saved", unavailable: "Full transcript unavailable · available AI conversation shown" })[call.transcriptionStatus] || "AI conversation · full-call transcription is off";
+        article.append(transcriptStatus);
         const conversation = document.createElement("div");
         conversation.className = "live-conversation";
+        conversation.dataset.call = call.callId;
+        conversation.tabIndex = 0;
+        conversation.setAttribute("role", "region");
+        conversation.setAttribute("aria-label", `Call transcript ${call.phone || "Customer"}`);
         for (const turn of call.transcript || []) {
           const paragraph = document.createElement("p");
+          if (turn.complete === false) paragraph.className = "transcript-interim";
           const speaker = document.createElement("strong");
           speaker.textContent = `${turn.speaker}: `;
           paragraph.append(speaker, document.createTextNode(turn.text));
           conversation.append(paragraph);
         }
+        if (!conversation.childNodes.length) conversation.textContent = "Waiting for the conversation to begin.";
         article.append(conversation);
+        const position = positions.get(call.callId);
+        conversation.scrollTop = !position || position.follow ? conversation.scrollHeight : position.top;
       }
       for (const draft of drafts.get(call.callId) || []) { const paragraph = document.createElement("p"); paragraph.className = "live-draft"; paragraph.textContent = draft; article.append(paragraph); }
       callsArea.append(article);
@@ -143,7 +156,7 @@ export function initializeLiveWorkspace({ code, staff }) {
     finally { dialing = false; }
   });
   document.querySelector("#saveLiveCallOptions").addEventListener("click", async () => {
-    try { await api("/api/live-calls/config", { enabled: document.querySelector("#liveCallEnabled").checked, ringTeam: document.querySelector("#liveRingTeam").checked }); status("Live-call options saved for new calls."); }
+    try { await api("/api/live-calls/config", { enabled: document.querySelector("#liveCallEnabled").checked, ringTeam: document.querySelector("#liveRingTeam").checked, transcribeCalls: document.querySelector("#liveTranscribeCalls").checked }); status("Live-call options saved for new calls."); }
     catch (error) { status(error.message); }
   });
   for (const [id, restore] of [["connectLiveNumber", false], ["restoreLiveNumber", true]]) {
@@ -173,7 +186,7 @@ export function initializeLiveWorkspace({ code, staff }) {
         const result = await api("/api/voice/config");
         const select = document.querySelector("#browserCallerId");
         select.replaceChildren(...(result.callerIds || []).map((id) => { const option = document.createElement("option"); option.value = id; option.textContent = id; return option; }));
-        if (user.role === "admin") { const config = await api("/api/live-calls/config"); document.querySelector("#liveCallEnabled").checked = config.enabled; document.querySelector("#liveRingTeam").checked = config.ringTeam; const routeSelect = document.querySelector("#liveRouteNumber"); routeSelect.replaceChildren(...(result.callerIds || []).map((id) => { const option = document.createElement("option"); option.value = id; option.textContent = id; return option; })); }
+        if (user.role === "admin") { const config = await api("/api/live-calls/config"); document.querySelector("#liveCallEnabled").checked = config.enabled; document.querySelector("#liveRingTeam").checked = config.ringTeam; document.querySelector("#liveTranscribeCalls").checked = config.transcribeCalls; const routeSelect = document.querySelector("#liveRouteNumber"); routeSelect.replaceChildren(...(result.callerIds || []).map((id) => { const option = document.createElement("option"); option.value = id; option.textContent = id; return option; })); }
       }
       const epoch = generation;
       const result = await api("/api/calls/live");
