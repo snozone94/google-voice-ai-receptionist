@@ -1508,9 +1508,21 @@ function getBookingRequestedLabel(booking = {}) {
   );
 }
 
+function LiveTranscript({ call }) {
+  const scroll = useRef(null);
+  const follow = useRef(true);
+  const status = ({ connecting: "Connecting transcript…", live: "Live transcript · Customer / DDD", saved: "Transcript saved", unavailable: "Full transcript unavailable · available AI conversation shown" })[call.transcriptionStatus] || "AI conversation · full-call transcription is off";
+  return <View style={{ gap: 8 }}>
+    <Text style={styles.muted}>{status}</Text>
+    <ScrollView ref={scroll} nestedScrollEnabled style={[styles.transcriptBox, { maxHeight: 260 }]} contentContainerStyle={{ padding: 12, gap: 12 }} onScroll={({ nativeEvent: event }) => { follow.current = event.contentSize.height - event.layoutMeasurement.height - event.contentOffset.y < 48; }} scrollEventThrottle={100} onContentSizeChange={() => { if (follow.current) scroll.current?.scrollToEnd({ animated: false }); }} accessibilityLabel="Live call transcript">
+      {(call.transcript || []).length ? call.transcript.map((turn, index) => <Text selectable key={turn.itemId || index} style={[styles.record, turn.complete === false && { opacity: 0.65, fontStyle: "italic" }]}><Text style={{ fontWeight: "800" }}>{turn.speaker}: </Text>{turn.text}</Text>) : <Text style={styles.muted}>Waiting for the conversation to begin.</Text>}
+    </ScrollView>
+  </View>;
+}
+
 function LiveCallsPanel({ baseUrl, accessCode, phone, onError, onText }) {
   const [calls, setCalls] = useState([]);
-  const [expanded, setExpanded] = useState(null);
+  const [collapsed, setCollapsed] = useState({});
   const [drafts, setDrafts] = useState({});
   const [drafting, setDrafting] = useState(null);
   useEffect(() => {
@@ -1542,8 +1554,8 @@ function LiveCallsPanel({ baseUrl, accessCode, phone, onError, onText }) {
       {call.capabilities.takeOver && phone.call?.liveCallId === call.callId && phone.call.mode === "listen" ? <ActionButton label="Take over from AI" onPress={() => run(phone.takeOver)} /> : null}
       {call.phone ? <ActionButton label="Text customer" variant="light" onPress={() => onText(call.phone)} /> : null}
     </View>
-    <ActionButton label={expanded === call.callId ? "Hide conversation" : "View live conversation"} onPress={() => setExpanded((value) => value === call.callId ? null : call.callId)} variant="light" />
-    {expanded === call.callId ? <View style={{ gap: 10 }}>{call.transcript.length ? call.transcript.map((turn, index) => <Text selectable key={`${turn.itemId}-${index}`} style={styles.record}><Text style={{ fontWeight: "800" }}>{turn.speaker}: </Text>{turn.text}</Text>) : <Text style={styles.muted}>Waiting for the conversation to begin.</Text>}</View> : null}
+    <ActionButton label={collapsed[call.callId] ? "Show transcript" : "Hide transcript"} onPress={() => setCollapsed((value) => ({ ...value, [call.callId]: !value[call.callId] }))} variant="light" />
+    {!collapsed[call.callId] ? <LiveTranscript call={call} /> : null}
     <ActionButton label={drafting === call.callId ? "Preparing replies..." : "Suggest replies"} disabled={drafting === call.callId || !call.transcript.length} variant="light" onPress={() => getDrafts(call)} />
     {(drafts[call.callId] || []).map((reply, index) => <Text key={index} selectable style={styles.record}>{reply}</Text>)}
   </Card>)}</View>;
@@ -1652,8 +1664,9 @@ function CallCard({ call: latestCall, callGroup, onText, onCall, onRecording }) 
       <ActionButton label={transcriptOpen ? "Hide transcript" : "Full transcript"} onPress={() => setTranscriptOpen(!transcriptOpen)} variant="light" />
       {transcriptOpen ? <View style={styles.transcriptBox}>
         <Text style={styles.linkLabel}>Transcript</Text>
+        {call.transcriptionStatus === "unavailable" ? <Text style={styles.warningText}>Full-call transcription was unavailable. Available conversation is shown below.</Text> : null}
         <ScrollView style={styles.transcriptScroll} nestedScrollEnabled>
-          <Text style={styles.transcriptText}>{transcript || "Transcript will appear after the call is processed."}</Text>
+          <Text selectable style={styles.transcriptText}>{transcript || "Transcript will appear after the call is processed."}</Text>
         </ScrollView>
       </View> : null}
       </> : null}
@@ -1685,8 +1698,7 @@ function getCallCallerKey(call = {}) {
 }
 
 function formatCallTranscript(call = {}) {
-  if (call.transcriptText) return String(call.transcriptText).replace(/\n{3,}/g, "\n\n").trim();
-  if (Array.isArray(call.transcript)) {
+  if (Array.isArray(call.transcript) && call.transcript.length) {
     return call.transcript
       .map((item) => {
         const speaker = String(item.speaker || item.role || "Call").replace(/_/g, " ");
@@ -1696,7 +1708,7 @@ function formatCallTranscript(call = {}) {
       .filter(Boolean)
       .join("\n\n");
   }
-  return "";
+  return String(call.transcriptText || "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function PeriodInsight({ label, period = {} }) {
