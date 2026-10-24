@@ -27,7 +27,9 @@ export function nativeVoiceStatus() {
   return { ready: missing.length === 0, incomingReady: missing.length === 0 && Boolean(config.TWILIO_VOICE_PUSH_CREDENTIAL_SID), missing };
 }
 
-export function mountNativeVoice(app, { express, authenticate, directory, callerIds, saveCallEvent, createClient = twilio }) {
+export function configuredAiSipUri() { return configuration().TWILIO_VOICE_AI_SIP_URI || ""; }
+
+export function mountNativeVoice(app, { express, authenticate, directory, callerIds, saveCallEvent, getLiveCalls = () => null, createClient = twilio }) {
   const file = path.join(directory, "voice-sessions.json");
   const configFile = path.join(directory, "voice-connection.enc.json");
   let provisioning;
@@ -91,7 +93,7 @@ export function mountNativeVoice(app, { express, authenticate, directory, caller
     try {
       await initialized;
       const staff = await authenticate(req);
-      if (!staff.ok) return res.status(403).json({ error: "Staff sign-in required." });
+      if (!staff.ok || staff.role === "reviewer") return res.status(403).json({ error: "Staff sign-in required." });
       res.locals.staff = staff;
       next();
     } catch (error) { next(error); }
@@ -104,6 +106,44 @@ export function mountNativeVoice(app, { express, authenticate, directory, caller
     next();
   }
   app.get("/api/voice/config", staffOnly, (_req, res) => res.json({ ...nativeVoiceStatus(), callerIds: [...new Set(callerIds())] }));
+  app.get("/api/voice/number-routes", staffOnly, async (_req, res, next) => {
+    if (res.locals.staff.role !== "admin") return res.status(403).json({ error: "Admin access required." });
+    try {
+      const client = createClient(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+      const allowed = new Set(callerIds());
+      const numbers = await client.incomingPhoneNumbers.list({ limit: 100 });
+      res.json({ numbers: numbers.filter((number) => allowed.has(number.phoneNumber)).map((number) => ({ phone: number.phoneNumber, route: number.trunkSid ? "AI direct" : number.voiceUrl?.includes("/api/twilio/voice") ? "Dispatch call controls" : "Other", voiceUrl: number.voiceUrl || "" })) });
+    } catch (error) { next(error); }
+  });
+  app.post("/api/voice/number-routes", express.json(), staffOnly, async (req, res, next) => {
+    if (res.locals.staff.role !== "admin") return res.status(403).json({ error: "Admin access required." });
+    try {
+      const phone = voiceNumber(req.body.phone);
+      if (!callerIds().includes(phone)) return res.status(400).json({ error: "Choose one of your DDD numbers." });
+      const client = createClient(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+      const number = (await client.incomingPhoneNumbers.list({ phoneNumber: phone, limit: 1 }))[0];
+      if (!number) return res.status(404).json({ error: "This number is not in the connected phone account." });
+      const previousRoutes = configuration().TWILIO_VOICE_PREVIOUS_NUMBER_ROUTES || {};
+      if (req.body.restore === true) {
+        const previous = previousRoutes[phone];
+        if (!previous) return res.status(400).json({ error: "No saved route to restore." });
+        await client.incomingPhoneNumbers(number.sid).update(previous);
+        return res.json({ ok: true, restored: true });
+      }
+      let aiUri = process.env.TRANSFER_SIP_URI || process.env.OPENAI_SIP_URI || configuredAiSipUri();
+      if (!aiUri && number.trunkSid) {
+        const urls = await client.trunking.v1.trunks(number.trunkSid).originationUrls.list({ limit: 20 });
+        aiUri = urls.find((item) => item.enabled && /@sip\.api\.openai\.com(?=[:;?]|$)/i.test(item.sipUrl))?.sipUrl || "";
+      }
+      if (!aiUri) return res.status(409).json({ error: "The existing AI destination could not be verified. Current routing has not been changed." });
+      if (!previousRoutes[phone]) previousRoutes[phone] = { voiceUrl: number.voiceUrl || "", voiceMethod: number.voiceMethod || "POST", trunkSid: number.trunkSid || "", voiceApplicationSid: number.voiceApplicationSid || "" };
+      await storeConfiguration({ TWILIO_VOICE_AI_SIP_URI: aiUri, TWILIO_VOICE_PREVIOUS_NUMBER_ROUTES: previousRoutes });
+      await getLiveCalls().config({ ...await getLiveCalls().config(), enabled: true });
+      const voiceUrl = `${String(process.env.PUBLIC_BASE_URL).replace(/\/$/, "")}/api/twilio/voice`;
+      await client.incomingPhoneNumbers(number.sid).update({ trunkSid: "", voiceApplicationSid: "", voiceUrl, voiceMethod: "POST" });
+      res.json({ ok: true, phone, route: "Dispatch call controls", voiceUrl });
+    } catch (error) { next(error); }
+  });
   app.post("/api/voice/provision", express.json(), staffOnly, async (_req, res, next) => {
     if (res.locals.staff.role !== "admin") return res.status(403).json({ error: "Admin access required." });
     try {
@@ -164,10 +204,15 @@ export function mountNativeVoice(app, { express, authenticate, directory, caller
     try {
       const identity = String(req.body.From || "").replace(/^client:/, "");
       const registered = (await sessions())[identity];
+      const staff = await verifySession(identity, registered);
+      if (!staff.ok || staff.role === "reviewer") return res.status(403).type("text/xml").send("<Response><Say>Please sign in to Dispatch again.</Say><Hangup/></Response>");
+      if (req.body.LiveCallId) {
+        const twiml = await getLiveCalls().join(String(req.body.LiveCallId), identity, req.body.CallSid, req.body.LiveMode || "listen", staff.name);
+        return res.type("text/xml").send(twiml);
+      }
       const to = voiceNumber(req.body.To);
       const ids = [...new Set(callerIds())];
       const from = voiceNumber(req.body.CallerId) || ids[0];
-      const staff = await verifySession(identity, registered);
       if (!staff.ok || !to || !ids.includes(from) || ids.includes(to)) return res.status(400).type("text/xml").send("<Response><Say>DDD could not start this call. Please check the customer number and sign in again.</Say><Hangup/></Response>");
       const base = String(process.env.PUBLIC_BASE_URL).replace(/\/$/, "");
       const callback = `${base}/api/voice/status?customer=${encodeURIComponent(to)}`;
@@ -185,6 +230,29 @@ export function mountNativeVoice(app, { express, authenticate, directory, caller
     const completed = req.body.DialCallStatus === "completed";
     res.type("text/xml").send(completed ? "<Response><Hangup/></Response>" : "<Response><Say>We could not reach the team. Please reply to DDD by text and we will follow up.</Say><Hangup/></Response>");
   });
+  app.get("/api/live-calls/config", staffOnly, async (_req, res, next) => {
+    if (res.locals.staff.role !== "admin") return res.status(403).json({ error: "Admin access required." });
+    try { res.json(await getLiveCalls().config()); } catch (error) { next(error); }
+  });
+  app.post("/api/live-calls/config", express.json(), staffOnly, async (req, res, next) => {
+    if (res.locals.staff.role !== "admin") return res.status(403).json({ error: "Admin access required." });
+    try { res.json(await getLiveCalls().config(req.body)); } catch (error) { next(error); }
+  });
+  app.post("/api/live-calls/:id/takeover", express.json(), staffOnly, async (req, res, next) => {
+    try { res.json(await getLiveCalls().takeOver(req.params.id, voiceIdentity(res.locals.staff))); } catch (error) { next(error); }
+  });
+  app.post("/api/live-calls/:id/incoming-mode", express.json(), staffOnly, async (req, res, next) => {
+    try { res.json(await getLiveCalls().prepareIncoming(req.params.id, voiceIdentity(res.locals.staff), req.body.mode)); } catch (error) { next(error); }
+  });
+  for (const route of ["events", "participant-status"]) {
+    app.post(`/api/live-calls/${route}`, express.urlencoded({ extended: false }), signedTwilio, async (req, res, next) => {
+      try {
+        if (route === "events") await getLiveCalls().events(req.query.call, req.body);
+        else await getLiveCalls().participantStatus(req.query.call, req.query.participant, req.body);
+        res.sendStatus(204);
+      } catch (error) { next(error); }
+    });
+  }
   return { async routingIdentities() {
     await initialized;
     if (!nativeVoiceStatus().incomingReady) return [];

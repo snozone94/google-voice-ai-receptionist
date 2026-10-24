@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { cleanTranscript, callIdResolver } from "./call-evidence.js";
+import { analyzeConversationQuality } from "./conversation-quality.js";
 
 const root = path.resolve(import.meta.dirname, "..");
 const businessPath = path.join(root, "config", "business.json");
@@ -34,7 +35,7 @@ export const voiceOptions = [
 
 const supportedVoiceIds = new Set(voiceOptions.map((voice) => voice.id));
 const customerBusinessName = "Triple D Roadside";
-const defaultGreeting = `Thanks for calling ${customerBusinessName}. I can get your request started quickly. What do you need help with?`;
+const defaultGreeting = `Thanks for calling ${customerBusinessName}. What can we help with?`;
 const defaultCustomInstructions =
   "Act like a polished front desk receptionist. Be warm, direct, and fast. Use Triple D Roadside only in the opening greeting so the business is pronounced correctly; after that, DDD is okay. Reflect the caller's exact request before asking questions. If they name a service like oil change, brakes, battery install, tire help, jump start, lockout, or fuel delivery, treat it as a bookable DDD service immediately. For oil changes, brakes, rotors, hub bearings, and battery installs, ask whether the customer already has the parts/materials or needs DDD to confirm parts. For brake, rotor, tire replacement, tire plug, or spare tire calls, ask quantity/position only if they have not already said it: one wheel, front axle, rear axle, both axles/all four, or spare/tire-specific need. Accept what the customer says and use it for the booking notes and rough starting-price math when possible. For tire-related work, ask whether the vehicle has a wheel lock/special key and whether they have it available. Reassure them once that this will be quick and that you can make the booking for them when booking applies. If callers ask how they can pay, say DDD accepts cash, card, tap pay, and installments, but does not accept checks. Do not ask generic category questions after they already named the service. Do not repeat that reassurance. Do not keep emergency callers on the phone longer than needed. Collect the key details, point them to the right DDD link, and save a clear next step.";
 const defaultBusinessKnowledge =
@@ -49,7 +50,7 @@ const defaultHumanHandoffRules =
 const defaultApplyInstructions =
   "For work, contractor, technician, or job-interest calls, collect name, phone, email, role or service type, experience, and location, then direct them to the DDD apply to work link.";
 const defaultSmsFollowUpText =
-  "Thanks for calling DDD. Reply with the service, vehicle, and location, or book here: {{link}}. DDD Mobile: iPhone {{iosAppLink}} Android {{androidAppLink}}. Reply STOP to stop.";
+  "Thanks for calling DDD. Reply with your service, vehicle, and location.\n\nBook online:\n{{link}}\n\nDDD Mobile for iPhone:\n{{iosAppLink}}\n\nDDD Mobile for Android:\n{{androidAppLink}}\n\nReply STOP to stop.";
 const defaultReviewFollowUpUrl = "https://g.page/r/CfVinSqxHOIDEAE/review";
 const defaultReviewFollowUpText =
   "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}";
@@ -400,7 +401,8 @@ export async function buildBusinessInsights() {
     generatedAt: generatedAt.toISOString(),
     sections,
     suggestions: buildInsightSuggestions(sections),
-    highlights: buildInsightHighlights(sections)
+    highlights: buildInsightHighlights(sections),
+    conversationQuality: analyzeConversationQuality(callLog.filter((call) => Date.now() - Date.parse(call.startedAt || call.createdAt) < 30 * 86400000))
   };
 }
 
@@ -1445,6 +1447,11 @@ Voice and manner:
 - For booking or urgent service calls, reassure the caller once: "This will be quick, and I can make the booking for you." Use this idea naturally, then do not repeat it.
 - If the caller names a specific bookable service, such as "oil change", "brakes", "battery install", "jump start", "lockout", "flat tire", or "fuel delivery", do not ask whether they need roadside, routine service, emergency help, or another category. Treat the named service as the intent and ask for the next missing booking detail.
 - Do not repeat the greeting, the same reassurance, or the same question after the caller already answered. If you missed something, ask only for the missing detail.
+- If a caller says "hello" or asks whether you can hear them, acknowledge them once. Do not repeat the previous question word for word; briefly explain the one missing detail, or offer to finish by text after one unsuccessful clarification.
+- For an urgent jump start, lockout, flat tire, or fuel request, ask "Is this for now?" at most once if timing is unclear. Accept ASAP, now, today, or equivalent wording. Never ask for a preferred appointment time repeatedly during a roadside emergency.
+- Preserve the caller's actual place name. Do not substitute a similar-sounding business or location. If an exact address is unclear, save what was said and ask for an address, cross street, or location link by text.
+- A saved request does not mean a technician is dispatched. Never say "help is on the way", "someone is coming", or give an arrival time unless the booking system explicitly confirms assignment and travel status. Finish once with "Your request is saved. The team will follow up by text."
+- Keep track of details throughout this conversation, including answers given before you asked. A single sentence can supply service, quantity, vehicle, color, location, and parts availability. Use all of it; never restart the intake checklist. When callers correct a detail, use the newest correction. Only clarify an unclear or conflicting detail, not every field again.
 - Do not invent business policies, prices, addresses, or availability.
 - If a caller wants to book, collect their name, phone, email if available, service, location, vehicle year/make/model/color when relevant, issue, urgency, and preferred date/time.
 - After the caller gives a callback number, call lookup_customer_history before asking repeat details. If history exists, confirm the saved name, vehicle, service, or oil-change notes briefly and ask what changed, if anything.
@@ -1813,6 +1820,9 @@ function buildInsightLearningNotes(settings = {}) {
   if (snapshot.suggestions?.length) {
     notes.push(`- Current admin insight suggestion: ${cleanLongText(snapshot.suggestions[0], "", 220)}`);
   }
+  if (learning.useQaIssues) {
+    for (const adjustment of snapshot.conversationQuality?.adjustments || []) notes.push(`- ${adjustment}`);
+  }
   return notes.join("\n");
 }
 
@@ -1920,6 +1930,7 @@ function normalizeSettings(settings = {}) {
 }
 
 function migrateGreeting(greeting) {
+  if (greeting === "Thank you for calling Triple D Roadside. I can help book service or get your message to the team. What can I help with today?") return defaultGreeting;
   if (/thank you for calling ddd mobile/i.test(greeting)) return defaultGreeting;
   if (/thank you for calling ddd[,. ]/i.test(greeting)) return defaultGreeting;
   return greeting;
@@ -1935,7 +1946,9 @@ function appendMissingGuidance(value, fallback, additions) {
 
 function migrateSmsMessage(message) {
   const text = cleanLongText(message, defaultSmsFollowUpText, 500);
-  if (/DDD Mobile: iPhone/i.test(text) && /Android/i.test(text)) return text;
+  if (/^Thanks for calling DDD\. Reply with the service, vehicle, and location, or book here:/i.test(text) && /DDD Mobile: iPhone/i.test(text)) return defaultSmsFollowUpText;
+  if (/^Thanks for calling DDD\. Your request was received:/i.test(text) && /Non-iPhone users:/i.test(text)) return defaultSmsFollowUpText;
+  if (/^Thanks for calling DDD\. No worries if you do not want to stay on the AI call\./i.test(text) && /book\/manage service here:/i.test(text)) return defaultSmsFollowUpText;
   if (/Here is the best next link for your request|Use this link for the best next step/i.test(text)) return defaultSmsFollowUpText;
   return text;
 }
@@ -2622,7 +2635,10 @@ async function sendOptionalSmsFollowUp(record, type) {
     `${record.reason || ""} ${record.serviceType || ""} ${record.nextStep || ""}`
   );
   const followUpDestination = destination;
-  const message = renderSmsTemplate(settings.smsFollowUp.message, followUpDestination, settings, record);
+  const template = type === "booking" && settings.smsFollowUp.message === defaultSmsFollowUpText
+    ? "Your DDD service request is saved. Reply here if anything changes.\n\nView your booking using the same phone number:\n\nDDD Mobile for iPhone:\n{{iosAppLink}}\n\nDDD Mobile for Android:\n{{androidAppLink}}\n\nWebsite login:\n{{webLoginLink}}\n\nReply STOP to stop."
+    : settings.smsFollowUp.message;
+  const message = renderSmsTemplate(template, followUpDestination, settings, record);
   const delivery = await sendConfiguredSms(record.phone, message);
   await postOptionalWebhook(process.env.SMS_FOLLOWUP_WEBHOOK_URL, {
     type,
@@ -2649,15 +2665,15 @@ function renderSmsTemplate(template, destination, settings = {}, record = {}) {
     .replaceAll("{{reviewLink}}", reviewLink)
     .replaceAll("{{photoUploadLink}}", photoUploadLink)
     .replaceAll("{{business}}", "DDD")
-    .replace(/\s+/g, " ")
+    .replace(/[^\S\n]+/g, " ")
     .trim());
 }
 
 export function appendSmsCompliance(message = "") {
-  const cleaned = String(message || "").replace(/\s+/g, " ").trim();
+  const cleaned = String(message || "").replace(/\r\n?/g, "\n").replace(/[^\S\n]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
   if (!cleaned) return "";
   if (/\bstop\b.*\bstop\b|\breply stop\b|text stop/i.test(cleaned)) return cleaned;
-  const footer = " Reply STOP to stop.";
+  const footer = "\n\nReply STOP to stop.";
   return `${cleaned.slice(0, Math.max(0, 1000 - footer.length)).trim()}${footer}`;
 }
 

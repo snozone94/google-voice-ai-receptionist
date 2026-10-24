@@ -5,6 +5,7 @@ export function cleanTranscript(items = []) {
   const append = (item) => {
     const previous = result.at(-1);
     if (previous?.text === item.text && previous?.speaker === item.speaker && previous?.at === item.at) return;
+    if (previous?.text === item.text && previous?.speaker === item.speaker && previous?.type !== item.type && Math.abs(Date.parse(previous.at) - Date.parse(item.at)) < 2000) return;
     result.push(item);
   };
   for (const item of items) {

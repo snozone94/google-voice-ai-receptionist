@@ -1,14 +1,31 @@
 import WebSocket from "ws";
 import { getCustomerHistory, saveBookingRequest, saveCallSummary, saveLead } from "./receptionist.js";
+import { createLiveTranscript } from "./live-transcript.js";
 
 const activeMonitors = new Map();
 
+export function stopRealtimeAssistant(callId) {
+  const monitor = activeMonitors.get(callId);
+  if (monitor) monitor.stopped = true;
+  return monitor?.liveTranscript.list() || [];
+}
+
+export function listLiveCalls() {
+  return Array.from(activeMonitors.values(), (monitor) => ({
+    callId: monitor.callId,
+    phone: monitor.settings.callerPhone || "",
+    startedAt: monitor.startedAt,
+    status: "AI answering",
+    transcript: monitor.liveTranscript.list(),
+    capabilities: { listen: false, takeOver: false }
+  }));
+}
 export function monitorRealtimeCall(callId, settings = {}) {
   if (activeMonitors.has(callId)) return activeMonitors.get(callId);
 
   const monitor = new CallMonitor(callId, settings);
   activeMonitors.set(callId, monitor);
-  monitor.start().finally(() => activeMonitors.delete(callId));
+  monitor.start().catch((error) => console.error("Realtime monitor disconnected", error.message)).finally(() => activeMonitors.delete(callId));
   return monitor;
 }
 
@@ -17,6 +34,8 @@ class CallMonitor {
     this.callId = callId;
     this.settings = settings;
     this.transcript = [];
+    this.liveTranscript = createLiveTranscript();
+    this.completedTools = new Set();
     this.startedAt = new Date().toISOString();
   }
 
@@ -68,6 +87,13 @@ class CallMonitor {
   }
 
   async handleEvent(event) {
+    this.liveTranscript.accept(event);
+    this.transcript = this.liveTranscript.list();
+    if (this.stopped) return;
+    if (event.type === "response.function_call_arguments.done") {
+      if (!event.call_id || this.completedTools.has(event.call_id)) return;
+      this.completedTools.add(event.call_id);
+    }
     if (event.type === "response.function_call_arguments.done" && event.name === "lookup_customer_history") {
       const args = JSON.parse(event.arguments || "{}");
       const history = await getCustomerHistory(args.phone || "");
@@ -102,8 +128,8 @@ class CallMonitor {
       const args = JSON.parse(event.arguments || "{}");
       const record =
         event.name === "save_booking_request"
-          ? await saveBookingRequest({ ...args, callId: this.callId, source: "phone" })
-          : await saveLead({ ...args, callId: this.callId, source: "phone" });
+          ? await saveBookingRequest({ ...args, callId: this.settings.parentCallId || this.callId, source: "phone" })
+          : await saveLead({ ...args, callId: this.settings.parentCallId || this.callId, source: "phone" });
       this.ws.send(
         JSON.stringify({
           type: "conversation.item.create",
@@ -134,37 +160,17 @@ class CallMonitor {
       return;
     }
 
-    const text = extractTranscriptText(event);
-    if (text) {
-      this.transcript.push({
-        at: new Date().toISOString(),
-        type: event.type,
-        text
-      });
-    }
+    this.transcript = this.liveTranscript.list();
   }
 
   async saveSummary() {
     if (!this.transcript.length) return;
 
     await saveCallSummary({
-      callId: this.callId,
+      callId: this.settings.parentCallId || this.callId,
       startedAt: this.startedAt,
       endedAt: new Date().toISOString(),
       transcript: this.transcript
     });
   }
-}
-
-function extractTranscriptText(event) {
-  if (typeof event.transcript === "string") return event.transcript;
-  if (typeof event.text === "string") return event.text;
-  if (typeof event.delta === "string" && event.type.includes("transcript")) return event.delta;
-  if (event.item?.content) {
-    return event.item.content
-      .map((content) => content.transcript || content.text)
-      .filter(Boolean)
-      .join(" ");
-  }
-  return "";
 }
