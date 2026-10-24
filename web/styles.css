@@ -5631,3 +5631,13 @@ summary { cursor: pointer; min-height: 32px; }
 }
 .inbox-unread-badge { display: inline-block; padding: 3px 8px; margin-top: 4px; border-radius: 8px; background: #007a65; color: #fff; font-weight: 800; font-size: 12px; }
 .inbox-follow-up { display: block; color: #ffca75; font-weight: 700; }
+.inbox-filterbar { display: flex; gap: 8px; align-items: center; flex-shrink: 0; margin-bottom: 10px; }
+.inbox-filterbar input { flex: 1; min-width: 0; max-width: 420px; }
+.inbox-filterbar select { width: 190px; flex-shrink: 0; }
+.inbox-filterbar input, .inbox-filterbar select { margin: 0; height: 38px; min-height: 38px; padding: 6px 10px; font-size: 14px; }
+.inbox-filterbar strong { font-size: 12px; }
+@media (max-width: 600px) {
+  .inbox-filterbar { flex-wrap: wrap; }
+  .inbox-filterbar input { flex-basis: 100%; max-width: none; }
+  .thread-open .inbox-filterbar { display: none; }
+}

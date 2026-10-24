@@ -3225,7 +3225,13 @@ refreshActivity().catch(() => {});
 setInterval(() => refreshActivity().catch(() => {}), 15000);
 refreshInbox().catch((error) => setInboxStatus(error.message));
 setInterval(() => refreshInbox().catch(() => {}), 5000);
-document.querySelector("#inboxViewFilter")?.addEventListener("change", renderConversations);
+document.querySelector("#inboxViewFilter")?.addEventListener("change", (event) => {
+  const view = event.target.value;
+  const first = conversations.find((conversation) => view === "all" || (view === "unread" ? conversation.unread : conversation.needsFollowUp));
+  if (first) selectedConversationPhone = first.phone;
+  renderedConversationPhone = "";
+  renderConversations();
+});
 refreshCallLog().catch((error) => {
   callLogStatus.textContent = error.message;
 });
