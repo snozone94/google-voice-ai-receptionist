@@ -703,10 +703,9 @@
                 <strong id="selectedConversationTitle">Select a conversation</strong>
                 <span id="selectedConversationMeta"></span>
               </div>
-              <div id="conversationConfidence" class="confidence-pill muted">No booking selected</div>
+              <div class="inbox-toolbar"><button id="conversationCallButton" type="button">Call</button><button id="conversationArchiveButton" type="button">Archive</button></div>
             </div>
-            <div class="inbox-toolbar"><button id="conversationCallButton" type="button">Call customer</button><button id="conversationArchiveButton" type="button">Archive</button></div>
-            <details class="customer-details"><summary>Customer details & booking</summary><div id="conversationDetails" class="conversation-details"></div></details>
+            <details class="customer-details"><summary>Customer details & booking</summary><div id="conversationConfidence" class="confidence-pill muted">No booking selected</div><div id="conversationDetails" class="conversation-details"></div></details>
             <div class="message-list" id="messageList"></div>
             <div id="typingStatus" class="typing-status"></div>
             <form id="replyForm" class="reply-form">

@@ -5666,6 +5666,25 @@ summary { cursor: pointer; min-height: 32px; }
 .message-bubble { background: #343442 !important; border-left: 2px solid #c59aff; }
 .message-bubble.outbound { background: #214347 !important; border-left: 0; border-right: 2px solid #59dfb1; }
 .thread-call-note { align-self: center; margin: 6px 0; padding: 7px 10px; border-left: 2px solid #ffb85c; color: #e7dbf1; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.workspace-signed-in[data-view="inbox"] .live-workspace { flex: 0 0 auto; margin: 0; padding: 6px 12px; }
+.workspace-signed-in[data-view="inbox"] .live-workspace summary { min-height: 24px; }
+.workspace-signed-in[data-view="inbox"] .sticky-access-bar button { min-height: 30px; padding: 4px 10px; }
+.workspace-signed-in[data-view="inbox"] .conversation-header { flex: 0 0 auto; flex-wrap: wrap; gap: 6px; }
+.workspace-signed-in[data-view="inbox"] .conversation-header > div:first-child { flex: 1; min-width: 160px; }
+.workspace-signed-in[data-view="inbox"] .conversation-header .inbox-toolbar { padding: 0; }
+.workspace-signed-in[data-view="inbox"] .conversation-header button { min-height: 36px; padding: 6px 10px; }
+.workspace-signed-in[data-view="inbox"] .customer-details { flex: 0 0 auto; }
+.workspace-signed-in[data-view="inbox"] .customer-details[open] { max-height: 180px; overflow-y: auto; }
+.workspace-signed-in[data-view="inbox"] .quick-replies { max-height: 120px; overflow-y: auto; }
+.workspace-signed-in[data-view="inbox"] .customer-details summary,
+.workspace-signed-in[data-view="inbox"] .reply-suggestions summary { min-height: 24px; line-height: 24px; padding: 0; font-size: 12px; }
+.workspace-signed-in[data-view="inbox"] .message-list { min-height: 100px; padding: 10px; }
+.message-list > * { flex-shrink: 0; }
+@media (max-width: 700px) {
+  .workspace-signed-in[data-view="inbox"].thread-open .inbox-filterbar,
+  .workspace-signed-in[data-view="inbox"].thread-open .section-title-row { display: none; }
+  .workspace-signed-in[data-view="inbox"].thread-open .back-to-inbox { flex: 0 0 auto; min-height: 34px; padding: 4px 10px; }
+}
 @media (prefers-reduced-motion: no-preference) {
   .conversation-item { transition: background-color 160ms ease, border-color 160ms ease; }
 }
