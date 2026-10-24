@@ -14,6 +14,7 @@ import { decorateConversations, workspaceStore, pendingTextReminders } from "./d
 import { actionableNotification, notificationPreference } from "./call-evidence.js";
 import { mountNativeVoice, nativeVoiceStatus, voiceIdentity, configuredAiSipUri } from "./native-voice.js";
 import { createLiveCalls } from "./live-calls.js";
+import { createCallTranscripts } from "./call-transcripts.js";
 import {
   callAcceptPayload,
   listCalls,
@@ -171,8 +172,9 @@ function openAIClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
-const nativeVoice = mountNativeVoice(app, { express, authenticate: getStaffAccess, directory: dataDir, callerIds: outboundCallerIds, saveCallEvent, getLiveCalls: () => liveCalls });
-const liveCalls = createLiveCalls({ directory: dataDir, routingIdentities: () => nativeVoice.routingIdentities(), saveCallEvent, transcript: listLiveCalls, stopAssistant: stopRealtimeAssistant, notify: (alert) => notifyTeamTracked(alert, "live-call-needs-team"), fallback: async (record) => {
+const callTranscripts = createCallTranscripts({ directory: dataDir });
+const nativeVoice = mountNativeVoice(app, { express, authenticate: getStaffAccess, directory: dataDir, callerIds: outboundCallerIds, saveCallEvent, getLiveCalls: () => liveCalls, getCallTranscripts: () => callTranscripts });
+const liveCalls = createLiveCalls({ directory: dataDir, startTranscription: (id) => callTranscripts.start(id), getTranscription: (id) => callTranscripts.get(id), routingIdentities: () => nativeVoice.routingIdentities(), saveCallEvent, transcript: listLiveCalls, stopAssistant: stopRealtimeAssistant, notify: (alert) => notifyTeamTracked(alert, "live-call-needs-team"), fallback: async (record) => {
   const response = await buildHumanDialTwiml(await loadReceptionistSettings(), { customerPhone: record.phone });
   await twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN).calls(record.id).update({ twiml: response });
 } });

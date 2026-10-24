@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { cleanTranscript, callIdResolver } from "./call-evidence.js";
 import { analyzeConversationQuality } from "./conversation-quality.js";
+import { readStoredCallTranscript } from "./call-transcripts.js";
 
 const root = path.resolve(import.meta.dirname, "..");
 const businessPath = path.join(root, "config", "business.json");
@@ -433,6 +434,7 @@ export async function listCallLog(limit = 50) {
   const canonicalId = callIdResolver(calls);
   const linked = (records) => records.map((record) => ({ ...record, callId: canonicalId(record.callId) }));
   const callsByCall = groupByCallId(linked(calls.filter((call) => call.type !== "ddd.notification")));
+  const savedAudio = new Map(await Promise.all([...callsByCall.keys()].map(async (id) => [id, await readStoredCallTranscript(dataDir, id)])));
   const summariesByCall = groupByCallId(linked(summaries));
   const leadsByCall = groupByCallId(linked(leads));
   const bookingsByCall = groupByCallId(linked(bookings));
@@ -445,7 +447,8 @@ export async function listCallLog(limit = 50) {
       const relatedLeads = leadsByCall.get(callId) || [];
       const relatedBookings = bookingsByCall.get(callId) || [];
       const summary = relatedSummaries[0] || {};
-      const transcript = relatedSummaries.flatMap((item) => normalizeTranscript(item.transcript));
+      const audio = savedAudio.get(callId);
+      const transcript = audio?.turns.length ? normalizeTranscript(audio.turns) : relatedSummaries.flatMap((item) => normalizeTranscript(item.transcript));
       const caller = firstTruthy(
         firstEvent.from,
         latestEvent.from,
@@ -500,6 +503,7 @@ export async function listCallLog(limit = 50) {
         correction,
         completion: correction ? correctedCompletion(correction.outcomeTag, outcome.completion) : outcome.completion,
         transcript,
+        transcriptionStatus: audio?.status || "AI transcript",
         transcriptText: transcript.map((item) => item.text).filter(Boolean).join("\n"),
         leads: relatedLeads,
         bookings: relatedBookings,

@@ -29,7 +29,7 @@ export function nativeVoiceStatus() {
 
 export function configuredAiSipUri() { return configuration().TWILIO_VOICE_AI_SIP_URI || ""; }
 
-export function mountNativeVoice(app, { express, authenticate, directory, callerIds, saveCallEvent, getLiveCalls = () => null, createClient = twilio }) {
+export function mountNativeVoice(app, { express, authenticate, directory, callerIds, saveCallEvent, getLiveCalls = () => null, getCallTranscripts = () => null, createClient = twilio }) {
   const file = path.join(directory, "voice-sessions.json");
   const configFile = path.join(directory, "voice-connection.enc.json");
   let provisioning;
@@ -222,6 +222,9 @@ export function mountNativeVoice(app, { express, authenticate, directory, caller
   });
   app.post("/api/voice/status", express.urlencoded({ extended: false }), signedTwilio, async (req, res, next) => {
     try {
+      if (["in-progress", "answered"].includes(req.body.CallStatus) && (await getLiveCalls()?.config())?.transcribeCalls) {
+        await getCallTranscripts()?.start(req.body.ParentCallSid || req.body.CallSid, { inboundSpeaker: "DDD", outboundSpeaker: "Customer" }).catch((error) => console.error("Call transcription unavailable", error.code || error.status || "provider error"));
+      }
       await saveCallEvent({ type: "twilio.native.status", data: { call_id: req.body.ParentCallSid || req.body.CallSid, status: req.body.CallStatus || "", durationSeconds: Number(req.body.CallDuration || 0), direction: "outbound", sip_headers: [{ name: "from", value: voiceNumber(req.query.customer) }, { name: "to", value: voiceNumber(req.body.From) }] } });
       res.sendStatus(204);
     } catch (error) { next(error); }
@@ -244,10 +247,11 @@ export function mountNativeVoice(app, { express, authenticate, directory, caller
   app.post("/api/live-calls/:id/incoming-mode", express.json(), staffOnly, async (req, res, next) => {
     try { res.json(await getLiveCalls().prepareIncoming(req.params.id, voiceIdentity(res.locals.staff), req.body.mode)); } catch (error) { next(error); }
   });
-  for (const route of ["events", "participant-status"]) {
+  for (const route of ["events", "participant-status", "transcription"]) {
     app.post(`/api/live-calls/${route}`, express.urlencoded({ extended: false }), signedTwilio, async (req, res, next) => {
       try {
         if (route === "events") await getLiveCalls().events(req.query.call, req.body);
+        else if (route === "transcription") await getCallTranscripts().accept(req.query.call, req.body);
         else await getLiveCalls().participantStatus(req.query.call, req.query.participant, req.body);
         res.sendStatus(204);
       } catch (error) { next(error); }

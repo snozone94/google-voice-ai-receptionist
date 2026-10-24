@@ -7,11 +7,11 @@ const xml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
 const terminal = (value) => ["completed", "failed", "busy", "no-answer", "canceled"].includes(value);
 const failure = (message, status = 409) => Object.assign(new Error(message), { status });
 
-export function createLiveCalls({ directory, client = () => twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN), baseUrl = () => process.env.PUBLIC_BASE_URL, routingIdentities, saveCallEvent, transcript = () => [], stopAssistant = () => {}, notify = async () => {}, fallback = async () => {} }) {
+export function createLiveCalls({ directory, client = () => twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN), baseUrl = () => process.env.PUBLIC_BASE_URL, routingIdentities, saveCallEvent, transcript = () => [], stopAssistant = () => {}, notify = async () => {}, fallback = async () => {}, startTranscription = async () => {}, getTranscription = async () => null }) {
   const file = path.join(directory, "live-call-sessions.json");
   const configFile = path.join(directory, "live-call-options.json");
   let records = {};
-  let options = { enabled: false, ringTeam: true };
+  let options = { enabled: false, ringTeam: true, transcribeCalls: true };
   let writes = Promise.resolve();
   const locks = new Map();
   const ready = (async () => {
@@ -108,7 +108,7 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
     async config(patch) {
       await ready;
       if (patch) {
-        const next = { enabled: patch.enabled === true, ringTeam: patch.ringTeam !== false };
+        const next = { enabled: patch.enabled === true, ringTeam: patch.ringTeam !== false, transcribeCalls: patch.transcribeCalls === undefined ? options.transcribeCalls : patch.transcribeCalls === true };
         await fs.mkdir(directory, { recursive: true });
         await fs.writeFile(`${configFile}.tmp`, JSON.stringify(next), { mode: 0o600 });
         await fs.rename(`${configFile}.tmp`, configFile);
@@ -156,7 +156,7 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
           return;
         }
         if (event.StatusCallbackEvent === "participant-join" && label === "customer") {
-          await Promise.allSettled([addAi(record), ringStaff(record)]);
+          await Promise.allSettled([addAi(record), ringStaff(record), options.transcribeCalls ? startTranscription(record.id) : Promise.resolve()]);
         } else if (event.StatusCallbackEvent === "participant-join" && label === "ddd-ai") {
           record.aiCallSid = event.CallSid;
           record.aiState = "connected";
@@ -248,7 +248,10 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
           if (terminal(call.status)) { record.endedAt = new Date().toISOString(); record.status = "Ended"; await persist(); }
         } catch (error) { if (error.status === 404) { record.endedAt = new Date().toISOString(); await persist(); } }
       }
-      return Object.values(records).filter((record) => !record.endedAt && Date.now() - Date.parse(record.startedAt) < 4 * 3600000).map((record) => ({ callId: record.id, phone: record.phone, startedAt: record.startedAt, status: record.status, transcript: transcript().find((call) => call.callId === record.aiRealtimeId)?.transcript || record.transcript || [], joined: Boolean(record.staff?.[identity]?.joined), ownedByYou: record.owner === identity, teamAnswering: Boolean(record.owner), capabilities: { listen: Boolean(record.conferenceSid), takeOver: Boolean(record.conferenceSid) && (!record.owner || record.owner === identity) } }));
+      return Promise.all(Object.values(records).filter((record) => !record.endedAt && Date.now() - Date.parse(record.startedAt) < 4 * 3600000).map(async (record) => {
+        const audio = await getTranscription(record.id).catch(() => ({ status: "unavailable", turns: [] }));
+        return { callId: record.id, phone: record.phone, startedAt: record.startedAt, status: record.status, transcriptionStatus: audio?.status || "AI transcript", transcript: audio?.turns.length ? audio.turns : transcript().find((call) => call.callId === record.aiRealtimeId)?.transcript || record.transcript || [], joined: Boolean(record.staff?.[identity]?.joined), ownedByYou: record.owner === identity, teamAnswering: Boolean(record.owner), capabilities: { listen: Boolean(record.conferenceSid), takeOver: Boolean(record.conferenceSid) && (!record.owner || record.owner === identity) } };
+      }));
     }
   };
 }
