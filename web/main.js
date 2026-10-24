@@ -2917,6 +2917,10 @@ function renderSelectedCall() {
   const recording = call.recordingUrl
     ? `<button type="button" data-action="play-recording">Play recording</button>`
     : "No recording link stored yet";
+  const sameCall = callDetail.dataset.selectedCallId === call.id;
+  const transcriptExpanded = sameCall && callDetail.querySelector('[data-full-transcript]')?.open;
+  const previousScroll = sameCall ? callDetail.scrollTop : 0;
+  callDetail.dataset.selectedCallId = call.id;
   const transcriptHtml = renderGroupedTranscript(call.transcript || []);
   const synopsis = buildCallSynopsis(call);
   const correction = call.correction || {};
@@ -2977,12 +2981,13 @@ function renderSelectedCall() {
       <h4>Synopsis</h4>
       <div class="call-synopsis">${synopsis.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}</div>
     </div>
-    <details class="call-section">
+    <details class="call-section" data-full-transcript ${transcriptExpanded ? "open" : ""}>
       <summary>Full transcript</summary>
       ${call.transcriptionStatus === "unavailable" ? '<p class="muted">Full-call transcription was unavailable. Available conversation is shown below.</p>' : ""}
       <div class="transcript-box">${transcriptHtml}</div>
     </details>
   `;
+  callDetail.scrollTop = previousScroll;
   const saveCorrectionButton = callDetail.querySelector('[data-action="save-call-correction"]');
   for (const button of callDetail.querySelectorAll('[data-action="select-history-call"]')) button.addEventListener("click", () => {
     selectedCallId = button.dataset.callId;
