@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "sounds": [
+    { "id": "ddd-alert", "label": "DDD Dispatch Alert", "file": "ddd_dispatch_alert.wav" },
+    { "id": "ddd-roadside", "label": "DDD Roadside Ring", "file": "ddd_roadside_ring.wav" },
+    { "id": "ddd-moving", "label": "DDD On the Move", "file": "ddd_on_the_move.wav" },
+    { "id": "ddd-ready", "label": "DDD Road Ready", "file": "ddd_road_ready.wav" },
+    { "id": "ddd-rolling", "label": "DDD Keep Rolling", "file": "ddd_keep_rolling.wav" }
+  ]
+}
