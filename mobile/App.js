@@ -1328,10 +1328,12 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
             const active = normalized === normalizeE164(selectedCustomerPhone);
             return (
               <Pressable
-                key={conversation.threadId || conversation.customer || index}
+                key={normalized || conversation.threadId || index}
                 onPress={() => setSelectedPhone(normalized)}
-                style={[styles.conversationChoice, active && styles.conversationChoiceActive]}
+                style={[styles.conversationChoice, { borderLeftColor: threadAccent(customerPhone), borderLeftWidth: 3 }, active && styles.conversationChoiceActive]}
               >
+                <View style={[styles.threadAvatar, { backgroundColor: threadAccent(customerPhone) }]}><Text style={styles.threadAvatarText}>{getConversationName(conversation) === "Customer" ? normalized.slice(-2) : getConversationName(conversation).split(/\s+/).slice(0, 2).map((part) => part[0]).join("")}</Text></View>
+                <View style={styles.flexText}>
                 <Text style={[styles.conversationName, active && styles.conversationNameActive]} numberOfLines={1}>
                   {getConversationName(conversation)}
                   {conversation.unread ? ` · ${conversation.unread} new` : ""}
@@ -1344,6 +1346,7 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
                 </Text>
                 <Text style={styles.conversationNumber}>{formatDateTime(getConversationTime(conversation))}</Text>
                 {conversation.needsFollowUp ? <Text style={styles.warningText}>{conversation.followUpReason}</Text> : null}
+                </View>
               </Pressable>
             );
           })}
@@ -2150,6 +2153,7 @@ function getConversationName(conversation = {}) {
 }
 
 function getConversationPreview(conversation = {}) {
+  if (conversation.lastBody) return cleanConversationBody(conversation.lastBody).replace(/https?:\/\/\S+/g, "[link]");
   if (conversation.lastMessage || conversation.preview) return cleanConversationBody(conversation.lastMessage || conversation.preview);
   const last = conversation.messages?.at?.(-1);
   return cleanConversationBody(last?.body || last?.message || last?.text || "No message preview available.");
@@ -2157,12 +2161,17 @@ function getConversationPreview(conversation = {}) {
 
 function getConversationTime(conversation = {}) {
   const last = conversation.messages?.at?.(-1);
-  return conversation.updatedAt || conversation.lastAt || last?.createdAt || last?.at || "";
+  return conversation.lastMessageAt || conversation.updatedAt || conversation.lastAt || last?.createdAt || last?.at || "";
+}
+
+function threadAccent(phone = "") {
+  return ["#ff62ab", "#ffb85c", "#f2d65c", "#59dfb1", "#62cfff", "#c59aff"][Number(String(phone).replace(/\D/g, "").slice(-2)) % 6];
 }
 
 function cleanConversationBody(value = "") {
   const raw = String(value || "").replace(/\r\n?/g, "\n").replace(/[^\S\n]+/g, " ").trim();
   if (!raw) return "";
+  if (/^Call:\s*.*(?:\bsips?:|\bSIP\b|\bPSTN\b|twilio\.)/i.test(raw)) return "Call received";
   const withoutCallPrefix = raw.replace(/^Call:\s*/i, "").trim();
   const statusLabel = formatMessageStatus(withoutCallPrefix);
   if (statusLabel && (withoutCallPrefix !== raw || /staff-sms-reply|email-sent|push-\d+|sms-[\w-]+/i.test(raw))) {
@@ -2689,12 +2698,14 @@ const styles = StyleSheet.create({
   },
   conversationPicker: { gap: 8, paddingVertical: 2 },
   conversationChoice: {
+    flexDirection: "row",
+    gap: 10,
     width: "100%",
     minHeight: 76,
     borderColor: "rgba(118, 87, 255, 0.18)",
     borderRadius: 8,
     borderWidth: 1,
-    backgroundColor: "#edf1f5",
+    backgroundColor: "#f4edf7",
     padding: 10
   },
   conversationChoiceActive: {
@@ -2702,6 +2713,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#ff3ea5"
   },
   conversationName: { color: "#161827", fontSize: 14, fontWeight: "900" },
+  threadAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  threadAvatarText: { color: "#211627", fontSize: 14, fontWeight: "800" },
   conversationNameActive: { color: "#ffffff" },
   conversationNumber: { color: "#a81586", fontSize: 12, fontWeight: "900", marginTop: 3 },
   conversationNumberActive: { color: "#ffffff" },
