@@ -2284,7 +2284,7 @@ function renderSelectedConversation() {
   selectedConversationTitle.textContent = booking?.name || conversation.customerName || formatPhone(conversation.phone);
   const textCount = conversation.messages.filter((message) => message.direction !== "call").length;
   const callCount = conversation.messages.length - textCount;
-  selectedConversationMeta.textContent = `${formatPhone(conversation.phone)} · ${textCount} texts · ${callCount} calls`;
+  selectedConversationMeta.textContent = `${formatPhone(conversation.phone)} · ${textCount} text${textCount === 1 ? "" : "s"} · ${callCount} call${callCount === 1 ? "" : "s"}`;
   if (outboundCustomerPhoneInput && !outboundCustomerPhoneInput.value.trim()) {
     outboundCustomerPhoneInput.value = formatPhone(conversation.phone);
   }
@@ -2337,6 +2337,7 @@ function renderSelectedConversation() {
     }));
     messageList.append(bubble);
   }
+  messageList.scrollTop = followLatest ? messageList.scrollHeight : previousScroll;
   requestAnimationFrame(() => {
     messageList.scrollTop = followLatest ? messageList.scrollHeight : previousScroll;
   });

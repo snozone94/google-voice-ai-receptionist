@@ -5680,6 +5680,13 @@ summary { cursor: pointer; min-height: 32px; }
 .workspace-signed-in[data-view="inbox"] .reply-suggestions summary { min-height: 24px; line-height: 24px; padding: 0; font-size: 12px; }
 .workspace-signed-in[data-view="inbox"] .message-list { min-height: 100px; padding: 10px; }
 .message-list > * { flex-shrink: 0; }
+@media (min-width: 701px) {
+  .workspace-signed-in[data-view="inbox"] .section-title-row { flex-wrap: wrap; }
+  .workspace-signed-in[data-view="inbox"] .inbox-filterbar { flex: 1; min-width: 300px; margin: 0; }
+  .workspace-signed-in[data-view="inbox"] .inbox-filterbar input { flex: 1; width: 160px; min-width: 100px; }
+  .workspace-signed-in[data-view="inbox"] .inbox-filterbar select { width: 150px; }
+  .workspace-signed-in[data-view="inbox"] .inbox-filterbar strong { font-size: 11px; }
+}
 @media (max-width: 700px) {
   .workspace-signed-in[data-view="inbox"].thread-open .inbox-filterbar,
   .workspace-signed-in[data-view="inbox"].thread-open .section-title-row { display: none; }

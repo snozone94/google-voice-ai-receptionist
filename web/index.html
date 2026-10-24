@@ -686,12 +686,12 @@
             <p class="eyebrow">Shared DDD inbox</p>
             <h2>Texts</h2>
           </div>
-          <div class="inbox-toolbar"><button id="newConversationButton" type="button">New text</button><button id="inboxDialButton" type="button">Call</button><button id="refreshInboxPanelButton" type="button">Refresh</button></div>
-        </div>
         <div class="inbox-filterbar">
           <input id="conversationSearch" type="search" aria-label="Search customers" placeholder="Name or phone" />
           <select id="inboxViewFilter" aria-label="Show conversations"><option value="all">All conversations</option><option value="unread">Unread messages</option><option value="attention">Needs follow-up</option></select>
           <strong id="inboxUnreadSummary" aria-live="polite"></strong>
+        </div>
+          <div class="inbox-toolbar"><button id="newConversationButton" type="button">New text</button><button id="inboxDialButton" type="button">Call</button><button id="refreshInboxPanelButton" type="button">Refresh</button></div>
         </div>
         <form id="newConversationForm" hidden><label>Customer phone<input id="newConversationPhone" type="tel" required placeholder="Phone number" /></label><button type="submit">Open conversation</button></form>
         <div class="inbox-shell">
