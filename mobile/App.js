@@ -5,6 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as Notifications from "expo-notifications";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNativePhone } from "./useNativePhone";
 import {
   ActivityIndicator,
   AppState,
@@ -30,13 +31,13 @@ const adminPrimaryTabs = [
   { name: "Inbox", color: "#16b8ff" },
   { name: "Calls", color: "#ff7a3d" },
   { name: "Bookings", color: "#ffc83d" },
-  { name: "More", color: "#ff3ea5" }
+  { name: "More", label: "Account", color: "#ff3ea5" }
 ];
 const staffPrimaryTabs = [
   { name: "Inbox", color: "#16b8ff" },
   { name: "Calls", color: "#ff7a3d" },
   { name: "Bookings", color: "#ffc83d" },
-  { name: "More", color: "#ff3ea5" }
+  { name: "More", label: "Account", color: "#ff3ea5" }
 ];
 const adminMoreTabs = [
   { name: "Insights", color: "#23c779", label: "Insights" },
@@ -171,12 +172,15 @@ export default function App() {
   const [activity, setActivity] = useState({ calls: [], leads: [], bookings: [], conversations: [], insights: null });
   const [settings, setSettings] = useState(blankSettings);
   const [signedInStaff, setSignedInStaff] = useState(null);
+  const [personalPrefs, setPersonalPrefs] = useState({ texts: true, missedCalls: true, bookings: true, qaIssues: true, newCalls: false, teamActivity: false });
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
   const autosaveTimerRef = useRef(null);
   const lastSavedSettingsRef = useRef("");
   const accessGenerationRef = useRef(0);
 
   const cleanBaseUrl = useMemo(() => normalizeBaseUrl(apiBaseUrl), [apiBaseUrl]);
   const isAdmin = isAdminStaff(signedInStaff);
+  const phone = useNativePhone({ baseUrl: cleanBaseUrl, accessCode: adminPin, signedIn: Boolean(signedInStaff?.ok) });
   const availableTabs = useMemo(() => (isAdmin ? adminPrimaryTabs : staffPrimaryTabs), [isAdmin]);
   const allowedTabNames = useMemo(
     () => new Set([...availableTabs, ...(isAdmin ? adminMoreTabs : [{ name: "Home" }, { name: "Insights" }])].map((tab) => tab.name)),
@@ -187,22 +191,14 @@ export default function App() {
     const targetBaseUrl = normalizeBaseUrl(baseUrl);
     if (!accessPin) return;
     const generation = accessGenerationRef.current;
-    const [callsResponse, conversationsResponse, insightsResponse, bookingsResponse] = await Promise.all([
-      apiGet(targetBaseUrl, "/api/call-log?limit=75", accessPin).catch(() => ({ calls: [] })),
-      apiGet(targetBaseUrl, "/api/conversations", accessPin).catch(() => ({ conversations: [] })),
-      apiGet(targetBaseUrl, "/api/insights", accessPin).catch(() => null),
-      apiGet(targetBaseUrl, "/api/bookings?limit=75", accessPin).catch(() => ({ bookings: [] }))
-    ]);
+    const operations = await apiGet(targetBaseUrl, "/api/operations", accessPin);
     if (generation !== accessGenerationRef.current) return;
     setActivity((current) => ({
       ...current,
-      calls: callsResponse.calls || current.calls || [],
-      conversations: conversationsResponse.conversations || current.conversations || [],
-      insights: insightsResponse || current.insights || null,
-      bookings: bookingsResponse.bookings || current.bookings || []
+      ...operations
     }));
-    if (conversationsResponse.staff?.ok) {
-      setSignedInStaff(conversationsResponse.staff);
+    if (operations.staff?.ok) {
+      setSignedInStaff(operations.staff);
     }
   }, [adminPin, cleanBaseUrl]);
 
@@ -212,6 +208,8 @@ export default function App() {
     setLoading(true);
     try {
       const access = accessPin ? await apiGet(targetBaseUrl, "/api/access-check", accessPin).catch(() => null) : null;
+      if (generation !== accessGenerationRef.current) return;
+      const operations = access?.ok ? await apiGet(targetBaseUrl, "/api/operations", accessPin).catch(() => null) : null;
       if (generation !== accessGenerationRef.current) return;
       if (!access?.ok) {
         setSignedInStaff(null);
@@ -239,12 +237,14 @@ export default function App() {
         leads: leadsResponse.leads || [],
         bookings: bookingsResponse.bookings || [],
         conversations: conversationsResponse.conversations || [],
-        insights: insightsResponse || null
+        insights: insightsResponse || null,
+        ...(operations || {})
       });
       if (accessPin) {
         setSignedInStaff(access?.ok ? access : null);
         setStatus(access?.ok ? `Signed in as ${access.name || "DDD team"} (${access.role || "staff"}).` : "Connected. Code not recognized yet.");
         if (access?.ok) {
+          await AsyncStorage.setItem(adminPinStorageKey, accessPin);
           enablePushNotifications(accessPin, { quiet: true }).catch(() => {});
         }
       } else {
@@ -275,7 +275,18 @@ export default function App() {
       mounted = false;
       clearTimeout(autosaveTimerRef.current);
     };
-  }, [loadAll]);
+  }, []);
+
+  useEffect(() => {
+    AsyncStorage.getItem("ddd-notification-preferences").then((value) => {
+      if (value) setPersonalPrefs((current) => ({ ...current, ...JSON.parse(value) }));
+    }).catch(() => {}).finally(() => setPrefsLoaded(true));
+  }, []);
+  useEffect(() => {
+    if (!prefsLoaded) return;
+    AsyncStorage.setItem("ddd-notification-preferences", JSON.stringify(personalPrefs)).catch(() => {});
+    if (pushToken && signedInStaff?.ok) apiPost(cleanBaseUrl, "/api/push/register", { token: pushToken, platform: Platform.OS, preferences: personalPrefs }, adminPin).catch((error) => setPushStatus(error.message));
+  }, [personalPrefs, prefsLoaded, pushToken, signedInStaff?.ok, cleanBaseUrl, adminPin]);
 
   useEffect(() => {
     if (!editMode || loading) return;
@@ -304,19 +315,25 @@ export default function App() {
 
   useEffect(() => {
     if (!pushToken || !adminPin || Platform.OS === "web") return;
-    const clearBadge = () => {
-      apiPost(cleanBaseUrl, "/api/push/read", { token: pushToken }, adminPin)
-        .then(() => Notifications.setBadgeCountAsync(0)).catch(() => {});
-    };
-    clearBadge();
+    const refresh = () => refreshOperations(cleanBaseUrl, adminPin).catch(() => {});
+    refresh();
     const listener = AppState.addEventListener("change", (state) => {
-      if (state === "active") clearBadge();
+      if (state === "active") refresh();
     });
     const received = Notifications.addNotificationReceivedListener(() => {
-      if (AppState.currentState === "active") clearBadge();
+      if (AppState.currentState === "active") refresh();
     });
-    return () => { listener.remove(); received.remove(); };
-  }, [pushToken, adminPin, cleanBaseUrl, activeTab]);
+    const tapped = Notifications.addNotificationResponseReceivedListener(({ notification }) => {
+      const customerPhone = normalizeE164(notification.request.content.data?.from);
+      if (customerPhone) setContactPhone(customerPhone);
+      setActiveTab("Inbox");
+      refresh();
+    });
+    return () => { listener.remove(); received.remove(); tapped.remove(); };
+  }, [pushToken, adminPin, cleanBaseUrl, refreshOperations]);
+  useEffect(() => {
+    if (Platform.OS !== "web") Notifications.setBadgeCountAsync(activity.attention?.count || 0).catch(() => {});
+  }, [activity.attention?.count]);
 
   async function saveBaseUrl() {
     const next = normalizeBaseUrl(apiBaseUrl);
@@ -430,7 +447,8 @@ export default function App() {
       await apiPost(cleanBaseUrl, "/api/push/register", {
         token,
         platform: Platform.OS,
-        staffPhone
+        staffPhone,
+        preferences: personalPrefs
       }, accessPin);
       setPushStatus("Native push is connected on this phone.");
       if (!quiet) setStatus("Push notifications connected.");
@@ -466,11 +484,21 @@ export default function App() {
   }
 
   const WorkspaceContent = activeTab === "Inbox" ? View : ScrollView;
+  async function signOut() {
+    await phone.signOut();
+    if (pushToken) await apiPost(cleanBaseUrl, "/api/push/unregister", { token: pushToken }, adminPin).catch(() => {});
+    accessGenerationRef.current += 1;
+    setAdminPin(""); setSignedInStaff(null); setPushToken("");
+    setActivity({ calls: [], leads: [], bookings: [], conversations: [], insights: null });
+    await AsyncStorage.removeItem(adminPinStorageKey);
+  }
+  if (!signedInStaff?.ok) return <StaffLogin code={adminPin} onCode={setAdminPin} loading={loading} status={status} onSignIn={() => loadAll(cleanBaseUrl, adminPin)} />;
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
       <LinearGradient colors={["#140f2a", "#102d3b", "#33133d"]} style={styles.shell}>
-        <Header business={business} settings={settings} signedInStaff={signedInStaff} onProfile={() => setActiveTab("Home")} onAlerts={() => enablePushNotifications()} />
+        <Header business={business} settings={settings} signedInStaff={signedInStaff} onProfile={() => setActiveTab("More")} onAlerts={() => enablePushNotifications()} />
+        {phone.call ? <NativeCallBar phone={phone} onError={setStatus} /> : null}
 
         <WorkspaceContent style={activeTab === "Inbox" ? styles.inboxContent : undefined} contentContainerStyle={activeTab === "Inbox" ? undefined : styles.content} showsVerticalScrollIndicator={false}>
           {activeTab === "Home" ? (
@@ -499,7 +527,7 @@ export default function App() {
               onSaveBaseUrl={saveBaseUrl}
               onSaveSettings={() => saveSettings("manual")}
               onUnlockAdmin={() => loadAll(cleanBaseUrl, adminPin)}
-              onSignOut={() => { accessGenerationRef.current += 1; setAdminPin(""); setSignedInStaff(null); setActivity({ calls: [], leads: [], bookings: [], conversations: [], insights: null }); AsyncStorage.removeItem(adminPinStorageKey); }}
+              onSignOut={signOut}
               onSendTestNotification={sendTestNotification}
             />
           ) : null}
@@ -545,6 +573,7 @@ export default function App() {
               setStatus={setStatus}
               settings={settings}
               staffPhone={staffPhone}
+              nativePhone={phone}
             />
           ) : null}
           {activeTab === "Calls" ? (
@@ -557,6 +586,7 @@ export default function App() {
               setStatus={setStatus}
               setStaffPhone={setStaffPhone}
               staffPhone={staffPhone}
+              nativePhone={phone}
             />
           ) : null}
           {activeTab === "Bookings" ? signedInStaff?.ok ? <BookingsTab bookings={activity.bookings} /> : <Card title="Staff sign-in required"><Text style={styles.muted}>Sign in with your DDD staff code to view bookings.</Text><ActionButton label="Sign in" onPress={() => setActiveTab("Home")} /></Card> : null}
@@ -568,18 +598,53 @@ export default function App() {
               onRefresh={() => loadAll(cleanBaseUrl, adminPin)}
             />
           ) : null}
-          {activeTab === "More" ? <MoreTab isAdmin={isAdmin} onSelect={setActiveTab} settings={settings} activity={activity} /> : null}
+          {activeTab === "More" ? <AccountPanel staff={signedInStaff} phone={phone} preferences={personalPrefs} setPreferences={setPersonalPrefs} onEnablePush={() => enablePushNotifications()} pushStatus={pushStatus} onSignOut={signOut} isAdmin={isAdmin} onSelect={setActiveTab} /> : null}
 
           {loading ? <ActivityIndicator color="#7d4dff" /> : null}
           <Text style={styles.status}>{status}</Text>
         </WorkspaceContent>
-        <BottomTabs activeTab={activeTab} onSelect={setActiveTab} tabs={availableTabs} />
+        <BottomTabs activeTab={activeTab} onSelect={setActiveTab} tabs={availableTabs} unread={(activity.conversations || []).reduce((sum, conversation) => sum + (conversation.unread || 0), 0)} />
       </LinearGradient>
     </SafeAreaView>
   );
 }
 
-function BottomTabs({ activeTab, onSelect, tabs = staffPrimaryTabs }) {
+function StaffLogin({ code, onCode, loading, status, onSignIn }) {
+  return <SafeAreaView style={{ flex: 1, backgroundColor: "#191d24" }}><StatusBar style="light" /><KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, justifyContent: "center", padding: 28 }}>
+    <Image source={require("./assets/icon.png")} style={{ width: 72, height: 72, borderRadius: 16, marginBottom: 20 }} />
+    <Text style={{ color: "#f5f7fa", fontSize: 28, fontWeight: "800", marginBottom: 28 }}>DDD Dispatch</Text>
+    <Text style={{ color: "#d8e1e8", marginBottom: 8, fontSize: 15 }}>Staff access code</Text>
+    <TextInput value={code} onChangeText={onCode} secureTextEntry autoCapitalize="none" autoCorrect={false} accessibilityLabel="Staff access code" placeholder="Enter your code" placeholderTextColor="#a1adb9" style={{ backgroundColor: "#2b333d", color: "#fff", padding: 16, borderRadius: 8, fontSize: 18, marginBottom: 12 }} onSubmitEditing={onSignIn} />
+    <ActionButton disabled={loading || !code.trim()} label={loading ? "Signing in..." : "Sign in"} onPress={onSignIn} />
+    {!loading && /not recognized|could not|failed|forbidden/i.test(status || "") ? <Text style={{ color: "#ffb8b8", marginTop: 12 }}>Couldn't sign in. Check your code and connection.</Text> : null}
+  </KeyboardAvoidingView></SafeAreaView>;
+}
+
+function NativeCallBar({ phone, onError }) {
+  const run = (operation) => operation().catch((error) => onError(error.message));
+  return <View style={{ backgroundColor: "#223b35", padding: 12, gap: 8 }}>
+    <Text style={{ color: "#fff", fontWeight: "700" }}>{phone.call.status} · {formatPhone(phone.call.to) || phone.call.to}</Text>
+    <View style={styles.buttonRow}>
+      {phone.call.incoming ? <ActionButton label="Answer" onPress={() => run(phone.answer)} /> : <><ActionButton label={phone.call.muted ? "Unmute" : "Mute"} onPress={() => run(phone.mute)} variant="light" /><ActionButton label="Audio" onPress={() => run(phone.audioRoute)} variant="light" /></>}
+      <ActionButton label={phone.call.incoming ? "Decline" : "End call"} onPress={() => run(phone.end)} />
+    </View>
+  </View>;
+}
+
+function AccountPanel({ staff, phone, preferences, setPreferences, onEnablePush, pushStatus, onSignOut, isAdmin, onSelect }) {
+  return <>
+    <Text style={styles.screenHeading}>{staff.name}</Text><Text style={styles.muted}>{isAdmin ? "Administrator" : "Technician"}</Text>
+    <Card title="Business phone"><Text style={styles.record}>{phone.status}</Text>{phone.callerIds.length > 1 ? <View style={styles.buttonRow}>{phone.callerIds.map((id) => <ActionButton key={id} label={formatPhone(id)} onPress={() => phone.setCallerId(id)} variant={id === phone.callerId ? undefined : "light"} />)}</View> : null}</Card>
+    <Card title="Notifications"><ActionButton label="Enable notifications" onPress={onEnablePush} /><Text style={styles.muted}>{pushStatus}</Text>
+      {[["texts", "Customer messages"], ["missedCalls", "Missed calls & unfinished requests"], ["bookings", "New bookings"], ["qaIssues", "Delivery & service problems"], ["newCalls", "Every incoming call"], ["teamActivity", "Team replies & call activity"]].map(([key, label]) => <View key={key} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 10, gap: 8 }}><Text style={[styles.record, { flex: 1 }]}>{label}</Text><Switch value={Boolean(preferences[key])} onValueChange={(value) => setPreferences((current) => ({ ...current, [key]: value }))} /></View>)}
+    </Card>
+    <ActionButton label="Insights" variant="light" onPress={() => onSelect("Insights")} />
+    {isAdmin ? <Card title="Administration">{[["Home", "Answering & settings"], ["Voice", "Voice"], ["Script", "Business information"], ["Flows", "Intake questions"], ["Team", "Team access"]].map(([target, label]) => <ActionButton key={target} label={label} variant="light" onPress={() => onSelect(target)} />)}</Card> : null}
+    <ActionButton label="Sign out" variant="light" onPress={onSignOut} />
+  </>;
+}
+
+function BottomTabs({ activeTab, onSelect, tabs = staffPrimaryTabs, unread = 0 }) {
   const activePrimary = tabs.some((tab) => tab.name === activeTab) ? activeTab : "More";
   return (
     <LinearGradient colors={["rgba(20, 18, 42, 0.96)", "rgba(49, 31, 72, 0.92)"]} style={styles.tabWrap}>
@@ -597,7 +662,7 @@ function BottomTabs({ activeTab, onSelect, tabs = staffPrimaryTabs }) {
               ]}
             >
               <LinearGradient colors={[tab.color, "#8fdde4"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.tabAccent} />
-              <Text style={[styles.tabText, active && styles.tabTextActive]}>{tab.label || tab.name}</Text>
+              <Text style={[styles.tabText, active && styles.tabTextActive]}>{tab.label || tab.name}{tab.name === "Inbox" && unread ? ` (${unread > 99 ? "99+" : unread})` : ""}</Text>
             </Pressable>
           );
         })}
@@ -1101,15 +1166,16 @@ function TeamTab({ adminPin, editMode, saving, setEditMode, signedInStaff, onSav
   );
 }
 
-function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setStatus, settings, staffPhone, initialPhone }) {
+function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setStatus, settings, staffPhone, initialPhone, nativePhone }) {
   const [composing, setComposing] = useState(false);
   const [search, setSearch] = useState("");
   const [drafts, setDrafts] = useState({});
   const [manualPhone, setManualPhone] = useState("");
   const [selectedPhone, setSelectedPhone] = useState("");
   const [workingThread, setWorkingThread] = useState("");
+  const [filter, setFilter] = useState("all");
   useEffect(() => { if (initialPhone) { setManualPhone(initialPhone); setSelectedPhone(normalizeE164(initialPhone)); } }, [initialPhone]);
-  const activeConversations = (conversations || []).filter((item) => `${getConversationName(item)} ${getConversationCustomer(item)} ${getConversationPreview(item)}`.toLowerCase().includes(search.toLowerCase()));
+  const activeConversations = (conversations || []).filter((item) => (filter === "all" || (filter === "unread" ? item.unread > 0 : item.needsFollowUp)) && `${getConversationName(item)} ${getConversationCustomer(item)} ${getConversationPreview(item)}`.toLowerCase().includes(search.toLowerCase()));
   const manualNormalizedPhone = normalizeE164(manualPhone);
   const manualConversation =
     manualNormalizedPhone && !activeConversations.some((conversation) => normalizeE164(getConversationCustomer(conversation)) === manualNormalizedPhone)
@@ -1122,10 +1188,14 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
         }
       : null;
   const selectedConversation =
-    activeConversations.find((conversation) => normalizeE164(getConversationCustomer(conversation)) === selectedPhone) ||
+    (conversations || []).find((conversation) => normalizeE164(getConversationCustomer(conversation)) === selectedPhone) ||
     (selectedPhone === manualNormalizedPhone ? manualConversation : null) ||
     null;
   const selectedCustomerPhone = selectedConversation ? getConversationCustomer(selectedConversation) : "";
+  useEffect(() => {
+    if (!selectedConversation?.lastMessageAt || !hasPin) return;
+    apiPost(apiBaseUrl, `/api/conversations/${encodeURIComponent(selectedConversation.phone)}/state`, { action: "read", through: selectedConversation.lastMessageAt }, adminPin).catch(() => {});
+  }, [selectedConversation?.phone, selectedConversation?.lastMessageAt, hasPin, apiBaseUrl, adminPin]);
 
   async function sendReply(customerPhone) {
     const to = normalizeE164(customerPhone);
@@ -1160,14 +1230,10 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
       setStatus("Could not find a valid customer phone number.");
       return;
     }
-    if (!normalizeE164(staffPhone)) {
-      setStatus("Add your call-back phone on Home first.");
-      return;
-    }
     setWorkingThread(`call:${to}`);
     try {
-      await apiPost(apiBaseUrl, "/api/calls/outbound", { to, staffPhone }, adminPin);
-      setStatus("Calling your phone now. Answer it to connect the customer with DDD caller ID.");
+      await nativePhone.call(to);
+      setStatus("Calling from DDD.");
     } catch (error) {
       setStatus(error.message);
     } finally {
@@ -1239,7 +1305,7 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
       </Card></ScrollView> : null}
       {!selectedConversation && !composing ? <View style={styles.inboxList}>
         {!hasPin ? <Text style={styles.warningText}>Enter your admin or tech access code on Home once to load protected inbox messages.</Text> : null}
-        {!normalizeE164(staffPhone) ? <Text style={styles.warningText}>Add your call-back phone on Home before using Call Customer.</Text> : null}
+        <View style={styles.buttonRow}>{[["all", "All"], ["attention", "Needs follow-up"], ["unread", "Unread"]].map(([value, label]) => <ActionButton key={value} label={label} onPress={() => setFilter(value)} variant={value === filter ? undefined : "light"} />)}</View>
         <Field label="Search customers" value={search} onChangeText={setSearch} />
         <ScrollView contentContainerStyle={styles.conversationPicker}>
           {activeConversations.map((conversation, index) => {
@@ -1254,6 +1320,7 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
               >
                 <Text style={[styles.conversationName, active && styles.conversationNameActive]} numberOfLines={1}>
                   {getConversationName(conversation)}
+                  {conversation.unread ? ` · ${conversation.unread} new` : ""}
                 </Text>
                 <Text style={[styles.conversationNumber, active && styles.conversationNumberActive]} numberOfLines={1}>
                   {formatPhone(customerPhone) || "Unknown"}
@@ -1262,6 +1329,7 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
                   {getConversationPreview(conversation)}
                 </Text>
                 <Text style={styles.conversationNumber}>{formatDateTime(getConversationTime(conversation))}</Text>
+                {conversation.needsFollowUp ? <Text style={styles.warningText}>{conversation.followUpReason}</Text> : null}
               </Pressable>
             );
           })}
@@ -1280,6 +1348,7 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
               setDrafts((current) => ({ ...current, [to]: message }));
             }}
             onSend={sendReply}
+            onHandled={async () => { try { await apiPost(apiBaseUrl, `/api/conversations/${encodeURIComponent(selectedCustomerPhone)}/state`, { action: "handled", through: new Date().toISOString() }, adminPin); setSelectedPhone(""); onRefresh(); } catch (error) { setStatus(error.message); } }}
             settings={settings}
             workingThread={workingThread}
           />
@@ -1289,7 +1358,7 @@ function InboxTab({ adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setS
   );
 }
 
-function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChange, onSend, settings, workingThread }) {
+function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChange, onSend, onHandled, settings, workingThread }) {
   const messageScrollRef = useRef(null);
   const followLatestRef = useRef(true);
   useEffect(() => { followLatestRef.current = true; }, [conversation.phone]);
@@ -1317,6 +1386,7 @@ function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChang
         <ActionButton disabled={callBusy} label={callBusy ? "Calling..." : "Call"} onPress={() => onCall(customerPhone)} variant="light" />
         <ActionButton label="Customer details" onPress={() => setDetailsOpen(!detailsOpen)} variant="light" />
         <ActionButton label="More" onPress={() => setMenuOpen(!menuOpen)} variant="light" />
+        {conversation.needsFollowUp ? <ActionButton label="Mark handled" onPress={onHandled} variant="light" /> : null}
       </View>
       {detailsOpen ? <View><Text style={styles.record}>{booking?.serviceType || "No booking"}</Text><Text style={styles.record}>{booking?.vehicle || "Vehicle not saved"}</Text><Text style={styles.record}>{booking?.location || "Location not saved"}</Text>{booking?.customerStatusUrl ? <ActionButton label="Open booking" onPress={() => Linking.openURL(booking.customerStatusUrl)} /> : null}</View> : null}
       {menuOpen ? <ActionButton disabled={archiveBusy} label="Archive conversation" onPress={() => onArchive(customerPhone)} variant="light" /> : null}
@@ -1325,7 +1395,7 @@ function ConversationCard({ conversation, draft, onArchive, onCall, onDraftChang
           followLatestRef.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 100;
         }} scrollEventThrottle={100}
         onContentSizeChange={() => { if (followLatestRef.current) messageScrollRef.current?.scrollToEnd({ animated: false }); }}>
-        {recentMessages.length ? recentMessages.map((message, index) => (
+        {recentMessages.length ? recentMessages.map((message, index) => message.direction === "call" ? <Text key={`call-${message.messageSid || index}`} style={[styles.muted, { textAlign: "center", paddingVertical: 6 }]}>Call · {formatDateTime(message.createdAt)} · {cleanConversationBody(message.body || "Call received")}</Text> : (
           <View key={`${message.createdAt || index}-${message.direction}`} style={[styles.textBubble, message.direction === "outbound" && styles.textBubbleOutbound]}>
             <Text style={[styles.textBubbleLabel, message.direction === "outbound" && styles.textBubbleLabelOutbound]}>
               {message.direction === "outbound" ? message.agentName || "DDD" : "Customer"}
@@ -1427,7 +1497,7 @@ function getBookingRequestedLabel(booking = {}) {
   );
 }
 
-function CallsTab({ adminPin, apiBaseUrl, calls, insights, setStatus, setStaffPhone, staffPhone, onText }) {
+function CallsTab({ adminPin, apiBaseUrl, calls, insights, setStatus, setStaffPhone, staffPhone, onText, nativePhone }) {
   const [dialerOpen, setDialerOpen] = useState(false);
   const [dialPhone, setDialPhone] = useState("");
   const [calling, setCalling] = useState(false);
@@ -1435,21 +1505,14 @@ function CallsTab({ adminPin, apiBaseUrl, calls, insights, setStatus, setStaffPh
 
   async function startOutboundCall() {
     const to = normalizeE164(dialPhone);
-    const from = normalizeE164(staffPhone);
     if (!to) {
       setStatus("Enter the customer number to call.");
       return;
     }
-    if (!from) {
-      setStatus("Enter your callback phone first so Twilio can bridge the call.");
-      return;
-    }
     setCalling(true);
     try {
-      await AsyncStorage.setItem(staffPhoneStorageKey, from);
-      setStaffPhone(from);
-      await apiPost(apiBaseUrl, "/api/calls/outbound", { to, staffPhone: from }, adminPin);
-      setStatus("Calling your phone now. Answer it, then DDD connects the customer with business caller ID.");
+      await nativePhone.call(to);
+      setStatus("Calling from DDD.");
     } catch (error) {
       setStatus(error.message);
     } finally {
@@ -1461,16 +1524,9 @@ function CallsTab({ adminPin, apiBaseUrl, calls, insights, setStatus, setStaffPh
     <>
       <ActionButton label={dialerOpen ? "Close dialer" : "Dial a number"} onPress={() => setDialerOpen(!dialerOpen)} />
       {dialerOpen ? <Card title="Call from DDD">
-        <Text style={styles.muted}>Call any customer from DDD. Your phone rings first, then the customer sees the DDD caller ID.</Text>
+        <Text style={styles.muted}>{nativePhone.status}</Text>
         <Field keyboardType="phone-pad" label="Customer phone" onChangeText={setDialPhone} value={dialPhone} />
-        <Field
-          keyboardType="phone-pad"
-          label="Your callback phone"
-          onChangeText={(value) => {
-            setStaffPhone(value);
-          }}
-          value={staffPhone}
-        />
+        {nativePhone.callerIds.length > 1 ? <View style={styles.buttonRow}>{nativePhone.callerIds.map((id) => <ActionButton key={id} label={formatPhone(id)} onPress={() => nativePhone.setCallerId(id)} variant={id === nativePhone.callerId ? undefined : "light"} />)}</View> : null}
         <ActionButton disabled={calling} label={calling ? "Calling..." : "Call from DDD"} onPress={startOutboundCall} />
       </Card> : null}
       <Text style={styles.screenHeading}>Recent calls</Text>
@@ -1802,7 +1858,7 @@ function normalizeBaseUrl(value) {
 function isAdminStaff(staff) {
   const role = String(staff?.role || "").trim().toLowerCase();
   const name = String(staff?.name || "").trim().toLowerCase();
-  return ["admin", "administrator", "owner", "manager", "super_admin", "dispatch_admin"].includes(role) || name.includes("bria") || name.includes("brianna");
+  return ["admin", "administrator", "owner", "manager", "super_admin", "dispatch_admin"].includes(role);
 }
 
 async function apiGet(baseUrl, path, adminPin = "") {

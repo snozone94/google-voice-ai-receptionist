@@ -2,7 +2,7 @@
   "expo": {
     "name": "DDD AI Dispatch",
     "slug": "ddd-ai-dispatch",
-    "version": "1.0",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -10,8 +10,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dddcincy.aireceptionist",
+      "entitlements": { "aps-environment": "production" },
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "DDD Dispatch uses your microphone for business phone calls."
       }
     },
     "android": {
@@ -32,6 +34,7 @@
     },
     "owner": "dddcincy",
     "plugins": [
+      "@twilio/voice-react-native-sdk",
       "expo-status-bar",
       [
         "expo-notifications",
