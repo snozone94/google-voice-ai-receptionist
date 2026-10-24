@@ -1154,10 +1154,11 @@ export async function listConversations(limit = 200) {
   }
   for (const call of [...calls].reverse()) {
     if (call.type === "ddd.notification") continue;
-    const key = normalizeConversationPhone(call.caller);
+    const appOutbound = /^client:/i.test(call.caller || "") && normalizeConversationPhone(call.destination);
+    const key = appOutbound || normalizeConversationPhone(call.caller);
     if (!key) continue;
     const status = call.status || (call.durationSeconds ? `completed in ${formatDuration(call.durationSeconds)}` : "call received");
-    const callNote = formatConversationCallNote(call, status);
+    const callNote = `${appOutbound ? "Outgoing call · " : ""}${formatConversationCallNote(call, status)}`;
     if (!conversations.has(key)) {
       conversations.set(key, {
         phone: key,
