@@ -7,6 +7,7 @@ import tls from "node:tls";
 import OpenAI from "openai";
 import webPush from "web-push";
 import { notificationState } from "./notification-state.js";
+import { requireStaffRecords } from "./staff-record-access.js";
 import {
   callAcceptPayload,
   listCalls,
@@ -41,6 +42,7 @@ import {
 import { monitorRealtimeCall } from "./realtime-tools.js";
 
 const app = express();
+const staffRecordsOnly = requireStaffRecords(getStaffAccess);
 const port = Number(process.env.PORT || 8787);
 const root = path.resolve(import.meta.dirname, "..");
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, "data");
@@ -1442,7 +1444,7 @@ function clampSpeechSpeed(value) {
   return Math.min(1.5, Math.max(0.5, Math.round(speed * 100) / 100));
 }
 
-app.get("/api/leads", async (req, res, next) => {
+app.get("/api/leads", staffRecordsOnly, async (req, res, next) => {
   try {
     res.json({ leads: await listLeads(Number(req.query.limit || 25)) });
   } catch (error) {
@@ -1450,7 +1452,7 @@ app.get("/api/leads", async (req, res, next) => {
   }
 });
 
-app.get("/api/bookings", async (req, res, next) => {
+app.get("/api/bookings", staffRecordsOnly, async (req, res, next) => {
   try {
     res.json({ bookings: await listBookings(Number(req.query.limit || 25)) });
   } catch (error) {
@@ -1623,7 +1625,7 @@ app.get("/api/book", (_req, res) => {
   res.type("html").send(bookingPage());
 });
 
-app.get("/api/calls", async (req, res, next) => {
+app.get("/api/calls", staffRecordsOnly, async (req, res, next) => {
   try {
     res.json({ calls: await listCalls(Number(req.query.limit || 25)) });
   } catch (error) {
@@ -1666,7 +1668,7 @@ app.post("/api/calls/:callId/correction", express.json(), async (req, res, next)
   }
 });
 
-app.get("/api/summaries", async (req, res, next) => {
+app.get("/api/summaries", staffRecordsOnly, async (req, res, next) => {
   try {
     res.json({ summaries: await listSummaries(Number(req.query.limit || 25)) });
   } catch (error) {
