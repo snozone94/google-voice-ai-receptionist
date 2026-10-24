@@ -2071,6 +2071,7 @@ document.querySelector("#signOutButton")?.addEventListener("click", () => {
   updateSignedInUi();
   renderConversations();
   setActiveTab("inbox");
+  window.location.reload();
 });
 document.querySelector("#conversationSearch")?.addEventListener("input", renderConversations);
 document.querySelector("#backToInboxButton")?.addEventListener("click", () => document.body.classList.remove("thread-open"));
@@ -2634,9 +2635,9 @@ async function refreshActivity() {
   if (activityTimeline) activityTimeline.innerHTML = `<li class="activity-item empty-state">Loading activity...</li>`;
   const [callsResponse, leadsResponse, summariesResponse, bookingsResponse] = await Promise.all([
     fetch("/api/call-log?limit=75", { headers: pushAuthHeaders() }),
-    fetch("/api/leads"),
-    fetch("/api/summaries"),
-    fetch("/api/bookings")
+    fetch("/api/leads", { headers: staffHeaders(), cache: "no-store" }),
+    fetch("/api/summaries", { headers: staffHeaders(), cache: "no-store" }),
+    fetch("/api/bookings", { headers: staffHeaders(), cache: "no-store" })
   ]);
   const [{ calls }, { leads }, { summaries }, { bookings }] = await Promise.all([
     callsResponse.json(),
