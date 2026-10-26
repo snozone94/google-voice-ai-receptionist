@@ -11,7 +11,7 @@ import webPush from "web-push";
 import { notificationState } from "./notification-state.js";
 import { requireStaffRecords } from "./staff-record-access.js";
 import { decorateConversations, workspaceStore, pendingTextReminders } from "./dispatch-workspace.js";
-import { actionableNotification, notificationPreference } from "./call-evidence.js";
+import { actionableNotification, notificationPreference, alertDisplayType, callAttentionEmailKey } from "./call-evidence.js";
 import { notificationAudio } from "./notification-sounds.js";
 import { mountNativeVoice, nativeVoiceStatus, voiceIdentity, configuredAiSipUri } from "./native-voice.js";
 import { createLiveCalls } from "./live-calls.js";
@@ -2976,11 +2976,9 @@ async function sendAlertEmail({ title = "DDD AI Dispatch alert", body = "", data
     body || "DDD AI Dispatch has a new alert.",
     "",
     "Details:",
-    `Alert type: ${data.type || "alert"}`,
+    `Update: ${alertDisplayType(data.type)}`,
     data.from ? `Caller/customer: ${formatPhoneForAlert(data.from)} (${normalizeE164(data.from) || data.from})` : "",
     data.to ? `DDD line: ${formatPhoneForAlert(data.to)} (${normalizeE164(data.to) || data.to})` : "",
-    data.callId ? `Call ID: ${data.callId}` : "",
-    data.route ? `Route: ${data.route}` : "",
     data.status ? `Status: ${data.status}` : "",
     data.durationSeconds ? `Duration: ${data.durationSeconds}s` : "",
     data.reason ? `Reason: ${data.reason}` : "",
@@ -3353,6 +3351,13 @@ async function deliverTeamNotification({ title, body, data }) {
 
 async function sendTeamAlertEmail(payload) {
   if (!actionableNotification(payload.data)) return { ok: true, skipped: true, reason: "Routine update stays in the workspace" };
+  const attentionKey = callAttentionEmailKey(payload.data);
+  if (attentionKey) {
+    if (!await notificationLedger.claim(attentionKey)) return { ok: true, skipped: true, reason: "This call already has an attention email" };
+    const result = await sendAlertEmail(payload);
+    if (!result.ok) await notificationLedger.release(attentionKey);
+    return result;
+  }
   // Twilio and the AI can both announce the same incoming call. Coalesce email
   // only; a genuine redial with a new call ID must still get its own push alert.
   if (payload.data.type !== "call" || !payload.data.from) return sendAlertEmail(payload);

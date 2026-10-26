@@ -26,8 +26,18 @@ export function cleanTranscript(items = []) {
 }
 
 export function actionableNotification(data = {}) {
+  if (data.type === "call-completed") return false;
   if (data.type === "staff-text-reply") return /failed|undelivered/.test(data.status || "");
   return !["call", "staff-outbound-call"].includes(data.type) || /failed|busy|no-answer/.test(data.status || "");
+}
+
+export function alertDisplayType(type = "") {
+  return ({ "ai-pickup-failed": "Call needs a team member", "early-hangup": "Caller hung up early", "missed-call": "Missed call", "call-completed": "Call completed", sms: "New customer text", "unanswered-text": "Customer awaiting a reply", booking: "Booking update", "staff-text-reply": "Text delivery update", "staff-outbound-call": "Outgoing call update" })[type] || "Dispatch update";
+}
+
+export function callAttentionEmailKey(data = {}) {
+  return data.callId && ["ai-pickup-failed", "early-hangup", "missed-call"].includes(data.type)
+    ? `call-attention-email:${data.callId}` : null;
 }
 
 export function notificationPreference(data = {}) {

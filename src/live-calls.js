@@ -7,13 +7,14 @@ const xml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
 const terminal = (value) => ["completed", "failed", "busy", "no-answer", "canceled"].includes(value);
 const failure = (message, status = 409) => Object.assign(new Error(message), { status });
 
-export function createLiveCalls({ directory, client = () => twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN), baseUrl = () => process.env.PUBLIC_BASE_URL, routingIdentities, saveCallEvent, transcript = () => [], stopAssistant = () => {}, notify = async () => {}, fallback = async () => {}, startTranscription = async () => {}, getTranscription = async () => null }) {
+export function createLiveCalls({ directory, client = () => twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN), baseUrl = () => process.env.PUBLIC_BASE_URL, routingIdentities, saveCallEvent, transcript = () => [], stopAssistant = () => {}, notify = async () => {}, fallback = async () => {}, startTranscription = async () => {}, getTranscription = async () => null, aiDisconnectGraceMs = 3000 }) {
   const file = path.join(directory, "live-call-sessions.json");
   const configFile = path.join(directory, "live-call-options.json");
   let records = {};
   let options = { enabled: false, ringTeam: true, transcribeCalls: true };
   let writes = Promise.resolve();
   const locks = new Map();
+  const pendingAiAlerts = new Map();
   const ready = (async () => {
     for (const [target, assign] of [[file, (data) => { records = data; }], [configFile, (data) => { options = { ...options, ...data }; }]]) {
       try { assign(JSON.parse(await fs.readFile(target, "utf8"))); }
@@ -46,6 +47,30 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
   const conference = (record) => client().conferences(record.conferenceSid);
   const callback = (id) => endpoint(`/api/live-calls/events?call=${encodeURIComponent(id)}`);
   const statusCallback = (id, label) => endpoint(`/api/live-calls/participant-status?call=${encodeURIComponent(id)}&participant=${encodeURIComponent(label)}`);
+  function cancelAiAlert(id) {
+    clearTimeout(pendingAiAlerts.get(id));
+    pendingAiAlerts.delete(id);
+  }
+  function scheduleAiAlert(id) {
+    if (pendingAiAlerts.has(id)) return;
+    const timer = setTimeout(() => locked(id, async () => {
+      pendingAiAlerts.delete(id);
+      const record = records[id];
+      if (!record || record.endedAt || record.customerLeft || record.owner || record.aiState === "removed" || record.aiAlerted) return;
+      // The AI leg also completes during a normal caller hang-up. Check the
+      // customer leg after callback ordering has settled before raising an alarm.
+      const caller = await client().calls(id).fetch();
+      if (terminal(caller.status)) return;
+      if (caller.status !== "in-progress") return;
+      record.aiState = "failed";
+      record.status = "Team needed";
+      record.aiAlerted = true;
+      await persist();
+      await notify({ title: "DDD call needs a person", body: "A caller is still connected and needs a team member. Open Dispatch to answer.", data: { type: "ai-pickup-failed", callId: id, from: record.phone } });
+    }).catch(error => console.error("Could not verify call assistance alert", error.message)), aiDisconnectGraceMs);
+    timer.unref?.();
+    pendingAiAlerts.set(id, timer);
+  }
   async function takeOver(record, identity, callSid) {
     const member = record.staff?.[identity];
     if (!member?.joined || member.callSid !== callSid) throw failure("Join this call before taking over.");
@@ -61,6 +86,7 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
       throw error;
     }
     record.owner = identity;
+    cancelAiAlert(record.id);
     record.status = "Team answering";
     member.mode = "answer";
     await persist();
@@ -85,7 +111,7 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
       record.aiState = "failed";
       record.status = "Team needed";
       await persist();
-      await notify({ title: "DDD call needs a person", body: "AI could not join. Open Dispatch to answer this call.", data: { type: "ai-pickup-failed", callId: record.id, from: record.phone } });
+      scheduleAiAlert(record.id);
       throw error;
     }
   }
@@ -148,6 +174,7 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
         record.conferenceSid = event.ConferenceSid;
         const label = event.ParticipantLabel || "";
         if (event.StatusCallbackEvent === "conference-end") {
+          cancelAiAlert(id);
           record.endedAt = new Date().toISOString();
           record.status = "Ended";
           await persist();
@@ -155,7 +182,11 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
           await notify({ title: "DDD call ended", body: `${record.phone} finished their call. Open Dispatch for the conversation and next steps.`, data: { type: "call-completed", callId: id, from: record.phone, status: "completed" } });
           return;
         }
-        if (event.StatusCallbackEvent === "participant-join" && label === "customer") {
+        if (event.StatusCallbackEvent === "participant-leave" && label === "customer") {
+          record.customerLeft = true;
+          cancelAiAlert(id);
+          await persist();
+        } else if (event.StatusCallbackEvent === "participant-join" && label === "customer") {
           await Promise.allSettled([addAi(record), ringStaff(record), options.transcribeCalls ? startTranscription(record.id) : Promise.resolve()]);
         } else if (event.StatusCallbackEvent === "participant-join" && label === "ddd-ai") {
           record.aiCallSid = event.CallSid;
@@ -189,9 +220,7 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
         if (label === "ddd-ai") {
           record.aiCallSid ||= event.CallSid;
           if (terminal(event.CallStatus) && !record.owner && record.aiState !== "removed") {
-            record.aiState = "failed";
-            record.status = "Team needed";
-            await notify({ title: "DDD call needs a person", body: "The AI connection ended. Answer from Dispatch.", data: { type: "ai-pickup-failed", callId: id, from: record.phone } });
+            scheduleAiAlert(id);
           }
         } else if (label.startsWith("staff-")) {
           const member = record.staff[label.slice(6)];
