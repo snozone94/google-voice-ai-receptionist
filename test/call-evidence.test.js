@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cleanTranscript, callIdResolver, actionableNotification } from "../src/call-evidence.js";
+import { cleanTranscript, callIdResolver, actionableNotification, alertDisplayType, callAttentionEmailKey } from "../src/call-evidence.js";
 import { decorateConversations, pendingTextReminders } from "../src/dispatch-workspace.js";
 
 test("completed transcript replaces fragments without deleting later repeated speech", () => {
@@ -31,11 +31,18 @@ test("automatic follow-up does not mark a customer's message read", () => {
   assert.equal(decorateConversations(conversations, [], { [phone]: { readThrough: "2026-01-01T10:02:00Z" } })[0].unread, 0);
 });
 
-test("quiet email filtering preserves completed-call and delivery-failure alerts", () => {
+test("routine call completion stays quiet while actual delivery failures remain actionable", () => {
   assert.equal(actionableNotification({ type: "call" }), false);
-  assert.equal(actionableNotification({ type: "call-completed" }), true);
+  assert.equal(actionableNotification({ type: "call-completed" }), false);
   assert.equal(actionableNotification({ type: "staff-text-reply", status: "sent" }), false);
   assert.equal(actionableNotification({ type: "staff-text-reply", status: "failed" }), true);
+});
+
+test("call attention emails share a durable key without hiding a genuine redial", () => {
+  assert.equal(callAttentionEmailKey({ type: "ai-pickup-failed", callId: "CAone" }), callAttentionEmailKey({ type: "early-hangup", callId: "CAone" }));
+  assert.notEqual(callAttentionEmailKey({ type: "missed-call", callId: "CAone" }), callAttentionEmailKey({ type: "missed-call", callId: "CAtwo" }));
+  assert.equal(callAttentionEmailKey({ type: "sms", callId: "CAone" }), null);
+  assert.equal(alertDisplayType("ai-pickup-failed"), "Call needs a team member");
 });
 
 test("reply reminders wait five minutes and ignore auto replies and opt-out commands", () => {

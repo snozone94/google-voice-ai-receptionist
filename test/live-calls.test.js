@@ -7,6 +7,7 @@ import { createLiveCalls } from "../src/live-calls.js";
 
 const id = `CA${"a".repeat(32)}`;
 const conferenceSid = `CF${"b".repeat(32)}`;
+const settleAlerts = () => new Promise(resolve => setTimeout(resolve, 40));
 async function fixture(t, overrides = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "ddd-live-test-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
@@ -98,4 +99,37 @@ test("full-call transcript continues after the AI is removed", async (t) => {
   await calls.takeOver(id, "one");
   turns.push({ text: "Hello, this is Bria", speaker: "DDD" }, { text: "Thank you", speaker: "Customer" });
   assert.equal((await calls.list("one"))[0].transcript.length, 3);
+});
+
+test("AI completion before conference end is not a pickup failure", async (t) => {
+  const alerts = [];
+  const { calls, event } = await fixture(t, { aiDisconnectGraceMs: 5, notify: async alert => alerts.push(alert) });
+  await calls.participantStatus(id, "ddd-ai", { CallSid: "ai-leg", CallStatus: "completed" });
+  await event("customer", id, "conference-end");
+  await settleAlerts();
+  assert.equal(alerts.filter(alert => alert.data.type === "ai-pickup-failed").length, 0);
+});
+
+test("ended customer leg suppresses an out-of-order AI failure callback", async (t) => {
+  const alerts = [];
+  const { calls, dependencies } = await fixture(t, { aiDisconnectGraceMs: 5, notify: async alert => alerts.push(alert) });
+  const client = dependencies.client();
+  dependencies.client = () => client;
+  // Restart with a provider that confirms the caller already disconnected.
+  const restarted = createLiveCalls({ ...dependencies, client: () => ({ ...client, calls: () => ({ fetch: async () => ({ status: "completed" }) }) }) });
+  await restarted.participantStatus(id, "ddd-ai", { CallSid: "ai-leg", CallStatus: "completed" });
+  await settleAlerts();
+  assert.equal(alerts.length, 0);
+});
+
+test("real AI disconnect while caller is connected alerts once despite retries", async (t) => {
+  const alerts = [];
+  const { calls } = await fixture(t, { aiDisconnectGraceMs: 5, notify: async alert => alerts.push(alert) });
+  await calls.participantStatus(id, "ddd-ai", { CallSid: "ai-leg", CallStatus: "failed" });
+  await calls.participantStatus(id, "ddd-ai", { CallSid: "ai-leg", CallStatus: "failed" });
+  await settleAlerts();
+  await calls.participantStatus(id, "ddd-ai", { CallSid: "ai-leg", CallStatus: "failed" });
+  await settleAlerts();
+  assert.equal(alerts.length, 1);
+  assert.equal(alerts[0].data.type, "ai-pickup-failed");
 });
