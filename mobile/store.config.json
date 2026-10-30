@@ -12,9 +12,9 @@
     },
     "info": {
       "en-US": {
-        "title": "DDD AI Dispatch",
-        "subtitle": "Roadside AI dispatch",
-        "description": "DDD AI Dispatch helps DDD Roadside Assistance manage AI-assisted phone intake, customer text follow-up, call logs, bookings, staff alerts, and daily business insights from one mobile admin app.\n\nAuthorized DDD staff can review inbound caller information, see call outcomes, read transcripts and summaries, reply to customer text threads, start outbound callback flows, adjust receptionist scripts, preview voice settings, pause or resume AI answering, and monitor service-request activity.\n\nThe app is built for DDD's roadside workflow: short emergency intake, vehicle and location details, supported-service routing, SMS follow-up, technician-ready booking information, and review or complaint escalation after service.",
+        "title": "DDD Dispatch",
+        "subtitle": "Calls, texts & roadside jobs",
+        "description": "DDD Dispatch helps authorized DDD Roadside Assistance staff handle business calls, customer messages, bookings and service insights. Answer incoming business calls, dial customers, view live transcripts, listen to assisted intake and take over when needed. Keep each customer’s messages, calls and bookings together, claim follow-ups and see what needs attention from Home. Administrators manage staff access, reply reminders and service settings. A connected DDD staff account is required.",
         "keywords": [
           "dispatch",
           "roadside",
@@ -25,8 +25,8 @@
           "DDD",
           "service"
         ],
-        "releaseNotes": "Initial DDD AI Dispatch release with mobile access-code login, Team tech-code management, AI answering controls, shared inbox, call log, insights, voice settings, and push notification setup.",
-        "promoText": "Mobile admin tools for DDD's AI receptionist, customer texts, calls, bookings, and service insights.",
+        "releaseNotes": "A simpler Home screen, clearer customer conversations and reply ownership, improved follow-up reminders and service health, cleaner navigation, and our new DDD Dispatch name and Rainbow Road icon.",
+        "promoText": "Business calls, customer messages and roadside jobs in one clear staff workspace.",
         "marketingUrl": "https://google-voice-ai-receptionist.onrender.com",
         "supportUrl": "https://google-voice-ai-receptionist.onrender.com/support",
         "privacyPolicyUrl": "https://google-voice-ai-receptionist.onrender.com/privacy",
@@ -85,7 +85,7 @@
       "demoUsername": "Access code",
       "demoPassword": "4444",
       "demoRequired": true,
-      "notes": "This is the DDD AI Dispatch admin app for DDD Roadside Assistance staff. To review protected read-only features, open the app, enter demo access code 4444, and tap Unlock. The demo code loads synthetic demo inbox, call log, and insights data only. It cannot send texts, place outbound calls, edit Team tech codes, or save live DDD settings. The app connects to the live DDD AI Dispatch backend at https://google-voice-ai-receptionist.onrender.com. Production phone/SMS/calling features depend on the connected DDD Twilio account and live service data."
+      "notes": "This is the DDD Dispatch admin app for DDD Roadside Assistance staff. To review protected read-only features, open the app, enter demo access code 4444, and tap Sign in. The demo code loads synthetic demo inbox, call log, and insights data only. It cannot send texts, place outbound calls, edit Team tech codes, or save live DDD settings. The app connects to the live DDD Dispatch backend at https://google-voice-ai-receptionist.onrender.com. Production phone/SMS/calling features depend on the connected DDD Twilio account and live service data."
     }
   }
 }
