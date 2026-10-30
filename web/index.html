@@ -3,20 +3,20 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>DDD AI Dispatch</title>
-    <link rel="icon" type="image/png" href="/assets/ddd-ai-dispatch-logo.png" />
-    <link rel="apple-touch-icon" href="/assets/ddd-ai-dispatch-logo.png" />
+    <title>DDD Dispatch</title>
+    <link rel="icon" type="image/png" href="/assets/ddd-dispatch-icon.png?v=phase2" />
+    <link rel="apple-touch-icon" href="/assets/ddd-dispatch-icon.png?v=phase2" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main>
       <section class="panel hero-panel">
         <div class="brand-header">
-          <img class="brand-logo" src="/assets/ddd-ai-dispatch-logo.png" alt="DDD AI Dispatch logo" />
+          <img class="brand-logo" src="/assets/ddd-dispatch-icon.png?v=phase2" alt="DDD Dispatch logo" />
           <div class="hero-copy">
-            <p class="eyebrow">DDD AI Dispatch</p>
-            <h1 id="businessName">DDD AI Dispatch</h1>
-            <p class="summary">Control calls, voice, bookings, texts, and review follow-up from one clean rainbow console.</p>
+            <p class="eyebrow">DDD Dispatch</p>
+            <h1 id="businessName">DDD Dispatch</h1>
+            <p class="summary">Your calls, customers, and next steps in one place.</p>
           </div>
         </div>
         <dl class="numbers compact-numbers">
@@ -42,7 +42,7 @@
             <div>
               <p class="eyebrow">Access</p>
               <h2>Sign in once</h2>
-              <p>Use the admin code for settings, or a DDD TechAssist setup code/token for inbox, replies, status, and callback calls.</p>
+              <p>Enter your team or admin access code to open DDD Dispatch.</p>
             </div>
             <label class="pin-field">
               Access code
@@ -65,7 +65,7 @@
               </label>
             </div>
             <div class="compact-action-row">
-              <button id="inboxLoginButton" type="button">Open inbox</button>
+              <button id="inboxLoginButton" type="button">Sign in</button>
               <button id="editSettingsButton" type="button">Edit</button>
               <button id="saveSettingsButton" type="button">Saved</button>
             </div>
@@ -164,12 +164,13 @@
         </div>
       </section>
 
-      <nav class="tabbar simplified-tabbar" aria-label="Admin sections">
-        <button class="tab-button active" type="button" data-tab-target="inbox">Inbox</button>
+      <nav class="tabbar simplified-tabbar" aria-label="Workspace sections">
+        <button class="tab-button active" type="button" data-tab-target="home">Home</button>
+        <button class="tab-button" type="button" data-tab-target="inbox">Inbox</button>
         <button class="tab-button" type="button" data-tab-target="calls">Calls</button>
         <button class="tab-button" type="button" data-tab-target="bookings">Bookings</button>
         <button id="advancedMenuButton" class="tab-button more-tab-button" type="button" aria-expanded="false">More</button>
-        <button class="tab-button advanced-tab" type="button" data-tab-target="overview">Home & routing</button>
+        <button class="tab-button advanced-tab" type="button" data-tab-target="overview">Settings & routing</button>
         <button class="tab-button advanced-tab" type="button" data-tab-target="usage">Usage</button>
         <button class="tab-button advanced-tab" type="button" data-tab-target="team">Team</button>
         <button class="tab-button advanced-tab" type="button" data-tab-target="voice">Voice</button>
@@ -217,7 +218,24 @@
           </div>
         </details>
         <div id="livePhoneControls" aria-live="polite"></div>
-        <div id="liveCallsArea" aria-label="Live calls"></div>
+        <div id="liveCallsDock"><div id="liveCallsArea" aria-label="Live calls"></div></div>
+      </section>
+
+      <section class="panel tab-panel active" data-tab-panel="home" aria-labelledby="homeTitle">
+        <div class="section-title-row"><div><p class="eyebrow">Your workspace</p><h2 id="homeTitle">Home</h2></div><button id="refreshHomeButton" type="button">Refresh</button></div>
+        <p id="homeStatus" role="status">Sign in to see what needs attention.</p>
+        <div class="home-actions"><button id="homeNewText" type="button">New text</button><button id="homeDial" type="button">Dial</button><button id="homeListen" type="button">Listen / Answer</button></div>
+        <section class="home-live-calls" aria-labelledby="homeCallsTitle"><h3 id="homeCallsTitle">Live calls</h3><div id="homeCallsDock"></div></section>
+        <div id="homeSummary" class="home-summary" aria-label="Today at a glance"></div>
+        <p id="homeReplyPolicy" class="muted"></p>
+        <h3>Next steps</h3><div id="homeTasks"><p>Unread texts and replies will appear here.</p></div>
+        <details id="homeHealth" hidden><summary>System health · admin</summary><div id="homeHealthItems"></div>
+          <form id="replyPolicyForm"><h3>Reply reminders</h3><p>Set when an unanswered customer text needs a reminder and escalation.</p>
+            <label>Remind after (minutes)<input id="remindAfterMinutes" type="number" min="1" max="60" required /></label>
+            <label>Escalate after (minutes)<input id="escalateAfterMinutes" type="number" min="2" max="1440" required /></label>
+            <button type="submit">Save policy</button><button id="reloadReplyPolicy" type="button">Reload policy</button><p id="replyPolicyStatus" role="status"></p>
+          </form>
+        </details>
       </section>
 
       <section class="panel tab-panel" data-tab-panel="overview">
@@ -682,7 +700,7 @@
         </div>
       </section>
 
-      <section class="panel tab-panel active" data-tab-panel="inbox">
+      <section class="panel tab-panel" data-tab-panel="inbox">
         <div class="section-title-row">
           <div>
             <p class="eyebrow">Shared DDD inbox</p>
@@ -690,10 +708,10 @@
           </div>
         <div class="inbox-filterbar">
           <input id="conversationSearch" type="search" aria-label="Search customers" placeholder="Name or phone" />
-          <select id="inboxViewFilter" aria-label="Show conversations"><option value="all">All conversations</option><option value="unread">Unread messages</option><option value="attention">Needs follow-up</option></select>
+          <select id="inboxViewFilter" aria-label="Show conversations"><option value="all">All · newest first</option><option value="unread">Unread · newest first</option><option value="attention">Needs reply</option></select>
           <strong id="inboxUnreadSummary" aria-live="polite"></strong>
         </div>
-          <div class="inbox-toolbar"><button id="newConversationButton" type="button">New text</button><button id="inboxDialButton" type="button">Call</button><button id="refreshInboxPanelButton" type="button">Refresh</button></div>
+          <div class="inbox-toolbar"><button id="newestUnreadButton" type="button">Newest unread</button><button id="newConversationButton" type="button">New text</button><button id="inboxDialButton" type="button">Call</button><button id="refreshInboxPanelButton" type="button">Refresh</button></div>
         </div>
         <form id="newConversationForm" hidden><label>Customer phone<input id="newConversationPhone" type="tel" required placeholder="Phone number" /></label><button type="submit">Open conversation</button></form>
         <div class="inbox-shell">
@@ -707,6 +725,13 @@
               </div>
               <div class="inbox-toolbar"><button id="conversationCallButton" type="button">Call</button><button id="conversationArchiveButton" type="button">Archive</button></div>
             </div>
+            <div id="threadOwnership" class="thread-ownership" hidden>
+              <p id="threadOwnerLabel"></p><p id="threadReadLabel"></p>
+              <div class="ownership-actions"><button id="claimThread" type="button">Claim</button><button id="releaseThread" type="button">Release</button>
+                <form id="assignThreadForm" hidden><label>Assign to<select id="threadAssignee" required></select></label><button type="submit">Assign</button></form>
+              </div><p id="ownershipStatus" role="status"></p>
+            </div>
+            <details id="threadRecords" class="thread-records"><summary>Calls, transcripts & bookings</summary><div id="threadRecordsContent"></div></details>
             <details class="customer-details"><summary>Customer details & booking</summary><div id="conversationConfidence" class="confidence-pill muted">No booking selected</div><div id="conversationDetails" class="conversation-details"></div></details>
             <div class="message-list" id="messageList"></div>
             <div id="typingStatus" class="typing-status"></div>
