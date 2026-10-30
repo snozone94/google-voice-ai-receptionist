@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeConversations, newestUnreadIndex, workspaceSummary, ownerLabel, isOpenBooking, phoneKey, canWork, ownershipActions, workspaceState, notificationDestination, validateReplyPolicy, bookingOwnerLabel, bookingRequestedLabel, bookingStatusLabel } from '../workspace-view.js';
+import { mergeConversations, newestUnreadIndex, workspaceSummary, ownerLabel, isOpenBooking, phoneKey, canWork, ownershipActions, workspaceState, notificationDestination, validateReplyPolicy, bookingOwnerLabel, bookingRequestedLabel, bookingStatusLabel, splitHomeTasks, taskWaitLabel } from '../workspace-view.js';
 
 test('one thread per normalized phone retains messages, call transcripts and bookings', () => {
   const result = mergeConversations([
@@ -140,4 +140,34 @@ test('missing or failed user authentication exposes no workspace data or ownersh
     assert.deepEqual(ownershipActions(staff, { capabilities: { assign: true, claim: true, release: true, unassign: true } }), { assign: false, claim: false, release: false, unassign: false });
   }
   assert.deepEqual(workspaceState({ conversations: privateSnapshot.conversations }).conversations, []);
+});
+
+test('Home keeps all older requests collapsed separately without changing follow-up state', () => {
+  const tasks = [
+    Object.freeze({ phone: '+15551234567', historical: true, priority: 'urgent', minutesWaiting: 71341, unread: 2, needsReply: true }),
+    Object.freeze({ phone: '+15557654321', historical: false, priority: 'normal', minutesWaiting: 5 }),
+    Object.freeze({ phone: '+15559876543', priority: 'urgent', minutesWaiting: 60 }),
+    Object.freeze({ phone: '+15553456789', historical: true, minutesWaiting: 80000 })
+  ];
+  const { current, historical } = splitHomeTasks(Object.freeze(tasks));
+  assert.deepEqual(current, [tasks[1], tasks[2]]);
+  assert.deepEqual(historical, [tasks[0], tasks[3]]);
+  assert.equal(current.length + historical.length, tasks.length);
+  assert.equal(historical[0].unread, 2);
+  assert.equal(historical[0].needsReply, true);
+  assert.equal(historical[0].priority, 'urgent');
+  assert.deepEqual(splitHomeTasks(), { current: [], historical: [] });
+});
+test('Home wait labels use readable minutes, hours and days at unit boundaries', () => {
+  assert.equal(taskWaitLabel(71341), '49 days waiting');
+  assert.equal(taskWaitLabel(1), '1 min waiting');
+  assert.equal(taskWaitLabel(59), '59 min waiting');
+  assert.equal(taskWaitLabel(60), '1 hour waiting');
+  assert.equal(taskWaitLabel(90), '1 hour 30 min waiting');
+  assert.equal(taskWaitLabel(120), '2 hours waiting');
+  assert.equal(taskWaitLabel(1440), '1 day waiting');
+  assert.equal(taskWaitLabel(2880), '2 days waiting');
+  assert.equal(taskWaitLabel(0), 'Just now');
+  assert.equal(taskWaitLabel(null), 'Waiting for follow-up');
+  assert.equal(taskWaitLabel('bad'), 'Waiting for follow-up');
 });
