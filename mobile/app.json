@@ -1,17 +1,20 @@
 {
   "expo": {
-    "name": "DDD AI Dispatch",
+    "name": "DDD Dispatch",
     "slug": "ddd-ai-dispatch",
     "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "scheme": "dddaidispatch",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dddcincy.aireceptionist",
-      "buildNumber": "16",
-      "entitlements": { "aps-environment": "production", "com.apple.developer.usernotifications.time-sensitive": true },
+      "buildNumber": "18",
+      "entitlements": {
+        "aps-environment": "production",
+        "com.apple.developer.usernotifications.time-sensitive": true
+      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSMicrophoneUsageDescription": "DDD Dispatch uses your microphone for business phone calls."
@@ -21,7 +24,7 @@
       "package": "com.dddcincy.aireceptionist",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#7d4dff"
+        "backgroundColor": "#061431"
       }
     },
     "web": {
@@ -52,7 +55,8 @@
             "./assets/ddd_keep_rolling.wav"
           ]
         }
-      ]
+      ],
+      "./withDddSceneLifecycle.cjs"
     ]
   }
 }

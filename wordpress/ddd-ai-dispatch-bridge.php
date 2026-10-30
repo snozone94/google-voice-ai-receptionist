@@ -121,12 +121,12 @@ function ddd_ai_dispatch_roles_page() {
         wp_die(esc_html__('You do not have permission to manage DDD AI Dispatch roles.', 'ddd-ai-dispatch'));
     }
 
-    $roles = ddd_ai_dispatch_get_roles();
+    $roles = ddd_ai_dispatch_get_role_rows();
     $message = isset($_GET['ddd_ai_saved']) ? 'Roles saved. DDD AI Dispatch will pick this up on the next login/refresh.' : '';
     ?>
     <div class="wrap">
       <h1>DDD AI Dispatch Roles</h1>
-      <p>Use this screen to tell DDD AI Dispatch who is an admin, dispatcher, tech, or read-only user. Match each person by TechAssist code, phone, email, user ID, or exact display name.</p>
+      <p>Use this screen to tell DDD AI Dispatch who is an admin, dispatcher, tech, or read-only user. Current DDD techs/users are listed automatically; saved role choices follow each person and update DDD AI on the next refresh/login.</p>
       <?php if ($message) : ?>
         <div class="notice notice-success is-dismissible"><p><?php echo esc_html($message); ?></p></div>
       <?php endif; ?>
@@ -136,7 +136,7 @@ function ddd_ai_dispatch_roles_page() {
         <table class="widefat striped" style="max-width:1100px">
           <thead>
             <tr>
-              <th>Name/label</th>
+              <th>Tech/user</th>
               <th>Match value</th>
               <th>Role</th>
               <th>Active</th>
@@ -149,7 +149,14 @@ function ddd_ai_dispatch_roles_page() {
                 $selected = $role['role'] ?? 'tech';
                 ?>
                 <tr>
-                  <td><input type="text" name="roles[<?php echo esc_attr($index); ?>][label]" value="<?php echo esc_attr($role['label'] ?? ''); ?>" placeholder="Brianna" style="width:100%" /></td>
+                  <td>
+                    <input type="text" name="roles[<?php echo esc_attr($index); ?>][label]" value="<?php echo esc_attr($role['label'] ?? ''); ?>" placeholder="Brianna" style="width:100%" />
+                    <input type="hidden" name="roles[<?php echo esc_attr($index); ?>][source]" value="<?php echo esc_attr($role['source'] ?? 'manual'); ?>" />
+                    <input type="hidden" name="roles[<?php echo esc_attr($index); ?>][source_id]" value="<?php echo esc_attr($role['source_id'] ?? ''); ?>" />
+                    <?php if (!empty($role['source']) && $role['source'] !== 'manual') : ?>
+                      <p class="description"><?php echo esc_html(ucfirst(str_replace('_', ' ', $role['source']))); ?><?php echo !empty($role['phone']) ? ' · ' . esc_html($role['phone']) : ''; ?><?php echo !empty($role['email']) ? ' · ' . esc_html($role['email']) : ''; ?></p>
+                    <?php endif; ?>
+                  </td>
                   <td><input type="text" name="roles[<?php echo esc_attr($index); ?>][identifier]" value="<?php echo esc_attr($role['identifier'] ?? ''); ?>" placeholder="code, phone, email, user ID, or exact name" style="width:100%" /></td>
                   <td>
                     <select name="roles[<?php echo esc_attr($index); ?>][role]">
@@ -163,7 +170,7 @@ function ddd_ai_dispatch_roles_page() {
             <?php endforeach; ?>
           </tbody>
         </table>
-        <p class="description">Recommended: set Bria/Brianna to <strong>Admin</strong>. Regular technicians should stay <strong>Tech</strong>. Dispatchers can see ops tools without being full admins once DDD AI supports that permission level.</p>
+        <p class="description">Recommended: set Bria/Brianna/Rich to <strong>Admin</strong>. Regular technicians should stay <strong>Tech</strong>. If a tech is added or removed in the DDD platform, this list refreshes from that roster and keeps the saved role when the same tech/code/phone/email is found.</p>
         <?php submit_button('Save DDD AI roles'); ?>
       </form>
     </div>
@@ -190,6 +197,8 @@ function ddd_ai_dispatch_save_roles() {
             'identifier' => $identifier,
             'role' => $role,
             'active' => !empty($row['active']),
+            'source' => sanitize_key($row['source'] ?? 'manual') ?: 'manual',
+            'source_id' => sanitize_text_field($row['source_id'] ?? ''),
         ];
     }
 
@@ -201,13 +210,54 @@ function ddd_ai_dispatch_save_roles() {
 function ddd_ai_dispatch_roles(WP_REST_Request $request) {
     return [
         'ok' => true,
-        'roles' => ddd_ai_dispatch_get_roles(),
+        'roles' => ddd_ai_dispatch_get_role_rows(true),
     ];
 }
 
 function ddd_ai_dispatch_get_roles() {
     $roles = get_option(DDD_AI_DISPATCH_ROLE_OPTION, []);
     return is_array($roles) ? array_values(array_filter(array_map('ddd_ai_dispatch_clean_role', $roles))) : [];
+}
+
+function ddd_ai_dispatch_get_role_rows($active_only = false) {
+    $saved_roles = ddd_ai_dispatch_get_roles();
+    $roster = ddd_ai_dispatch_get_current_staff_roster();
+    $rows = [];
+    $used_saved = [];
+
+    foreach ($roster as $member) {
+        $match = ddd_ai_dispatch_find_saved_role_for_member($member, $saved_roles);
+        if ($match['index'] !== null) {
+            $used_saved[$match['index']] = true;
+        }
+        $saved = $match['role'] ?: [];
+        $role_name = $saved['role'] ?? ($member['role'] ?? 'tech');
+        $row = [
+            'label' => $saved['label'] ?? $member['label'],
+            'identifier' => $saved['identifier'] ?? $member['identifier'],
+            'role' => array_key_exists($role_name, ddd_ai_dispatch_allowed_roles()) ? $role_name : 'tech',
+            'active' => array_key_exists('active', $saved) ? (bool) $saved['active'] : true,
+            'source' => $member['source'],
+            'source_id' => $member['source_id'],
+            'phone' => $member['phone'] ?? '',
+            'email' => $member['email'] ?? '',
+        ];
+        if (!$active_only || !empty($row['active'])) {
+            $rows[] = $row;
+        }
+    }
+
+    foreach ($saved_roles as $index => $saved) {
+        $source = $saved['source'] ?? 'manual';
+        if (!empty($used_saved[$index]) || ($source !== 'manual' && $roster)) {
+            continue;
+        }
+        if (!$active_only || !empty($saved['active'])) {
+            $rows[] = $saved + ['source' => 'manual', 'source_id' => ''];
+        }
+    }
+
+    return array_values($rows);
 }
 
 function ddd_ai_dispatch_clean_role($role) {
@@ -224,7 +274,137 @@ function ddd_ai_dispatch_clean_role($role) {
         'identifier' => $identifier,
         'role' => $role_name,
         'active' => !empty($role['active']),
+        'source' => sanitize_key($role['source'] ?? 'manual') ?: 'manual',
+        'source_id' => sanitize_text_field($role['source_id'] ?? ''),
     ];
+}
+
+function ddd_ai_dispatch_get_current_staff_roster() {
+    $members = array_merge(
+        ddd_ai_dispatch_get_platform_tech_roster(),
+        ddd_ai_dispatch_get_wp_staff_roster()
+    );
+    $seen = [];
+    $clean = [];
+
+    foreach ($members as $member) {
+        $member = ddd_ai_dispatch_clean_roster_member($member);
+        if (!$member) {
+            continue;
+        }
+        $key = $member['source'] . ':' . ($member['source_id'] ?: $member['identifier']);
+        if (isset($seen[$key])) {
+            continue;
+        }
+        $seen[$key] = true;
+        $clean[] = $member;
+    }
+
+    usort($clean, function ($a, $b) {
+        return strcasecmp($a['label'], $b['label']);
+    });
+
+    return $clean;
+}
+
+function ddd_ai_dispatch_get_platform_tech_roster() {
+    $request = new WP_REST_Request('GET', '/ddd/v1/techs');
+    $team_token = defined('DDD_TECH_TEAM_TOKEN') ? DDD_TECH_TEAM_TOKEN : getenv('DDD_TECH_TEAM_TOKEN');
+    if ($team_token) {
+        $request->set_header('x-ddd-tech-token', (string) $team_token);
+    }
+
+    $response = rest_do_request($request);
+    if (is_wp_error($response) || !is_object($response) || !method_exists($response, 'get_status') || (int) $response->get_status() >= 400) {
+        return [];
+    }
+
+    $data = $response->get_data();
+    $items = [];
+    if (isset($data['techs']) && is_array($data['techs'])) {
+        $items = $data['techs'];
+    } elseif (isset($data['staff']) && is_array($data['staff'])) {
+        $items = $data['staff'];
+    } elseif (isset($data['team']) && is_array($data['team'])) {
+        $items = $data['team'];
+    } elseif (is_array($data)) {
+        $items = array_values($data);
+    }
+
+    return array_map(function ($item) {
+        return is_array($item) ? ($item + ['source' => 'ddd_platform']) : null;
+    }, $items);
+}
+
+function ddd_ai_dispatch_get_wp_staff_roster() {
+    $users = get_users([
+        'role__in' => ['administrator', 'shop_manager', 'editor', 'author'],
+        'fields' => ['ID', 'display_name', 'user_email', 'user_login'],
+        'number' => 200,
+    ]);
+
+    return array_map(function ($user) {
+        $user_id = isset($user->ID) ? (int) $user->ID : 0;
+        return [
+            'source' => 'wp_user',
+            'source_id' => (string) $user_id,
+            'id' => (string) $user_id,
+            'label' => $user->display_name ?: $user->user_login,
+            'name' => $user->display_name ?: $user->user_login,
+            'email' => $user->user_email,
+            'identifier' => (string) $user_id,
+            'role' => $user_id && user_can($user_id, 'manage_options') ? 'admin' : 'tech',
+        ];
+    }, $users);
+}
+
+function ddd_ai_dispatch_clean_roster_member($member) {
+    if (!is_array($member)) {
+        return null;
+    }
+
+    $source = sanitize_key($member['source'] ?? 'ddd_platform') ?: 'ddd_platform';
+    $source_id = sanitize_text_field((string) ($member['source_id'] ?? $member['id'] ?? $member['user_id'] ?? $member['code'] ?? ''));
+    $label = sanitize_text_field((string) ($member['label'] ?? $member['name'] ?? $member['display_name'] ?? $member['user_login'] ?? $member['email'] ?? $member['phone'] ?? ''));
+    $identifier = ddd_ai_dispatch_role_identifier($member['identifier'] ?? $member['code'] ?? $member['access_code'] ?? $member['email'] ?? $member['phone'] ?? $member['mobile_phone'] ?? $source_id ?? $label);
+
+    if (!$label || !$identifier) {
+        return null;
+    }
+
+    return [
+        'source' => $source,
+        'source_id' => $source_id,
+        'label' => $label,
+        'identifier' => $identifier,
+        'role' => sanitize_key($member['role'] ?? 'tech'),
+        'phone' => sanitize_text_field((string) ($member['phone'] ?? $member['mobile_phone'] ?? $member['phone_number'] ?? '')),
+        'email' => sanitize_email((string) ($member['email'] ?? $member['user_email'] ?? '')),
+        'match_keys' => array_values(array_unique(array_filter([
+            $source_id ? ddd_ai_dispatch_role_identifier($source_id) : '',
+            $identifier,
+            ddd_ai_dispatch_role_identifier($label),
+            ddd_ai_dispatch_role_identifier($member['code'] ?? ''),
+            ddd_ai_dispatch_role_identifier($member['access_code'] ?? ''),
+            ddd_ai_dispatch_role_identifier($member['email'] ?? $member['user_email'] ?? ''),
+            ddd_ai_dispatch_role_identifier($member['phone'] ?? $member['mobile_phone'] ?? $member['phone_number'] ?? ''),
+        ]))),
+    ];
+}
+
+function ddd_ai_dispatch_find_saved_role_for_member($member, $saved_roles) {
+    $member_keys = $member['match_keys'] ?? [];
+    foreach ($saved_roles as $index => $saved) {
+        $saved_keys = array_values(array_unique(array_filter([
+            ddd_ai_dispatch_role_identifier($saved['identifier'] ?? ''),
+            ddd_ai_dispatch_role_identifier($saved['label'] ?? ''),
+            ddd_ai_dispatch_role_identifier($saved['source_id'] ?? ''),
+        ])));
+        if (array_intersect($member_keys, $saved_keys)) {
+            return ['index' => $index, 'role' => $saved];
+        }
+    }
+    return ['index' => null, 'role' => null];
 }
 
 function ddd_ai_dispatch_role_identifier($value) {
@@ -265,7 +445,7 @@ function ddd_ai_dispatch_platform_token_is_valid($token) {
     $request->set_header('x-ddd-tech-token', (string) $token);
     $response = rest_do_request($request);
 
-    if ($response->is_error()) {
+    if (is_wp_error($response) || !is_object($response) || !method_exists($response, 'get_status')) {
         return false;
     }
 
@@ -278,12 +458,14 @@ function ddd_ai_dispatch_customer_history(WP_REST_Request $request) {
         return new WP_REST_Response(['ok' => false, 'error' => 'Phone is required.'], 400);
     }
 
-    $records = ddd_ai_dispatch_find_customer_records($phone);
+    $requested_limit = $request->get_param('limit');
+    $limit = $requested_limit === null ? 12 : max(1, min(50, (int) $requested_limit));
+    $records = ddd_ai_dispatch_find_customer_records($phone, $limit);
     return [
         'ok' => true,
         'phone' => $phone,
         'returningCustomer' => count($records) > 0,
-        'bookings' => array_slice($records, 0, 12),
+        'bookings' => $records,
     ];
 }
 
@@ -324,7 +506,8 @@ function ddd_ai_dispatch_booking_photos(WP_REST_Request $request) {
     ];
 }
 
-function ddd_ai_dispatch_find_customer_records($phone) {
+function ddd_ai_dispatch_find_customer_records($phone, $limit = 12) {
+    $limit = max(1, min(50, (int) $limit));
     $digits = preg_replace('/\D+/', '', $phone);
     $variants = array_unique([$phone, $digits, substr($digits, -10)]);
     $records = [];
@@ -332,24 +515,30 @@ function ddd_ai_dispatch_find_customer_records($phone) {
     $query = new WP_Query([
         'post_type' => 'any',
         'post_status' => ['publish', 'private', 'draft'],
-        'posts_per_page' => 20,
+        'posts_per_page' => $limit,
+        'orderby' => ['date' => 'DESC', 'ID' => 'DESC'],
         'meta_query' => [
             'relation' => 'OR',
             ['key' => 'customer_phone', 'value' => $variants, 'compare' => 'IN'],
             ['key' => 'phone', 'value' => $variants, 'compare' => 'IN'],
+            ['key' => 'customerphone', 'value' => $variants, 'compare' => 'IN'],
             ['key' => '_billing_phone', 'value' => $variants, 'compare' => 'IN'],
         ],
     ]);
 
     foreach ($query->posts as $post) {
+        // Woo orders are read through Woo so HPOS and legacy storage agree.
+        if (function_exists('wc_get_orders') && in_array($post->post_type, ['shop_order', 'shop_order_refund'], true)) {
+            continue;
+        }
         $records[] = ddd_ai_dispatch_record_from_post($post);
     }
 
     if (function_exists('wc_get_orders')) {
         $orders = wc_get_orders([
-            'limit' => 10,
+            'limit' => $limit,
             'billing_phone' => substr($digits, -10),
-            'orderby' => 'date',
+            'orderby' => 'date ID',
             'order' => 'DESC',
         ]);
         foreach ($orders as $order) {
@@ -362,11 +551,18 @@ function ddd_ai_dispatch_find_customer_records($phone) {
                 'oilQuantity' => $order->get_meta('oil_quantity'),
                 'location' => trim($order->get_billing_address_1() . ' ' . $order->get_billing_city()),
                 'notes' => $order->get_customer_note(),
-            ];
+            ] + ddd_ai_dispatch_lifecycle(function ($key) use ($order) {
+                return $order->get_meta($key, true);
+            }, $order->get_date_modified() ? $order->get_date_modified()->date('c') : '');
         }
     }
 
-    return array_values(array_unique($records, SORT_REGULAR));
+    // Merge sources before applying the requested limit; ID breaks timestamp ties.
+    usort($records, function ($a, $b) {
+        $date_order = (strtotime($b['createdAt']) ?: 0) <=> (strtotime($a['createdAt']) ?: 0);
+        return $date_order ?: strnatcmp($b['id'], $a['id']);
+    });
+    return array_slice(array_values(array_unique($records, SORT_REGULAR)), 0, $limit);
 }
 
 function ddd_ai_dispatch_record_from_post(WP_Post $post) {
@@ -379,6 +575,38 @@ function ddd_ai_dispatch_record_from_post(WP_Post $post) {
         'oilQuantity' => get_post_meta($post->ID, 'oil_quantity', true),
         'location' => get_post_meta($post->ID, 'service_address', true) ?: get_post_meta($post->ID, 'location', true),
         'notes' => wp_strip_all_tags($post->post_excerpt ?: $post->post_content),
+    ] + ddd_ai_dispatch_lifecycle(function ($key) use ($post) {
+        return get_post_meta($post->ID, $key, true);
+    }, get_post_modified_time('c', true, $post));
+}
+
+/**
+ * Export only stored service lifecycle metadata, never publication/payment status.
+ * Alias precedence is left to right; missing values stay empty (no inferred job state).
+ * Existing bridge IDs: external_booking_id/booking_id and job_id.
+ * Additive aliases cover camelCase clients and common dispatch snippet metadata.
+ */
+function ddd_ai_dispatch_lifecycle($get_meta, $modified_at) {
+    $read = function ($keys) use ($get_meta) {
+        foreach ($keys as $key) {
+            $value = $get_meta($key);
+            if (is_scalar($value) && (string) $value !== '') {
+                return (string) $value;
+            }
+        }
+        return '';
+    };
+    $status = $read(['dispatch_status', 'dispatchStatus', 'job_status', 'status']);
+    $assignee = $read(['assignedTo', 'assignee', 'assigned_to', 'assigned_tech', 'assignedtech']);
+    return [
+        'external_booking_id' => $read(['external_booking_id', 'booking_id']),
+        'jobId' => $read(['job_id', 'jobId', 'platform_job_id']),
+        'status' => $status,
+        'dispatchStatus' => $status,
+        'assignedTo' => $assignee,
+        'assignee' => $assignee,
+        'serviceTime' => $read(['serviceTime', 'service_time', 'scheduled_at', 'service_date']),
+        'updatedAt' => $read(['updatedAt', 'updated_at']) ?: $modified_at,
     ];
 }
 

@@ -61,3 +61,17 @@ test("reply reminders wait five minutes and ignore auto replies and opt-out comm
   assert.equal(pendingTextReminders([conversation], { now }).length, 0);
   assert.equal(pendingTextReminders([{ ...conversation, messages: [{ ...inbound, body: "STOP" }] }], { now }).length, 0);
 });
+
+test("Expo HTTP-200 ticket errors and missing tickets are never accepted", async () => {
+  const { expoTicketResults } = await import("../src/call-evidence.js");
+  const results = expoTicketResults({ data: [{ status: "ok", id: "ticket" }, { status: "error", details: { error: "DeviceNotRegistered" } }] }, 3);
+  assert.equal(results[0].ok, true);
+  assert.equal(results[1].ok, false);
+  assert.equal(results[1].error, "DeviceNotRegistered");
+  assert.equal(results[2].ok, false);
+  assert.equal(expoTicketResults({ data: { status: "ok" } }, 1)[0].ok, false);
+});
+
+test("all pickup failure types share the root-call email key", () => {
+  for (const type of ["openai-accept-failed", "ai-off-missed-call", "early-hangup"]) assert.equal(callAttentionEmailKey({ type, callId: "child", parentCallId: "root" }), "call-attention-email:root");
+});

@@ -202,6 +202,14 @@ const tabButtons = [...document.querySelectorAll("[data-tab-target]")];
 const tabPanels = [...document.querySelectorAll("[data-tab-panel]")];
 const simplifiedTabbar = document.querySelector(".simplified-tabbar");
 const advancedMenuButton = document.querySelector("#advancedMenuButton");
+const threadUnreadAnchors = new Map();
+const initialRouteParams = new URLSearchParams(window.location.search);
+const initialRouteView = initialRouteParams.get("view");
+let pendingNotificationRoute = ["inbox", "calls", "bookings"].includes(initialRouteView) ? { view: initialRouteView, phone: initialRouteParams.get("phone") || "" } : null;
+let ownershipPending = false;
+let policyDirty = false;
+let policyLoaded = false;
+let policyEndpoint = "/api/admin/reply-policy";
 const advancedTabNames = new Set(["overview", "usage", "team", "voice", "script", "intake", "followup", "insights", "qa", "activity"]);
 
 let peerConnection;
@@ -252,12 +260,20 @@ advancedMenuButton?.addEventListener("click", () => {
   simplifiedTabbar?.classList.toggle("show-advanced", expanded);
   advancedMenuButton.setAttribute("aria-expanded", expanded ? "true" : "false");
   advancedMenuButton.textContent = expanded ? "Less" : "More";
+  document.body.classList.toggle("nav-more-open", expanded);
 });
 
 function setActiveTab(tabName) {
+  if (tabName === "home") refreshHome().catch(() => {});
   document.body.dataset.view = tabName;
+  const liveArea = document.querySelector("#liveCallsArea");
+  const liveDock = document.querySelector(tabName === "home" ? "#homeCallsDock" : "#liveCallsDock");
+  if (liveArea && liveDock && liveArea.parentElement !== liveDock) liveDock.append(liveArea);
+  document.body.classList.remove("nav-more-open");
+  if (!advancedTabNames.has(tabName)) { simplifiedTabbar?.classList.remove("show-advanced"); advancedMenuButton?.setAttribute("aria-expanded", "false"); if (advancedMenuButton) advancedMenuButton.textContent = "More"; }
   if (tabName === "bookings") loadDispatchBookings().catch((error) => { document.querySelector("#dispatchBookings").textContent = error.message; });
   if (advancedTabNames.has(tabName)) {
+    document.body.classList.add("nav-more-open");
     simplifiedTabbar?.classList.add("show-advanced");
     if (advancedMenuButton) {
       advancedMenuButton.setAttribute("aria-expanded", "true");
@@ -266,6 +282,7 @@ function setActiveTab(tabName) {
   }
   for (const button of tabButtons) {
     button.classList.toggle("active", button.dataset.tabTarget === tabName);
+    if (button.dataset.tabTarget === tabName) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
     if (button.dataset.tabTarget === tabName) {
       button.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
     }
@@ -304,7 +321,7 @@ function setActiveTab(tabName) {
 fetch("/api/business")
   .then((res) => res.json())
   .then((business) => {
-    document.querySelector("#businessName").textContent = business.name;
+    document.querySelector("#businessName").textContent = "DDD Dispatch";
     document.querySelector("#googleVoiceNumber").textContent = business.googleVoiceNumber || "Not set";
     document.querySelector("#aiForwardingNumber").textContent = business.aiForwardingNumber || "Not set";
   })
@@ -1533,7 +1550,8 @@ function updateSignedInUi() {
   document.body.dataset.access = verified ? role || "staff" : "locked";
   document.body.classList.toggle("workspace-signed-in", verified);
   document.body.classList.toggle("workspace-admin", verified && isAdminStaff());
-  if (inboxLoginButton) inboxLoginButton.textContent = verified ? "Signed in" : "Open inbox";
+  if (!verified || !isAdminStaff()) document.querySelector("#homeHealth").hidden = true;
+  if (inboxLoginButton) inboxLoginButton.textContent = verified ? "Signed in" : "Sign in";
   if (stickyLoginButton) stickyLoginButton.textContent = verified ? "Signed in" : "Sign in";
   let message = "Enter a code to unlock your workspace.";
   if (accessCodeValue() && !verified) {
@@ -1554,6 +1572,7 @@ function updateSignedInUi() {
 
 async function refreshAccessScopedData() {
   if (!isAccessVerified()) return;
+  refreshHome().catch(() => {});
   refreshPresence().catch(() => {});
   refreshInbox().catch((error) => setInboxStatus(error.message));
   ensureWebPushRegisteredIfAllowed().catch(() => {});
@@ -1616,6 +1635,7 @@ async function verifyAccessCode({ quiet = false, refresh = true } = {}) {
       return null;
     }
     setSignedInStaff(payload);
+    showSignedInDestination().catch(() => {});
     if (!quiet) setInboxStatus(`Signed in as ${payload.name || "DDD team"} (${payload.role || "staff"}).`);
     if (refresh) refreshAccessScopedData();
     return signedInStaff;
@@ -1829,7 +1849,7 @@ async function enableWebPushNotifications() {
       setWebPushStatus(describeWebPushSupport());
       return;
     }
-    const showedLocal = await showLocalWebNotification("DDD AI Dispatch test", "Chrome alerts are allowed on this device.");
+    const showedLocal = await showLocalWebNotification("DDD Dispatch test", "Chrome alerts are allowed on this device.");
 
     const keyResponse = await fetch("/api/web-push/public-key");
     const keyPayload = await keyResponse.json();
@@ -1870,7 +1890,7 @@ async function sendWebPushTest() {
     }
     setWebPushStatus("Showing local alert and sending server test...");
     await ensureWebPushRegisteredIfAllowed();
-    const showedLocal = await showLocalWebNotification("DDD AI Dispatch test", "This device can show native browser alerts.");
+    const showedLocal = await showLocalWebNotification("DDD Dispatch test", "This device can show native browser alerts.");
     const response = await fetch("/api/push/test", {
       method: "POST",
       headers: {
@@ -2144,8 +2164,8 @@ async function loadDispatchBookings() {
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || "Sign in to view bookings.");
   const history = document.querySelector("#bookingView").value === "history";
-  const bookings = (payload.bookings || []).filter((booking) => /complete|cancel|clear|done|closed/i.test(booking.platformStatus || booking.externalStatus || booking.dddStatus || booking.dispatchStatus || booking.status || "") === history);
-  document.querySelector("#dispatchBookings").innerHTML = bookings.length ? bookings.map((booking) => `<article class="dispatch-booking"><header><strong>${escapeHtml(booking.name || booking.customerName || "Customer")}</strong><span>${escapeHtml(booking.platformStatus || booking.externalStatus || booking.status || "Requested")}</span></header><p>${escapeHtml(booking.serviceType || booking.service || "Service")}</p><p>${escapeHtml(booking.vehicle || "")} ${escapeHtml(booking.vehicleColor || "")}</p><p>${escapeHtml(booking.location || "")}</p><p>Appointment: ${escapeHtml(booking.requestedFor || booking.appointmentAt || booking.scheduledAt || booking.preferredTime || "ASAP / not set")}</p><small>Received ${escapeHtml(formatTime(booking.createdAt))}</small></article>`).join("") : `<p class="empty-state">No ${history ? "completed or canceled" : "active"} bookings.</p>`;
+  const bookings = (payload.bookings || []).filter((booking) => isOpenDispatchBooking(booking) !== history);
+  document.querySelector("#dispatchBookings").innerHTML = bookings.length ? bookings.map((booking) => `<article class="dispatch-booking"><header><strong>${escapeHtml(booking.name || booking.customerName || "Customer")}</strong><span>${escapeHtml(bookingStatusLabel(booking))}</span></header><p>${escapeHtml(booking.serviceType || booking.service || "Service")}</p><p>${escapeHtml(booking.vehicle || "")} ${escapeHtml(booking.vehicleColor || "")}</p><p>${escapeHtml(booking.location || "")}</p><p>Appointment: ${escapeHtml(bookingServiceTime(booking))}</p><p>Assigned to: ${escapeHtml(bookingAssigneeLabel(booking))}</p>${renderBookingSyncBadge(booking)}<small>Received ${escapeHtml(formatTime(booking.createdAt))}</small></article>`).join("") : `<p class="empty-state">No ${history ? "completed or canceled" : "active"} bookings.</p>`;
 }
 
 function renderConversations() {
@@ -2168,9 +2188,9 @@ function renderConversations() {
     selectedConversationPhone = conversations[0].phone;
   }
 
-  for (const conversation of conversations) {
+  for (const conversation of [...conversations].sort((a, b) => String(b.lastMessageAt || "").localeCompare(String(a.lastMessageAt || "")))) {
     const view = document.querySelector("#inboxViewFilter")?.value || "all";
-    if (view === "unread" && !conversation.unread || view === "attention" && !conversation.needsFollowUp) continue;
+    if (view === "unread" && !conversation.unread || view === "attention" && !(conversation.needsReply ?? conversation.needsFollowUp)) continue;
     const booking = getLatestConversationBooking(conversation);
     const search = document.querySelector("#conversationSearch")?.value.trim().toLowerCase() || "";
     if (search && !`${booking?.name || conversation.customerName || ""} ${conversation.phone}`.toLowerCase().includes(search)) continue;
@@ -2193,16 +2213,14 @@ function renderConversations() {
       </div>
       <span class="thread-preview">${escapeHtml(cleanConversationBody(conversation.lastBody || "No texts yet").replace(/https?:\/\/\S+/g, "[link]"))}</span>
       <small>${escapeHtml(formatPhone(conversation.phone))}</small>
-      ${conversation.unread ? `<span class="inbox-unread-badge">${conversation.unread} new</span>` : ""}
-      ${conversation.needsFollowUp ? `<small class="inbox-follow-up">${escapeHtml(conversation.followUpReason || "Needs reply")}</small>` : ""}
+      ${(conversation.needsReply ? `<small class="inbox-follow-up">Needs reply</small>` : "")}
+      ${conversation.unread ? `<span class="inbox-unread-badge">${conversation.unread} unread</span>` : `<small class="thread-state">${conversation.needsReply ? "Read · reply still needed" : "Read"}</small>`}
+      <small class="thread-owner">${escapeHtml(ownerLabel(conversation.assignedTo || conversation.owner))}</small>
+      ${conversation.needsFollowUp && !conversation.needsReply ? `<small class="inbox-follow-up">${escapeHtml(conversation.followUpReason || "Needs follow-up")}</small>` : ""}
       </div>
     `;
     button.addEventListener("click", () => {
-      renderedConversationPhone = "";
-      selectedConversationPhone = conversation.phone;
-      document.body.classList.add("thread-open");
-      renderConversations();
-      fetch(`/api/conversations/${encodeURIComponent(conversation.phone)}/state`, { method: "POST", headers: { ...staffHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ action: "read", through: conversation.lastMessageAt }) }).then((response) => { if (response.ok) refreshInbox().catch(() => {}); }).catch(() => {});
+      openThread(conversation.phone);
     });
     let touchStartX = 0;
     let touchStartY = 0;
@@ -2233,6 +2251,7 @@ function renderConversations() {
     conversationList.append(row);
   }
 
+  if (!conversationList.children.length) { const empty = document.createElement("p"); empty.className = "empty-state"; empty.textContent = "No conversations match this view."; conversationList.append(empty); }
   renderSelectedConversation();
   renderTypingStatus();
 }
@@ -2266,6 +2285,8 @@ function renderSelectedConversation() {
   renderedConversationPhone = selectedConversationPhone;
   const conversation = conversations.find((item) => item.phone === selectedConversationPhone);
   messageList.innerHTML = "";
+  renderThreadOwnership(conversation);
+  renderThreadRecords(conversation);
   if (!conversation) {
     selectedConversationTitle.textContent = "Select a conversation";
     selectedConversationMeta.textContent = "";
@@ -2282,8 +2303,8 @@ function renderSelectedConversation() {
   const booking = getLatestConversationBooking(conversation);
   const confidence = booking?.confidence || estimateConversationConfidence(conversation);
   selectedConversationTitle.textContent = booking?.name || conversation.customerName || formatPhone(conversation.phone);
-  const textCount = conversation.messages.filter((message) => message.direction !== "call").length;
-  const callCount = conversation.messages.length - textCount;
+  const textCount = (conversation.messages || []).filter((message) => message.direction !== "call").length;
+  const callCount = Math.max((conversation.messages || []).length - textCount, callLog.filter((call) => getCallCallerKey(call) === conversation.phone).length);
   selectedConversationMeta.textContent = `${formatPhone(conversation.phone)} · ${textCount} text${textCount === 1 ? "" : "s"} · ${callCount} call${callCount === 1 ? "" : "s"}`;
   if (outboundCustomerPhoneInput && !outboundCustomerPhoneInput.value.trim()) {
     outboundCustomerPhoneInput.value = formatPhone(conversation.phone);
@@ -2297,7 +2318,12 @@ function renderSelectedConversation() {
   sendReplyButton.disabled = !replyMessageInput.value.trim();
   sendPresence().catch(() => {});
 
-  for (const message of conversation.messages) {
+  let unreadBoundary;
+  const unreadAt = threadUnreadAnchors.get(conversation.phone) || conversation.firstUnreadAt;
+  for (const message of conversation.messages || []) {
+    if (!unreadBoundary && unreadAt && message.direction === "inbound" && Date.parse(message.createdAt) >= Date.parse(unreadAt)) {
+      unreadBoundary = document.createElement("p"); unreadBoundary.className = "unread-divider"; unreadBoundary.textContent = "New messages from here"; messageList.append(unreadBoundary);
+    }
     if (message.direction === "call") {
       const note = document.createElement("p");
       note.className = "thread-call-note";
@@ -2337,10 +2363,10 @@ function renderSelectedConversation() {
     }));
     messageList.append(bubble);
   }
-  messageList.scrollTop = followLatest ? messageList.scrollHeight : previousScroll;
-  requestAnimationFrame(() => {
-    messageList.scrollTop = followLatest ? messageList.scrollHeight : previousScroll;
-  });
+  const positionMessages = () => {
+    messageList.scrollTop = changedConversation && unreadBoundary ? Math.max(0, unreadBoundary.getBoundingClientRect().top - messageList.getBoundingClientRect().top + messageList.scrollTop - 8) : followLatest ? messageList.scrollHeight : previousScroll;
+  };
+  positionMessages(); requestAnimationFrame(positionMessages);
   renderTypingStatus();
 }
 
@@ -2386,6 +2412,9 @@ function renderConversationDetails(conversation, booking, confidence) {
   const detailItems = [
     ["Service", booking?.serviceType || inferServiceFromText(conversation.lastBody || "") || "Not clear yet"],
     ["Location", booking?.location || "Not captured yet"],
+    ["Appointment", booking ? bookingServiceTime(booking) : "No booking"],
+    ["Assigned to", booking ? bookingAssigneeLabel(booking) : "Unassigned"],
+    ["Status sync", booking ? bookingSyncLabel(booking) : "No booking"],
     ["Vehicle", [booking?.vehicle, booking?.vehicleColor].filter(Boolean).join(" · ") || "Not captured yet"],
     ["Missing", confidence.missing?.length ? confidence.missing.join(", ") : "Nothing obvious"]
   ];
@@ -2534,7 +2563,13 @@ async function refreshInbox() {
   activePresence = payload.presence || [];
   const nextConversations = payload.conversations || [];
   announceNewInboxMessages(nextConversations);
-  conversations = nextConversations;
+  // The server groups by phone. Defensively keep only its newest row per normalized phone.
+  const byPhone = new Map();
+  for (const item of [...nextConversations].sort((a, b) => String(b.lastMessageAt || "").localeCompare(String(a.lastMessageAt || "")))) {
+    const phone = normalizePhoneForRoute(item.phone) || item.phone;
+    if (!byPhone.has(phone)) byPhone.set(phone, { ...item, phone });
+  }
+  conversations = [...byPhone.values()];
   renderConversations();
   renderTeamPresence();
   updateTeamCurrentCard();
@@ -2592,7 +2627,6 @@ refreshInboxButton.addEventListener("click", () => {
 });
 
 inboxLoginButton?.addEventListener("click", async () => {
-  setActiveTab("inbox");
   const staff = await verifyAccessCode();
   if (!staff) return;
   refreshInbox().catch((error) => setInboxStatus(error.message));
@@ -2830,6 +2864,7 @@ async function refreshCallLog() {
     selectedCallId = groupCallsByCaller(callLog)[0]?.latest?.id || "";
   }
   renderCallLog();
+  renderThreadRecords(conversations.find((item) => item.phone === selectedConversationPhone));
   callLogStatus.textContent = callLog.length ? "Call log is up to date." : "No forwarded calls logged yet.";
 }
 
@@ -3288,7 +3323,7 @@ refreshInbox().catch((error) => setInboxStatus(error.message));
 setInterval(() => refreshInbox().catch(() => {}), 5000);
 document.querySelector("#inboxViewFilter")?.addEventListener("change", (event) => {
   const view = event.target.value;
-  const first = conversations.find((conversation) => view === "all" || (view === "unread" ? conversation.unread : conversation.needsFollowUp));
+  const first = conversations.find((conversation) => view === "all" || (view === "unread" ? conversation.unread : (conversation.needsReply ?? conversation.needsFollowUp)));
   if (first) selectedConversationPhone = first.phone;
   renderedConversationPhone = "";
   renderConversations();
@@ -3510,4 +3545,312 @@ async function handleRealtimeEvent(message) {
     })
   );
   refreshActivity().catch(() => {});
+}
+
+
+function ownerLabel(owner) {
+  return owner ? `Owner: ${typeof owner === "object" ? owner.name || owner.id || "Assigned" : owner}` : "Unassigned";
+}
+
+let homeRequest = 0;
+async function refreshHome() {
+  const request = ++homeRequest;
+  const status = document.querySelector("#homeStatus");
+  const summary = document.querySelector("#homeSummary");
+  const tasks = document.querySelector("#homeTasks");
+  const health = document.querySelector("#homeHealth");
+  health.hidden = true;
+  for (const id of ["homeNewText", "homeDial", "homeListen"]) document.querySelector(`#${id}`).disabled = !isAccessVerified() || signedInStaff?.role === "reviewer";
+  if (!isAccessVerified()) {
+    summary.replaceChildren(); tasks.replaceChildren();
+    document.querySelector("#homeReplyPolicy").textContent = "";
+    status.textContent = "Sign in to see what needs attention.";
+    return;
+  }
+  status.textContent = "Updating workspace…";
+  try {
+    const response = await fetch("/api/operations", { headers: staffHeaders(), cache: "no-store" });
+    if (!response.ok) throw new Error("Workspace unavailable. Use Inbox, Calls, or Bookings; then try Refresh.");
+    const data = await response.json();
+    if (request !== homeRequest || !isAccessVerified()) return;
+    let liveCount = null;
+    if (!data.summary) {
+      try {
+        const liveResponse = await fetch("/api/calls/live", { headers: staffHeaders(), cache: "no-store" });
+        if (liveResponse.ok) liveCount = ((await liveResponse.json()).calls || []).length;
+      } catch { /* Show unknown rather than infer current calls from historical records. */ }
+    }
+    if (request !== homeRequest || !isAccessVerified()) return;
+    const threads = data.conversations || conversations;
+    const today = new Date().toLocaleDateString();
+    const bookings = (data.bookings || []).filter((b) => isOpenDispatchBooking(b) && new Date(b.serviceTime || b.appointmentAt || b.scheduledAt || b.requestedFor || b.createdAt).toLocaleDateString() === today);
+    const counts = data.summary || {
+      activeCalls: liveCount,
+      unreadMessages: threads.reduce((n, t) => n + Number(t.unread || 0), 0),
+      needsReply: threads.filter((t) => t.needsReply ?? t.needsFollowUp).length,
+      openBookings: bookings.length
+    };
+    summary.innerHTML = [["Active calls", counts.activeCalls, "calls"], ["Unread messages", counts.unreadMessages, "unread"], ["Needs reply", counts.needsReply, "attention"], ["Today's open bookings", counts.todayOpenBookings ?? (Array.isArray(data.bookings) ? bookings.length : "—"), "bookings"]].map(([label, value, view]) => `<button type="button" data-home-view="${view}"><strong>${escapeHtml(String(value ?? "—"))}</strong><span>${label}</span></button>`).join("");
+    const items = data.tasks || threads.filter((t) => t.unread || t.needsFollowUp || t.needsReply).sort((a, b) => String(b.lastMessageAt || "").localeCompare(String(a.lastMessageAt || ""))).map((t) => ({ phone: t.phone, reason: t.followUpReason || (t.needsFollowUp || t.needsReply ? "Needs reply" : "Unread text"), assignedTo: t.assignedTo || t.owner }));
+    tasks.innerHTML = items.length ? items.slice(0, 12).map((t) => `<button class="home-task" type="button" data-home-phone="${escapeHtml(t.phone || "")}"><strong>${escapeHtml(formatPhone(t.phone || ""))}</strong><span>${escapeHtml(t.reason || "Needs reply")} · ${escapeHtml(ownerLabel(t.assignedTo))}${t.minutesWaiting != null ? ` · ${escapeHtml(String(t.minutesWaiting))} min waiting` : ""}${t.priority ? ` · ${escapeHtml(t.priority)}` : ""}</span></button>`).join("") : '<p class="empty-state">You’re caught up. No replies waiting.</p>';
+    document.querySelector("#homeReplyPolicy").textContent = data.replyPolicy ? `Reply reminder: ${data.replyPolicy.remindAfterMinutes} min · Escalation: ${data.replyPolicy.escalateAfterMinutes} min${counts.overdueReplies != null ? ` · ${counts.overdueReplies} overdue replies` : ""}` : "";
+    if (isAdminStaff()) {
+      if (data.replyPolicy && !policyDirty && !document.querySelector("#replyPolicyForm").contains(document.activeElement)) fillReplyPolicy(data.replyPolicy);
+      health.hidden = false;
+      document.querySelector("#homeHealthItems").innerHTML = data.health?.length ? data.health.map((h) => `<article><h3>${escapeHtml(h.label)} · ${escapeHtml(h.status)}</h3><p>${escapeHtml(h.detail || "")}</p><p>${escapeHtml(h.nextStep || "")}</p></article>`).join("") : '<p>Detailed health is not available from this server. Open Settings & routing or Usage for connection and balance checks.</p>';
+    }
+    status.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}${data.summary ? "" : " · Today's bookings use this device’s local date."}`;
+  } catch (error) {
+    if (request !== homeRequest) return;
+    summary.replaceChildren(); tasks.replaceChildren(); status.textContent = error.message;
+  }
+}
+document.querySelector("#refreshHomeButton").addEventListener("click", refreshHome);
+document.querySelector("#homeNewText").addEventListener("click", () => { setActiveTab("inbox"); document.querySelector("#newConversationForm").hidden = false; document.querySelector("#newConversationPhone").focus(); });
+document.querySelector("#homeDial").addEventListener("click", () => openCustomerDialer());
+document.querySelector("#homeListen").addEventListener("click", () => {
+  const liveAction = document.querySelector("#liveCallsArea .live-call-actions button");
+  if (liveAction) { liveAction.scrollIntoView({ block: "center" }); liveAction.focus(); return; }
+  const menu = document.querySelector(".live-phone-menu"); menu.open = true;
+  document.querySelector("#liveWorkspace").scrollIntoView({ block: "start" }); document.querySelector("#connectBrowserPhone").focus();
+});
+document.querySelector("#homeSummary").addEventListener("click", (event) => {
+  const view = event.target.closest("[data-home-view]")?.dataset.homeView;
+  if (!view) return;
+  if (["unread", "attention"].includes(view)) { document.querySelector("#inboxViewFilter").value = view; setActiveTab("inbox"); renderConversations(); }
+  else setActiveTab(view);
+});
+document.querySelector("#homeTasks").addEventListener("click", async (event) => {
+  const phone = event.target.closest("[data-home-phone]")?.dataset.homePhone;
+  if (!phone) return;
+  document.querySelector("#inboxViewFilter").value = "all";
+  document.querySelector("#conversationSearch").value = "";
+  setActiveTab("inbox");
+  await refreshInbox().catch(() => {});
+  selectedConversationPhone = normalizePhoneForRoute(phone) || phone;
+  openThread(selectedConversationPhone);
+});
+setActiveTab("home");
+setInterval(() => { if (document.body.dataset.view === "home") refreshHome(); }, 15000);
+
+
+function canWorkThreads() { return isAccessVerified() && signedInStaff?.role !== "reviewer"; }
+function replyStateLabel(thread) {
+  if (!thread) return "";
+  const read = thread.unread ? `${thread.unread} unread` : "Read";
+  return `${read} · ${thread.needsReply ? "Needs reply" : thread.needsFollowUp ? thread.followUpReason || "Needs follow-up" : "No reply needed"}`;
+}
+async function stableStaffIdentity(member) {
+  if (member.id) return String(member.id);
+  const name = String(member.name || "DDD team").trim().slice(0, 80);
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${member.role || "staff"}:${name}`));
+  return `staff-${[...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 24)}`;
+}
+function rosterChoiceKey(member) { return member.id ? `id:${member.id}` : `name:${JSON.stringify([member.role || "staff", member.name])}`; }
+function renderThreadOwnership(thread) {
+  const region = document.querySelector("#threadOwnership");
+  region.hidden = !thread;
+  if (!thread) return;
+  document.querySelector("#threadOwnerLabel").textContent = ownerLabel(thread.assignedTo);
+  document.querySelector("#threadReadLabel").textContent = replyStateLabel(thread);
+  const claim = document.querySelector("#claimThread");
+  const release = document.querySelector("#releaseThread");
+  claim.hidden = Boolean(thread.assignedTo);
+  claim.disabled = ownershipPending || !canWorkThreads();
+  release.hidden = !thread.assignedTo;
+  release.disabled = true;
+  const phone = thread.phone;
+  stableStaffIdentity(signedInStaff || {}).then((id) => {
+    if (selectedConversationPhone === phone) release.disabled = ownershipPending || !canWorkThreads() || !(isAdminStaff() || thread.assignedTo?.id === id);
+  });
+  const form = document.querySelector("#assignThreadForm");
+  form.hidden = !canWorkThreads() || !isAdminStaff();
+  const select = document.querySelector("#threadAssignee");
+  // Keep the in-progress selection stable across inbox polling.
+  const members = teamDirectory.filter((member) => member.active !== false && member.role !== "reviewer");
+  const signature = JSON.stringify(members.map(({ id, name, role }) => ({ id, name, role })));
+  if (select.dataset.roster !== signature) {
+    const previous = select.value;
+    select.replaceChildren(new Option("Choose a team member", ""), ...members.map((member) => new Option(member.name, rosterChoiceKey(member))));
+    select.dataset.roster = signature;
+    if ([...select.options].some((option) => option.value === previous)) select.value = previous;
+  }
+  select.disabled = ownershipPending || !members.length;
+  form.querySelector("button").disabled = ownershipPending || !members.length;
+}
+async function updateThreadOwnership(action, extra = {}) {
+  if (!canWorkThreads() || ownershipPending || !selectedConversationPhone) return;
+  const phone = selectedConversationPhone;
+  ownershipPending = true;
+  const status = document.querySelector("#ownershipStatus");
+  status.textContent = "Saving ownership…";
+  renderThreadOwnership(conversations.find((item) => item.phone === phone));
+  try {
+    const response = await fetch(`/api/conversations/${encodeURIComponent(phone)}/state`, { method: "POST", headers: { ...staffHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ action, ...extra }) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Ownership could not be saved.");
+    // Adopt only confirmed server ownership; a 409 never changes it optimistically.
+    if (data.state && Object.hasOwn(data.state, "assignedTo")) {
+      const thread = conversations.find((item) => item.phone === phone);
+      if (thread) thread.assignedTo = data.state.assignedTo;
+    }
+    await refreshInbox();
+    if (selectedConversationPhone === phone) status.textContent = action === "release" ? "Released." : "Ownership saved.";
+  } catch (error) {
+    if (selectedConversationPhone === phone) status.textContent = error.message;
+    refreshInbox().catch(() => {});
+  } finally {
+    ownershipPending = false;
+    renderThreadOwnership(conversations.find((item) => item.phone === selectedConversationPhone));
+  }
+}
+document.querySelector("#claimThread").addEventListener("click", () => updateThreadOwnership("claim"));
+document.querySelector("#releaseThread").addEventListener("click", () => updateThreadOwnership("release"));
+document.querySelector("#assignThreadForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!isAdminStaff() || !canWorkThreads()) return;
+  const members = teamDirectory.filter((member) => member.active !== false && member.role !== "reviewer");
+  const member = members.find((item) => rosterChoiceKey(item) === document.querySelector("#threadAssignee").value);
+  if (!member || document.querySelector("#threadAssignee").value === "") return;
+  await updateThreadOwnership("assign", { assigneeId: await stableStaffIdentity(member), assigneeName: member.name });
+});
+function openThread(phone, { markRead = true } = {}) {
+  const thread = conversations.find((item) => item.phone === phone);
+  if (!thread) return;
+  selectedConversationPhone = phone; renderedConversationPhone = "";
+  if (thread.firstUnreadAt) threadUnreadAnchors.set(phone, thread.firstUnreadAt); else threadUnreadAnchors.delete(phone);
+  document.querySelector("#ownershipStatus").textContent = "";
+  document.body.classList.add("thread-open"); renderConversations();
+  refreshCallLog().catch(() => {});
+  if (markRead && thread.unread && thread.lastMessageAt && canWorkThreads()) {
+    fetch(`/api/conversations/${encodeURIComponent(phone)}/state`, { method: "POST", headers: { ...staffHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ action: "read", through: thread.lastMessageAt }) }).then((response) => {
+      if (!response.ok) throw new Error("Could not mark this conversation read. Refresh and try again.");
+      return refreshInbox();
+    }).catch((error) => setInboxStatus(error.message));
+  }
+}
+document.querySelector("#newestUnreadButton").addEventListener("click", () => {
+  const newest = [...conversations].filter((thread) => thread.unread).sort((a, b) => String(b.lastMessageAt || "").localeCompare(String(a.lastMessageAt || "")))[0];
+  if (!newest) { setInboxStatus("No unread conversations."); return; }
+  document.querySelector("#conversationSearch").value = "";
+  document.querySelector("#inboxViewFilter").value = "all";
+  openThread(newest.phone);
+});
+function renderThreadRecords(thread) {
+  const container = document.querySelector("#threadRecordsContent");
+  const region = document.querySelector("#threadRecords");
+  region.hidden = !thread;
+  if (!thread) { container.replaceChildren(); container.dataset.signature = ""; return; }
+  const phone = normalizePhoneForRoute(thread.phone) || thread.phone;
+  const calls = callLog.filter((call) => (normalizePhoneForRoute(call.caller || call.from || call.phone) || call.caller || call.from || call.phone) === phone).sort((a, b) => String(b.startedAt || b.createdAt || "").localeCompare(String(a.startedAt || a.createdAt || "")));
+  const bookings = [...(thread.bookings || [])].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  const signature = JSON.stringify([phone, calls, bookings]);
+  if (container.dataset.signature === signature) return;
+  const expanded = [...container.querySelectorAll("details[open]")].map((item) => item.dataset.record);
+  container.innerHTML = `<h3>Call history</h3>${calls.length ? calls.map((call, index) => `<details data-record="call-${index}"><summary>${escapeHtml(formatTime(call.startedAt || call.createdAt))} · ${escapeHtml(call.displayStatus || call.status || "Call")} · ${escapeHtml(call.durationLabel || "Duration unavailable")}</summary><p>${escapeHtml(call.outcome?.detail || "")}</p><h4>Transcript</h4><div class="thread-transcript">${call.transcript?.length ? renderGroupedTranscript(call.transcript) : "<p>No saved transcript available.</p>"}</div><button type="button" data-thread-call="${escapeAttribute(call.id || call.callId || "")}">Full call details</button></details>`).join("") : "<p>No saved calls for this phone in the loaded call history.</p>"}<h3>Bookings</h3>${bookings.length ? bookings.map((booking) => `<article class="thread-booking"><strong>${escapeHtml(booking.serviceType || booking.service || "Service request")} · ${escapeHtml(bookingStatusLabel(booking))}</strong><p>${escapeHtml(booking.location || "Location not captured")}</p><p>${escapeHtml(bookingServiceTime(booking))}</p><p>Assigned to: ${escapeHtml(bookingAssigneeLabel(booking))}</p>${renderBookingSyncBadge(booking)}<p>${escapeHtml([booking.vehicle, booking.vehicleColor].filter(Boolean).join(" · "))}</p></article>`).join("") : "<p>No bookings attached to this thread.</p>"}`;
+  container.dataset.signature = signature;
+  for (const detail of container.querySelectorAll("details")) detail.open = expanded.includes(detail.dataset.record);
+}
+document.querySelector("#threadRecordsContent").addEventListener("click", (event) => {
+  const id = event.target.closest("[data-thread-call]")?.dataset.threadCall;
+  if (!id) return;
+  selectedCallId = id; setActiveTab("calls"); renderCallLog();
+});
+function fillReplyPolicy(policy) {
+  document.querySelector("#remindAfterMinutes").value = policy.remindAfterMinutes;
+  document.querySelector("#escalateAfterMinutes").value = policy.escalateAfterMinutes;
+  policyLoaded = true;
+}
+async function requestReplyPolicy(method = "GET", policy) {
+  const options = { method, headers: { ...adminHeaders(), ...staffHeaders(), ...(policy ? { "Content-Type": "application/json" } : {}) }, ...(policy ? { body: JSON.stringify(policy) } : {}) };
+  let response = await fetch(policyEndpoint, options);
+  // Existing backend uses the operations path; new backend also supports admin alias.
+  if (response.status === 404 && policyEndpoint === "/api/admin/reply-policy") { policyEndpoint = "/api/operations/reply-policy"; response = await fetch(policyEndpoint, options); }
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Reply policy could not be loaded or saved.");
+  return data.replyPolicy || data;
+}
+async function loadReplyPolicy() {
+  if (!canWorkThreads() || !isAdminStaff()) return;
+  const status = document.querySelector("#replyPolicyStatus");
+  try { fillReplyPolicy(await requestReplyPolicy()); policyDirty = false; status.textContent = "Saved policy loaded."; }
+  catch (error) { status.textContent = error.message; }
+}
+document.querySelector("#replyPolicyForm").addEventListener("input", () => { policyDirty = true; });
+document.querySelector("#homeHealth").addEventListener("toggle", (event) => { if (event.target.open && !policyLoaded) loadReplyPolicy(); });
+document.querySelector("#reloadReplyPolicy").addEventListener("click", loadReplyPolicy);
+document.querySelector("#replyPolicyForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!canWorkThreads() || !isAdminStaff()) return;
+  const remindAfterMinutes = Number(document.querySelector("#remindAfterMinutes").value);
+  const escalateAfterMinutes = Number(document.querySelector("#escalateAfterMinutes").value);
+  const status = document.querySelector("#replyPolicyStatus");
+  if (!Number.isInteger(remindAfterMinutes) || remindAfterMinutes < 1 || remindAfterMinutes > 60 || !Number.isInteger(escalateAfterMinutes) || escalateAfterMinutes <= remindAfterMinutes || escalateAfterMinutes > 1440) { status.textContent = "Reminder must be 1–60 minutes; escalation must be later and within 24 hours."; return; }
+  const button = event.target.querySelector('[type="submit"]'); button.disabled = true;
+  try { fillReplyPolicy(await requestReplyPolicy("POST", { remindAfterMinutes, escalateAfterMinutes })); policyDirty = false; status.textContent = "Reply policy saved."; refreshHome(); }
+  catch (error) { status.textContent = error.message; }
+  finally { button.disabled = false; }
+});
+
+
+async function showSignedInDestination() {
+  if (!isAccessVerified()) return;
+  const route = pendingNotificationRoute;
+  pendingNotificationRoute = null;
+  document.body.classList.remove("account-controls-open");
+  document.querySelector("#signOutButton").hidden = true;
+  if (!route) { setActiveTab("home"); return; }
+  setActiveTab(route.view);
+  if (route.view !== "inbox" || !route.phone) return;
+  // URLSearchParams decodes properly encoded +E164 numbers; never turn arbitrary URL text into an action.
+  if (!/^\+[1-9]\d{7,14}$/.test(route.phone)) {
+    setInboxStatus("The notification phone number is invalid. Choose a conversation from the inbox."); return;
+  }
+  await refreshInbox();
+  if (!isAccessVerified()) { pendingNotificationRoute = route; return; }
+  document.querySelector("#inboxViewFilter").value = "all";
+  document.querySelector("#conversationSearch").value = "";
+  if (conversations.some((thread) => thread.phone === route.phone)) openThread(route.phone, { markRead: false });
+  else setInboxStatus("No saved conversation for this notification. Choose a conversation from the inbox.");
+}
+
+
+// Keep terminal aliases aligned with the operations backend: never substring-match "Incomplete" or "not completed".
+function canonicalDispatchBookingStatus(booking = {}) {
+  const value = [booking.platformStatus, booking.status].find((status) => typeof status === "string" && status.trim());
+  const key = String(value || "requested").normalize("NFKC").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const aliases = {
+    complete: "completed", completed: "completed", cleared: "completed", done: "completed", finished: "completed", resolved: "completed",
+    techniciancompleted: "completed", techniciancomplete: "completed", techcompleted: "completed", techcomplete: "completed", jobcompleted: "completed", servicecompleted: "completed",
+    cancelled: "cancelled", canceled: "cancelled", customercancelled: "cancelled", customercanceled: "cancelled",
+    failed: "failed", rejected: "rejected", declined: "rejected", closed: "closed"
+  };
+  return aliases[key] || key;
+}
+function isOpenDispatchBooking(booking = {}) {
+  return typeof booking.isOpen === "boolean" ? booking.isOpen : !["completed", "cancelled", "failed", "rejected", "closed"].includes(canonicalDispatchBookingStatus(booking));
+}
+function bookingStatusLabel(booking = {}) {
+  return [booking.platformStatus, booking.status, booking.externalStatus, booking.dddStatus, booking.dispatchStatus].find((value) => typeof value === "string" && value.trim()) || "Requested";
+}
+function bookingServiceTime(booking = {}) {
+  return booking.serviceTime || booking.service_time || booking.appointmentAt || booking.scheduledAt || booking.requestedFor || booking.preferredTime || "Time not set";
+}
+function bookingAssigneeLabel(booking = {}) {
+  const value = booking.assignee ?? booking.assignedTo ?? booking.technician;
+  return typeof value === "object" && value ? value.name || value.displayName || value.fullName || value.id || "Assigned" : String(value || "Unassigned");
+}
+function bookingSyncLabel(booking = {}) {
+  const sync = booking.statusSync;
+  const refresh = booking.platformRefresh;
+  const matched = sync?.status === "matched" || sync?.matched === true;
+  const stamp = Date.parse(sync?.matchedAt || (matched ? sync?.refreshedAt || sync?.checkedAt : "") || (refresh?.state === "fresh" ? refresh.checkedAt : "") || "");
+  if (sync?.status === "error" || sync?.ok === false || refresh?.state === "error") return "Status stale · sync failed";
+  if (sync?.status === "stale" || refresh?.state === "stale" || Number.isFinite(stamp) && Date.now() - stamp > 15 * 60000) return "Status stale · check platform";
+  if (sync?.status === "missing" || sync?.matched === false) return "Status unverified · no platform match";
+  if (Number.isFinite(stamp) && stamp <= Date.now() + 5000 && (matched || refresh?.state === "fresh")) return "Status synced";
+  return "Status unverified";
+}
+function renderBookingSyncBadge(booking) {
+  return `<span class="booking-sync-badge">${escapeHtml(bookingSyncLabel(booking))}</span>`;
 }

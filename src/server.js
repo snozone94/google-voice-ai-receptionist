@@ -11,7 +11,10 @@ import webPush from "web-push";
 import { notificationState } from "./notification-state.js";
 import { requireStaffRecords } from "./staff-record-access.js";
 import { decorateConversations, workspaceStore, pendingTextReminders } from "./dispatch-workspace.js";
-import { actionableNotification, notificationPreference, alertDisplayType, callAttentionEmailKey } from "./call-evidence.js";
+import { actionableNotification, notificationPreference, alertDisplayType, callAttentionEmailKey, expoTicketResults, callIdResolver } from "./call-evidence.js";
+import { operationsHandlers, operationsSnapshot, operationsHealth, replyPolicyStore, notificationAudience, reminderAudience } from "./dispatch-operations.js";
+import { reserveCallSms } from "./call-sms-policy.js";
+import { safeStaff } from "./dispatch-workspace.js";
 import { notificationAudio } from "./notification-sounds.js";
 import { mountNativeVoice, nativeVoiceStatus, voiceIdentity, configuredAiSipUri } from "./native-voice.js";
 import { createLiveCalls } from "./live-calls.js";
@@ -57,6 +60,7 @@ const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path
 const vapidKeysPath = path.join(dataDir, "web-push-vapid.json");
 const notificationLedger = notificationState(dataDir);
 const workspace = workspaceStore(dataDir);
+const replyPolicies = replyPolicyStore(dataDir);
 const uploadsDir = path.join(dataDir, "customer-uploads");
 const presence = new Map();
 const appReviewPin = String(process.env.APP_REVIEW_PIN || process.env.REVIEWER_PIN || "").trim();
@@ -258,22 +262,46 @@ app.get("/api/calls/:id/transcript", staffRecordsOnly, async (req, res, next) =>
   } catch (error) { next(error); }
 });
 
-app.get("/api/operations", staffRecordsOnly, async (_req, res, next) => {
-  try {
-    const staff = res.locals.staff;
-    const [conversations, calls, bookings, state] = await Promise.all([listConversations(500), listCallLog(300), listBookings(150), workspace.get(staff)]);
-    const threads = decorateConversations(conversations, calls, state);
-    const attention = { unread: threads.filter((thread) => thread.unread > 0).length, followUp: threads.filter((thread) => thread.needsFollowUp).length };
-    attention.count = threads.filter((thread) => thread.unread > 0 || thread.needsFollowUp).length;
-    res.json({ staff, conversations: threads, calls, bookings, attention, voice: nativeVoiceStatus(), updatedAt: new Date().toISOString() });
-  } catch (error) { next(error); }
+// Review credentials are recognized only by these isolated workspace routes.
+const operationsOnly = requireStaffRecords(async (req) => {
+  const code = String(req.get("x-staff-code") || req.get("x-admin-pin") || req.query.staffCode || req.query.adminPin || "").trim();
+  return appReviewPin && code === appReviewPin ? appReviewStaff : getStaffAccess(req);
 });
-
-app.post("/api/conversations/:phone/state", express.json(), staffRecordsOnly, async (req, res) => {
-  try {
-    const state = await workspace.mark(res.locals.staff, req.params.phone, req.body.action, req.body.through);
-    res.json({ ok: true, state });
-  } catch (error) { res.status(400).json({ error: error.message }); }
+const dispatchOperations = operationsHandlers({
+  workspace, policy: replyPolicies,
+  roster: async () => {
+    const directory = await getStaffDirectory();
+    return [...directory.team.filter((member) => member.active !== false), ...(process.env.ADMIN_PIN ? [{ name: process.env.ADMIN_STAFF_NAME || "Brianna", role: "admin", active: true }] : [])];
+  },
+  synthetic: (staff) => operationsSnapshot({ staff, conversations: appReviewConversations, calls: appReviewCallLog, bookings: [], voice: { ready: false, incomingReady: false, missing: [] }, replyPolicy: { remindAfterMinutes: 5, escalateAfterMinutes: 15 } }),
+  load: async (staff) => {
+    const [conversations, calls, bookings, conferenceCalls, directory] = await Promise.all([listConversations(500), listCallLog(300), listBookings(Infinity), liveCalls.list(voiceIdentity(staff)), getStaffDirectory()]);
+    const knownPhones = new Set(conferenceCalls.map((call) => call.phone));
+    const activeCalls = [...conferenceCalls, ...listLiveCalls().filter((call) => !knownPhones.has(call.phone))];
+    let health;
+    if (isAdminRole(staff.role)) {
+      const [tokens, outcomes] = await Promise.all([listPushTokens(1000).catch(() => []), notificationLedger.outcomes()]);
+      let storage = true;
+      try { await fs.access(dataDir, 6); } catch { storage = false; }
+      health = operationsHealth({ configured: { calling: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.PUBLIC_BASE_URL && (nativeVoiceStatus().ready || configuredAiSipUri() || process.env.OPENAI_SIP_URI || process.env.TRANSFER_SIP_URI)), sms: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && normalizeE164(process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER)), email: emailAlertsReady() && process.env.EMAIL_ALERTS_ENABLED !== "false" }, outcomes, bookings, bookingStatusConfigured: Boolean(process.env.DDD_CUSTOMER_HISTORY_URL), tokenCount: tokens.filter((token) => notificationAudience(token)).length, teamCount: directory.team.filter((member) => member.active !== false).length, storage });
+    }
+    return { conversations, calls, bookings, activeCalls, voice: nativeVoiceStatus(), health, team: [...directory.team, ...(process.env.ADMIN_PIN ? [{ name: process.env.ADMIN_STAFF_NAME || "Brianna", role: "admin", active: true }] : [])] };
+  }
+});
+app.get("/api/operations", operationsOnly, async (_req, res, next) => {
+  try { res.json(await dispatchOperations.snapshot(res.locals.staff)); } catch (error) { next(error); }
+});
+app.post("/api/conversations/:phone/state", express.json(), operationsOnly, async (req, res) => {
+  try { res.json({ ok: true, state: await dispatchOperations.mutate(res.locals.staff, req.params.phone, req.body) }); }
+  catch (error) { res.status(error.status || 400).json({ ok: false, error: error.message }); }
+});
+app.get("/api/admin/reply-policy", operationsOnly, async (_req, res) => {
+  try { res.json({ ok: true, replyPolicy: await dispatchOperations.getPolicy(res.locals.staff) }); }
+  catch (error) { res.status(error.status || 500).json({ ok: false, error: error.message }); }
+});
+app.post("/api/admin/reply-policy", express.json(), operationsOnly, async (req, res) => {
+  try { res.json({ ok: true, replyPolicy: await dispatchOperations.setPolicy(res.locals.staff, req.body) }); }
+  catch (error) { res.status(error.status || 400).json({ ok: false, error: error.message }); }
 });
 
 function requireOpenAIKey(req, res, next) {
@@ -556,6 +584,7 @@ app.post("/api/twilio/sms-status", express.urlencoded({ extended: false }), asyn
         errorMessage
       });
     }
+    if (/failed|undelivered|delivered/.test(status)) await notificationLedger.observe("sms", /failed|undelivered/.test(status) ? "failed" : "delivered");
     if (/failed|undelivered/.test(status)) {
       await notifyTeamTracked({
         title: "DDD text delivery failed",
@@ -896,7 +925,7 @@ app.post("/api/email/test", express.json(), async (req, res, next) => {
     }
 
     const result = await sendAlertEmail({
-      title: "DDD AI Dispatch email test",
+      title: "DDD Dispatch email test",
       body: "Email alerts are connected for missed calls, early hangups, calls, and texts.",
       data: { type: "email-test" }
     });
@@ -1303,6 +1332,8 @@ app.post("/api/twilio/call-status", express.urlencoded({ extended: false }), asy
         ]
       }
     });
+    if (/failed|busy|no-answer/.test(normalizedStatus)) await notificationLedger.observe("calling", "failed");
+    else if (normalizedStatus === "completed") await notificationLedger.observe("calling", "completed");
     const earlyHangupSeconds = Number(process.env.EARLY_HANGUP_ALERT_SECONDS || 30) || 30;
     const isMissed = /busy|failed|no-answer|canceled|cancelled|missed/.test(normalizedStatus);
     const isEarlyHangup = normalizedStatus === "completed" && durationSeconds > 0 && durationSeconds <= earlyHangupSeconds;
@@ -1316,7 +1347,7 @@ app.post("/api/twilio/call-status", express.urlencoded({ extended: false }), asy
         }.`,
         data: {
           type: isEarlyHangup ? "early-hangup" : "missed-call",
-          callId: req.body.CallSid || req.body.callSid || "",
+          callId: req.body.ParentCallSid || req.body.CallSid || req.body.callSid || "",
           status,
           durationSeconds,
           from: req.body.From || "",
@@ -1328,7 +1359,7 @@ app.post("/api/twilio/call-status", express.urlencoded({ extended: false }), asy
       await notifyTeamTracked({
         title: "DDD call completed",
         body: `${formatPhoneForAlert(req.body.From || "")} completed${durationSeconds ? ` in ${formatAlertDuration(durationSeconds)}` : ""}.`,
-        data: { type: "call-completed", callId: req.body.CallSid || req.body.callSid || "", status, durationSeconds, from: req.body.From || "" }
+        data: { type: "call-completed", callId: req.body.ParentCallSid || req.body.CallSid || req.body.callSid || "", status, durationSeconds, from: req.body.From || "" }
       }, "call-completed");
       await sendCompletedCallSmsIfNeeded(req.body.From || "", status);
     }
@@ -1741,9 +1772,17 @@ app.post("/api/bookings/:bookingId/photos", express.json({ limit: "24mb" }), asy
   }
 });
 
+function publicBookingInput(body = {}) {
+  // Public intake can supply customer details, never record identity, bearer
+  // tokens, lifecycle state, or trusted sync/dispatch metadata.
+  const fields = ["name", "customer_name", "customerName", "phone", "customer_phone", "customerPhone", "email", "customer_email", "serviceType", "service_type", "reason", "preferredTime", "preferred_time", "location", "address", "service_address", "vehicle", "vehicleInfo", "vehicleColor", "vehicle_color", "color", "latitude", "longitude", "lat", "lng", "urgency", "notes", "customer_notes", "problem_description", "oilType", "oil_type", "oilQuantity", "oil_quantity", "partsStatus", "parts_status", "changeRequestType", "change_request_type", "nextStep", "smsConsent"];
+  const source = body && typeof body === "object" && !Array.isArray(body) ? body : {};
+  return Object.fromEntries(fields.filter((key) => Object.hasOwn(source, key)).map((key) => [key, source[key]]));
+}
+
 app.post("/api/bookings", express.json(), async (req, res, next) => {
   try {
-    const booking = await saveBookingRequest(req.body || {});
+    const booking = await saveBookingRequest(publicBookingInput(req.body));
     res.status(201).json({ ok: true, booking });
   } catch (error) {
     next(error);
@@ -1909,7 +1948,7 @@ async function handleSipWebhook(req, res, next) {
       await withNotificationDeadline(notifyTeamTracked({
         title: "New DDD call",
         body: `${formatPhoneForAlert(callerPhone)} is calling DDD AI Dispatch.`,
-        data: { type: "call", callId: callId || "", from: callerPhone, to: calledPhone, route: "openai-sip" }
+        data: { type: "call", callId: liveSession?.id || callId || "", from: callerPhone, to: calledPhone, route: "openai-sip" }
       }, "incoming-openai-sip-call"), "incoming-openai-sip-call");
       queueCallStartSms(callerPhone);
       if (!settings.enabled) {
@@ -1917,7 +1956,7 @@ async function handleSipWebhook(req, res, next) {
         await notifyTeamTracked({
           title: "DDD AI is off",
           body: `${formatPhoneForAlert(callerPhone)} called while AI answering was off. Text/call them back from dispatch.`,
-          data: { type: "ai-off-missed-call", callId: callId || "", from: callerPhone, to: calledPhone }
+          data: { type: "ai-off-missed-call", callId: liveSession?.id || callId || "", from: callerPhone, to: calledPhone }
         }, "ai-off-missed-call");
         await sendMissedCallSms(callerPhone, "AI answering was off");
         res.sendStatus(200);
@@ -1944,7 +1983,7 @@ async function handleSipWebhook(req, res, next) {
         await notifyTeamTracked({
           title: "DDD AI pickup failed",
           body: `${formatPhoneForAlert(callerPhone)} called, but OpenAI could not accept the call. Text/call them back from dispatch.`,
-          data: { type: "openai-accept-failed", callId, from: callerPhone, to: calledPhone, error: acceptError.message }
+          data: { type: "openai-accept-failed", callId: liveSession?.id || callId, from: callerPhone, to: calledPhone, error: acceptError.message }
         }, "openai-accept-failed");
         await sendMissedCallSms(callerPhone, "AI pickup failed");
       }
@@ -2121,7 +2160,7 @@ async function getVisibleTeamInfo(req) {
 
 async function getStaffDirectoryForAuth() {
   const directory = await getStaffDirectory();
-  return directory.team.filter((entry) => entry.code);
+  return directory.team.filter((entry) => entry.code && entry.active !== false);
 }
 
 async function getStaffDirectory() {
@@ -2430,13 +2469,16 @@ async function sendTwilioSms(to, message) {
     message: await response.text().catch(() => "Twilio returned an unreadable response.")
   }));
   if (!response.ok) {
+    await notificationLedger.observe("sms", "failed");
     return {
       ok: false,
+      definiteRejection: response.status >= 400 && response.status < 500 && response.status !== 408,
       status: payload.status || response.status,
       error: payload.message || "Twilio SMS failed.",
       code: payload.code
     };
   }
+  await notificationLedger.observe("sms", payload.status === "delivered" ? "delivered" : "accepted");
   return {
     ok: true,
     sid: payload.sid,
@@ -2759,6 +2801,15 @@ function parseOptionalMoney(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+const automaticSmsQueues = new Map();
+function serializeAutomaticSms(to, action) {
+  const previous = automaticSmsQueues.get(to) || Promise.resolve();
+  const operation = previous.catch(() => {}).then(action);
+  automaticSmsQueues.set(to, operation);
+  operation.finally(() => { if (automaticSmsQueues.get(to) === operation) automaticSmsQueues.delete(to); }).catch(() => {});
+  return operation;
+}
+
 async function sendMissedCallSms(to, status = "") {
   const normalizedTo = normalizeE164(to);
   if (!normalizedTo || process.env.MISSED_CALL_SMS_ENABLED === "false") {
@@ -2766,43 +2817,49 @@ async function sendMissedCallSms(to, status = "") {
     return { ok: false, skipped: true, reason: normalizedTo ? "Missed-call SMS is disabled." : "Missing caller number." };
   }
 
-  const dedupeMinutes = Number(process.env.MISSED_CALL_SMS_DEDUPE_MINUTES || 30) || 30;
-  const recentWindowMs = Math.max(1, dedupeMinutes) * 60 * 1000;
-  const recentMessages = await listSms(300);
-  const alreadyTexted = hasRecentSuccessfulSms(recentMessages, normalizedTo, recentWindowMs, ["missed_call"]);
-  if (alreadyTexted) {
-    console.log(`Missed-call SMS skipped for ${formatPhoneForAlert(normalizedTo)}: recent rescue SMS already exists.`);
-    return { ok: true, skipped: true, reason: "Recent rescue SMS already exists." };
-  }
+  return serializeAutomaticSms(normalizedTo, async () => {
+    const dedupeMinutes = Number(process.env.MISSED_CALL_SMS_DEDUPE_MINUTES || 30) || 30;
+    const recentWindowMs = Math.max(1, dedupeMinutes) * 60 * 1000;
+    const recentMessages = await listSms(300);
+    const alreadyTexted = hasRecentSuccessfulSms(recentMessages, normalizedTo, recentWindowMs, ["call_start", "completed_call", "missed_call"]);
+    if (alreadyTexted) {
+      console.log(`Missed-call SMS skipped for ${formatPhoneForAlert(normalizedTo)}: recent rescue SMS already exists.`);
+      return { ok: true, skipped: true, reason: "Recent rescue SMS already exists." };
+    }
 
-  const message = appendStopFooter(
-    callSelfServiceSmsMessage(
-      process.env.MISSED_CALL_SMS_MESSAGE,
-      `Sorry we missed you. Reply with the service, vehicle, and location, or book here: ${bookingUrl()} DDD Mobile: iPhone ${iosAppUrl()} Android ${androidAppUrl()}`
-    )
-  );
-  const delivery = await sendTwilioSms(normalizedTo, message);
-  console.log(`Missed-call SMS ${delivery.ok ? "sent" : "failed"} to ${formatPhoneForAlert(normalizedTo)}${delivery.error ? `: ${delivery.error}` : ""}`);
-  await saveOutgoingSms({
-    to: normalizedTo,
-    from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
-    body: message,
-    messageSid: delivery.sid || "",
-    status: delivery.status || (delivery.ok ? "sent" : "failed"),
-    agentName: "Missed-call fallback",
-    source: "missed_call",
-    reason: status,
-    errorCode: delivery.code || "",
-    errorMessage: delivery.error || delivery.reason || ""
+    if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !normalizeE164(process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER)) return { ok: false, skipped: true, reason: "Twilio SMS is not configured." };
+    const reservation = await reserveCallSms({ dataDir, phone: normalizedTo, windowMs: recentWindowMs });
+    if (!reservation) return { ok: true, skipped: true, reason: "A recent automatic call text is already reserved." };
+    const message = appendStopFooter(
+      callSelfServiceSmsMessage(
+        process.env.MISSED_CALL_SMS_MESSAGE,
+        `Sorry we missed you. Reply with your service, vehicle, and location. Book online: ${bookingUrl()}`
+      )
+    );
+    const delivery = await sendTwilioSms(normalizedTo, message);
+    if (delivery.definiteRejection) await reservation.release?.();
+    console.log(`Missed-call SMS ${delivery.ok ? "sent" : "failed"} to ${formatPhoneForAlert(normalizedTo)}${delivery.error ? `: ${delivery.error}` : ""}`);
+    await saveOutgoingSms({
+      to: normalizedTo,
+      from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
+      body: message,
+      messageSid: delivery.sid || "",
+      status: delivery.status || (delivery.ok ? "sent" : "failed"),
+      agentName: "Missed-call fallback",
+      source: "missed_call",
+      reason: status,
+      errorCode: delivery.code || "",
+      errorMessage: delivery.error || delivery.reason || ""
+    });
+    if (!delivery.ok) {
+      queueTeamNotification({
+        title: "DDD rescue text failed",
+        body: `Could not send the missed-call text to ${formatPhoneForAlert(normalizedTo)}. Use the inbox/callback button.`,
+        data: { type: "sms-failed", from: normalizedTo, reason: delivery.error || delivery.reason || "missed-call SMS failed" }
+      }, "missed-call-sms-failed");
+    }
+    return delivery;
   });
-  if (!delivery.ok) {
-    queueTeamNotification({
-      title: "DDD rescue text failed",
-      body: `Could not send the missed-call text to ${formatPhoneForAlert(normalizedTo)}. Use the inbox/callback button.`,
-      data: { type: "sms-failed", from: normalizedTo, reason: delivery.error || delivery.reason || "missed-call SMS failed" }
-    }, "missed-call-sms-failed");
-  }
-  return delivery;
 }
 
 function queueCallStartSms(to) {
@@ -2833,41 +2890,47 @@ async function sendCallStartSmsIfNeeded(to) {
     return { ok: false, skipped: true };
   }
 
-  const dedupeMinutes = Number(process.env.CALL_START_SMS_DEDUPE_MINUTES || 30) || 30;
-  const recentWindowMs = Math.max(1, dedupeMinutes) * 60 * 1000;
-  const recentMessages = await listSms(300);
-  const alreadyTexted = hasRecentSuccessfulSms(recentMessages, normalizedTo, recentWindowMs, [
-    "call_start",
-    "completed_call",
-    "missed_call",
-    "alert_audit"
-  ]);
-  if (alreadyTexted) {
-    console.log(`Call-start SMS skipped for ${formatPhoneForAlert(normalizedTo)}: recent call SMS already exists.`);
-    return { ok: true, skipped: true, reason: "Recent call SMS already exists." };
-  }
+  return serializeAutomaticSms(normalizedTo, async () => {
+    const dedupeMinutes = Number(process.env.CALL_START_SMS_DEDUPE_MINUTES || 30) || 30;
+    const recentWindowMs = Math.max(1, dedupeMinutes) * 60 * 1000;
+    const recentMessages = await listSms(300);
+    const alreadyTexted = hasRecentSuccessfulSms(recentMessages, normalizedTo, recentWindowMs, [
+      "call_start",
+      "completed_call",
+      "missed_call",
+      "alert_audit"
+    ]);
+    if (alreadyTexted) {
+      console.log(`Call-start SMS skipped for ${formatPhoneForAlert(normalizedTo)}: recent call SMS already exists.`);
+      return { ok: true, skipped: true, reason: "Recent call SMS already exists." };
+    }
 
-  const message = appendStopFooter(
-    callSelfServiceSmsMessage(
-      process.env.CALL_START_SMS_MESSAGE,
-      `Thanks for calling DDD. Reply with the service, vehicle, and location, or book here: ${bookingUrl()} DDD Mobile: iPhone ${iosAppUrl()} Android ${androidAppUrl()}`
-    )
-  );
-  const delivery = await sendTwilioSms(normalizedTo, message);
-  console.log(`Call-start SMS ${delivery.ok ? "sent" : "failed"} to ${formatPhoneForAlert(normalizedTo)}${delivery.error ? `: ${delivery.error}` : ""}`);
-  await saveOutgoingSms({
-    to: normalizedTo,
-    from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
-    body: message,
-    messageSid: delivery.sid || "",
-    status: delivery.status || (delivery.ok ? "sent" : "failed"),
-    agentName: "Call-start fallback",
-    source: "call_start",
-    reason: "incoming-call",
-    errorCode: delivery.code || "",
-    errorMessage: delivery.error || delivery.reason || ""
+    if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !normalizeE164(process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER)) return { ok: false, skipped: true, reason: "Twilio SMS is not configured." };
+    const reservation = await reserveCallSms({ dataDir, phone: normalizedTo, windowMs: recentWindowMs });
+    if (!reservation) return { ok: true, skipped: true, reason: "A recent automatic call text is already reserved." };
+    const message = appendStopFooter(
+      callSelfServiceSmsMessage(
+        process.env.CALL_START_SMS_MESSAGE,
+        defaultCallerSelfServiceSms()
+      )
+    );
+    const delivery = await sendTwilioSms(normalizedTo, message);
+    if (delivery.definiteRejection) await reservation.release?.();
+    console.log(`Call-start SMS ${delivery.ok ? "sent" : "failed"} to ${formatPhoneForAlert(normalizedTo)}${delivery.error ? `: ${delivery.error}` : ""}`);
+    await saveOutgoingSms({
+      to: normalizedTo,
+      from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
+      body: message,
+      messageSid: delivery.sid || "",
+      status: delivery.status || (delivery.ok ? "sent" : "failed"),
+      agentName: "Call-start fallback",
+      source: "call_start",
+      reason: "incoming-call",
+      errorCode: delivery.code || "",
+      errorMessage: delivery.error || delivery.reason || ""
+    });
+    return delivery;
   });
-  return delivery;
 }
 
 async function sendCompletedCallSmsIfNeeded(to, status = "") {
@@ -2877,36 +2940,42 @@ async function sendCompletedCallSmsIfNeeded(to, status = "") {
     return { ok: false, skipped: true };
   }
 
-  const dedupeMinutes = Number(process.env.CALL_FOLLOWUP_SMS_DEDUPE_MINUTES || 15) || 15;
-  const recentWindowMs = Math.max(1, dedupeMinutes) * 60 * 1000;
-  const recentMessages = await listSms(300);
-  const alreadyTexted = hasRecentSuccessfulSms(recentMessages, normalizedTo, recentWindowMs);
-  if (alreadyTexted) {
-    console.log(`Completed-call SMS skipped for ${formatPhoneForAlert(normalizedTo)}: recent outbound SMS already exists.`);
-    return { ok: true, skipped: true, reason: "Recent outbound SMS already exists." };
-  }
+  return serializeAutomaticSms(normalizedTo, async () => {
+    const dedupeMinutes = Number(process.env.CALL_FOLLOWUP_SMS_DEDUPE_MINUTES || 15) || 15;
+    const recentWindowMs = Math.max(1, dedupeMinutes) * 60 * 1000;
+    const recentMessages = await listSms(300);
+    const alreadyTexted = hasRecentSuccessfulSms(recentMessages, normalizedTo, recentWindowMs, ["call_start", "completed_call", "missed_call"]);
+    if (alreadyTexted) {
+      console.log(`Completed-call SMS skipped for ${formatPhoneForAlert(normalizedTo)}: recent outbound SMS already exists.`);
+      return { ok: true, skipped: true, reason: "Recent outbound SMS already exists." };
+    }
 
-  const message = appendStopFooter(
-    callSelfServiceSmsMessage(
-      process.env.COMPLETED_CALL_SMS_MESSAGE,
-      `Thanks for calling DDD. Reply here with updates, or book here: ${bookingUrl()} DDD Mobile: iPhone ${iosAppUrl()} Android ${androidAppUrl()}.`
-    )
-  );
-  const delivery = await sendTwilioSms(normalizedTo, message);
-  console.log(`Completed-call SMS ${delivery.ok ? "sent" : "failed"} to ${formatPhoneForAlert(normalizedTo)}${delivery.error ? `: ${delivery.error}` : ""}`);
-  await saveOutgoingSms({
-    to: normalizedTo,
-    from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
-    body: message,
-    messageSid: delivery.sid || "",
-    status: delivery.status || (delivery.ok ? "sent" : "failed"),
-    agentName: "Call follow-up",
-    source: "completed_call",
-    reason: status || "completed",
-    errorCode: delivery.code || "",
-    errorMessage: delivery.error || delivery.reason || ""
+    if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !normalizeE164(process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER)) return { ok: false, skipped: true, reason: "Twilio SMS is not configured." };
+    const reservation = await reserveCallSms({ dataDir, phone: normalizedTo, windowMs: recentWindowMs });
+    if (!reservation) return { ok: true, skipped: true, reason: "A recent automatic call text is already reserved." };
+    const message = appendStopFooter(
+      callSelfServiceSmsMessage(
+        process.env.COMPLETED_CALL_SMS_MESSAGE,
+        defaultCallerSelfServiceSms()
+      )
+    );
+    const delivery = await sendTwilioSms(normalizedTo, message);
+    if (delivery.definiteRejection) await reservation.release?.();
+    console.log(`Completed-call SMS ${delivery.ok ? "sent" : "failed"} to ${formatPhoneForAlert(normalizedTo)}${delivery.error ? `: ${delivery.error}` : ""}`);
+    await saveOutgoingSms({
+      to: normalizedTo,
+      from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
+      body: message,
+      messageSid: delivery.sid || "",
+      status: delivery.status || (delivery.ok ? "sent" : "failed"),
+      agentName: "Call follow-up",
+      source: "completed_call",
+      reason: status || "completed",
+      errorCode: delivery.code || "",
+      errorMessage: delivery.error || delivery.reason || ""
+    });
+    return delivery;
   });
-  return delivery;
 }
 
 function hasRecentSuccessfulSms(messages = [], normalizedTo = "", recentWindowMs = 0, sources = []) {
@@ -2964,16 +3033,19 @@ function splitEmailList(value = "") {
     .filter((entry) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(entry)))];
 }
 
-async function sendAlertEmail({ title = "DDD AI Dispatch alert", body = "", data = {} } = {}) {
+async function sendAlertEmail({ title = "DDD Dispatch alert", body = "", data = {}, audience, emailRecipient } = {}) {
   const config = getAlertEmailConfig();
   if (!emailAlertsReady() || process.env.EMAIL_ALERTS_ENABLED === "false") {
     return { ok: false, skipped: true, reason: "Email alerts are not configured." };
   }
 
+  if (audience?.emailTo) config.to = audience.emailTo;
+  if (emailRecipient) config.to = [emailRecipient];
+  if (audience && !config.to.length) return { ok: false, skipped: true, reason: "No email address for the selected staff." };
   const adminUrl = process.env.PUBLIC_BASE_URL || "https://google-voice-ai-receptionist.onrender.com/";
   const lines = [
     "What happened:",
-    body || "DDD AI Dispatch has a new alert.",
+    body || "DDD Dispatch has a new alert.",
     "",
     "Details:",
     `Update: ${alertDisplayType(data.type)}`,
@@ -2997,61 +3069,73 @@ async function sendAlertEmail({ title = "DDD AI Dispatch alert", body = "", data
       subject: title,
       text: lines.join("\n")
     });
-    return { ok: true, skipped: false };
+    await notificationLedger.observe("email", "accepted").catch((error) => console.warn("Could not record SMTP acceptance", error.message));
+    return { ok: true, skipped: false, status: "accepted" };
   } catch (error) {
+    await notificationLedger.observe("email", error.uncertain ? "uncertain" : "failed").catch(() => {});
     console.warn(`Email alert failed: ${error.message}`);
-    return { ok: false, skipped: false, error: error.message };
+    return { ok: false, skipped: false, uncertain: Boolean(error.uncertain), error: error.message };
   }
 }
 
-async function sendSmtpMail({ host, port, secure, user, pass, from, to, subject, text }) {
-  if (secure === false) {
-    throw new Error("Email alerts currently support secure SMTP only. Use Gmail SMTP on port 465.");
-  }
-  const socket = tls.connect({
-    host,
-    port,
-    servername: host,
-    rejectUnauthorized: true
-  });
-  socket.setTimeout(Number(process.env.SMTP_TIMEOUT_MS || 10000) || 10000, () => {
-    socket.destroy(new Error("SMTP connection timed out."));
-  });
+async function sendSmtpMail({ host, port, secure, user, pass, from, to, subject, text, connect = tls.connect }) {
+  if (secure === false) throw new Error("Email alerts currently support secure SMTP only. Use Gmail SMTP on port 465.");
+  const socket = connect({ host, port, servername: host, rejectUnauthorized: true });
+  socket.setTimeout(Number(process.env.SMTP_TIMEOUT_MS || 10000) || 10000, () => socket.destroy(new Error("SMTP connection timed out.")));
   const reader = createSmtpReader(socket);
-
-  await reader.expect(220);
-  await smtpWrite(socket, `EHLO ${process.env.SMTP_HELO_DOMAIN || "ddd-ai-dispatch.local"}`);
-  await reader.expect(250);
-  await smtpWrite(socket, "AUTH LOGIN");
-  await reader.expect(334);
-  await smtpWrite(socket, Buffer.from(user).toString("base64"));
-  await reader.expect(334);
-  await smtpWrite(socket, Buffer.from(pass).toString("base64"));
-  await reader.expect(235);
-  await smtpWrite(socket, `MAIL FROM:<${from}>`);
-  await reader.expect(250);
-  for (const recipient of to) {
-    await smtpWrite(socket, `RCPT TO:<${recipient}>`);
-    await reader.expect([250, 251]);
+  let submitted = false;
+  let accepted = false;
+  try {
+    await reader.expect(220);
+    await smtpWrite(socket, `EHLO ${process.env.SMTP_HELO_DOMAIN || "ddd-ai-dispatch.local"}`);
+    await reader.expect(250);
+    await smtpWrite(socket, "AUTH LOGIN");
+    await reader.expect(334);
+    await smtpWrite(socket, Buffer.from(user).toString("base64"));
+    await reader.expect(334);
+    await smtpWrite(socket, Buffer.from(pass).toString("base64"));
+    await reader.expect(235);
+    await smtpWrite(socket, `MAIL FROM:<${from}>`);
+    await reader.expect(250);
+    for (const recipient of to) {
+      await smtpWrite(socket, `RCPT TO:<${recipient}>`);
+      await reader.expect([250, 251]);
+    }
+    await smtpWrite(socket, "DATA");
+    await reader.expect(354);
+    submitted = true;
+    await smtpWrite(socket, buildEmailMessage({ from, to, subject, text }));
+    await reader.expect(250);
+    accepted = true;
+    return { ok: true, status: "accepted" };
+  } catch (error) {
+    // A positive or negative SMTP reply is definitive. A disconnect after DATA
+    // may have happened after acceptance; it must not trigger another email.
+    error.uncertain = submitted && !error.smtpCode;
+    throw error;
+  } finally {
+    if (accepted) {
+      try { socket.write("QUIT\r\n", "utf8", () => {}); } catch { /* Acceptance already recorded. */ }
+    }
+    try { socket.end(); } catch { /* Connection cleanup cannot change acceptance. */ }
   }
-  await smtpWrite(socket, "DATA");
-  await reader.expect(354);
-  await smtpWrite(socket, buildEmailMessage({ from, to, subject, text }));
-  await reader.expect(250);
-  await smtpWrite(socket, "QUIT");
-  socket.end();
 }
 
 function createSmtpReader(socket) {
   let buffer = "";
   const waiters = [];
+  let terminalError;
+  const closed = (error = new Error("SMTP connection closed before a response.")) => {
+    terminalError ||= error;
+    while (waiters.length) waiters.shift().reject(terminalError);
+  };
+  socket.on("end", () => closed());
+  socket.on("close", () => closed());
   socket.on("data", (chunk) => {
     buffer += chunk.toString("utf8");
     drain();
   });
-  socket.on("error", (error) => {
-    while (waiters.length) waiters.shift().reject(error);
-  });
+  socket.on("error", closed);
 
   function drain() {
     const match = buffer.match(/(?:^|\r?\n)(\d{3}) [^\r\n]*(?:\r?\n|$)/);
@@ -3068,10 +3152,11 @@ function createSmtpReader(socket) {
       const response = await new Promise((resolve, reject) => {
         waiters.push({ resolve, reject });
         drain();
+        if (terminalError) while (waiters.length) waiters.shift().reject(terminalError);
       });
       const code = Number(response.match(/^(\d{3})/m)?.[1] || 0);
       if (!expectedCodes.includes(code)) {
-        throw new Error(`SMTP expected ${expectedCodes.join("/")} but got ${code}`);
+        throw Object.assign(new Error(`SMTP expected ${expectedCodes.join("/")} but got ${code}`), { smtpCode: code });
       }
       return response;
     }
@@ -3085,10 +3170,10 @@ function smtpWrite(socket, line) {
 }
 
 function buildEmailMessage({ from, to, subject, text }) {
-  const safeSubject = String(subject || "DDD AI Dispatch alert").replace(/[\r\n]+/g, " ").slice(0, 140);
+  const safeSubject = String(subject || "DDD Dispatch alert").replace(/[\r\n]+/g, " ").slice(0, 140);
   const safeText = String(text || "").replace(/\r?\n\./g, "\n..");
   return [
-    `From: DDD AI Dispatch <${from}>`,
+    `From: DDD Dispatch <${from}>`,
     `To: ${to.join(", ")}`,
     `Subject: ${safeSubject}`,
     `Date: ${new Date().toUTCString()}`,
@@ -3120,17 +3205,17 @@ function androidAppUrl() {
 }
 
 function defaultCallerSelfServiceSms() {
-  return `Thanks for calling DDD. Reply with your service, vehicle, and location.\n\nBook online:\n${bookingUrl()}\n\nDDD Mobile for iPhone:\n${iosAppUrl()}\n\nDDD Mobile for Android:\n${androidAppUrl()}`;
+  return `Thanks for calling DDD. Reply with your service, vehicle, and location.\n\nBook online: ${bookingUrl()}`;
 }
 
 function callSelfServiceSmsMessage(customMessage = "", fallbackMessage = defaultCallerSelfServiceSms()) {
   const custom = String(customMessage || "").trim();
-  const hasAppLink = /apps\.apple\.com\/app\/id6762315831|DDD Mobile/i.test(custom);
-  const hasBookingLink = /dddcincy\.com\/book-service|BOOKING_URL|\{\{link\}\}/i.test(custom);
-  const chosen = custom && hasAppLink && hasBookingLink ? custom : fallbackMessage;
-  if (/^Thanks for calling DDD\. Reply with the service, vehicle, and location, or book here:/.test(chosen) && /DDD Mobile: iPhone/.test(chosen)) return defaultCallerSelfServiceSms();
-  if (!custom && /DDD Mobile: iPhone/.test(chosen)) return defaultCallerSelfServiceSms();
-  return chosen;
+  const stockOpening = /^(?:Thanks for calling DDD\b|Sorry we missed you\b)/i.test(custom);
+  const oldIos = /https:\/\/apps\.apple\.com\/app\/id6762315831\b/i.test(custom);
+  const oldAndroid = /https:\/\/play\.google\.com\/store\/apps\/details\?id=com\.dddroadside\.mobile\b/i.test(custom);
+  const hasBookingLink = custom.includes(bookingUrl()) || /https:\/\/dddcincy\.com\/book-service(?:\/|\b)|\{\{link\}\}/i.test(custom);
+  if (stockOpening && oldIos && oldAndroid && hasBookingLink) return fallbackMessage;
+  return custom ? custom.replace(/\{\{link\}\}/g, bookingUrl()) : fallbackMessage;
 }
 
 async function startTwilioBridgeCall(staffPhone, customerPhone, requestedCallerId = "") {
@@ -3238,136 +3323,68 @@ function configureWebPush(publicKey, privateKey) {
   webPush.setVapidDetails(subject, publicKey, privateKey);
 }
 
-async function notifyTeam({ title, body, data = {} }) {
+async function notifyTeam({ title, body, data = {}, audience }) {
+  if (data.callId) data = { ...data, callId: callIdResolver(await listCalls(Infinity))(data.parentCallId || data.callId) };
   const eventId = data.messageId || data.callId;
   const eventKey = JSON.stringify([data.type || title, eventId || data.from || "", eventId ? "" : body]);
-  const claimed = await notificationLedger.claim(eventKey, eventId ? 86400000 : 120000);
-  if (!claimed) return { ok: true, skipped: true, sent: 0, reason: "Duplicate alert suppressed", email: { ok: true, skipped: true } };
-  try {
-    const result = await deliverTeamNotification({ title, body, data });
-    if (!result.ok && !result.sent && !result.email?.ok) await notificationLedger.release(eventKey);
-    return result;
-  } catch (error) {
-    await notificationLedger.release(eventKey);
-    throw error;
-  }
+  const persistentRetry = data.type !== "unanswered-text";
+  if (persistentRetry && !await notificationLedger.enqueue(eventKey, { title, body, data, audience })) return { ok: true, skipped: true, sent: 0, reason: "Duplicate alert suppressed", email: { ok: true, skipped: true } };
+  const result = await deliverTeamNotification({ title, body, data, audience, eventKey });
+  if (persistentRetry) await notificationLedger.finish(eventKey, result.ok || result.stopRetry || (result.skipped && !actionableNotification(data)));
+  return result;
 }
 
-async function deliverTeamNotification({ title, body, data }) {
-  const emailResultPromise = sendTeamAlertEmail({ title, body, data }).catch((error) => ({ ok: false, skipped: false, error: error.message }));
-  let tokens = [];
-  try {
-    tokens = await listPushTokens(100);
-  } catch (error) {
-    console.warn(`Could not load push tokens: ${error.message}`);
-    const emailResult = await emailResultPromise;
-    return { ok: Boolean(emailResult.ok), sent: 0, skipped: !emailResult.ok, email: emailResult, errors: [error.message, emailResult.error].filter(Boolean) };
-  }
-
+async function deliverTeamNotification({ title, body, data, audience, eventKey }) {
+  const emailPromise = sendTeamAlertEmail({ title, body, data, audience, eventKey }).catch((error) => ({ ok: false, error: error.message }));
+  let tokens;
+  try { tokens = await listPushTokens(100); }
+  catch (error) { const email = await emailPromise; return { ok: false, sent: 0, email, errors: ["Could not load notification devices."] }; }
   const preference = notificationPreference(data);
   const quietDefaults = { newCalls: false, teamActivity: false };
-  tokens = tokens.filter((subscription) => !preference || (subscription.preferences?.[preference] ?? quietDefaults[preference] ?? true));
-  const [threadsForBadges, callsForBadges] = await Promise.all([listConversations(500).catch(() => []), listCallLog(300).catch(() => [])]);
-
-  const expoMessages = await Promise.all(tokens
-    .filter((subscription) => /^Expo(nent)?PushToken\[[^\]]+\]$/.test(subscription.token || ""))
-    .filter((subscription, index, all) => all.findIndex((item) => item.token === subscription.token) === index)
-    .map(async (subscription) => ({
-      to: subscription.token,
-      badge: decorateConversations(threadsForBadges, callsForBadges, await workspace.get({ id: subscription.staffId, name: subscription.staffName, role: subscription.staffRole }).catch(() => ({}))).filter((thread) => thread.unread || thread.needsFollowUp).length,
-      ...notificationAudio(subscription, preference),
-      priority: "high",
-      title,
-      body,
-      data: {
-        app: "ddd-ai-dispatch",
-        ...data
-      }
-    })));
-  const webSubscriptions = tokens.filter(
-    (subscription) => subscription.subscription?.endpoint && !/^https:\/\/example\.com\//i.test(subscription.subscription.endpoint)
-  );
-
-  if (!expoMessages.length && !webSubscriptions.length) {
-    const emailResult = await emailResultPromise;
-    return { ok: emailResult.ok || emailResult.skipped, sent: 0, skipped: !emailResult.ok, email: emailResult, errors: [emailResult.error].filter(Boolean) };
-  }
-
-  let sent = 0;
-  const errors = [];
-  try {
-    if (expoMessages.length) {
-      const response = await fetch("https://exp.host/--/api/v2/push/send", {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Accept-Encoding": "gzip, deflate",
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(expoMessages.length === 1 ? expoMessages[0] : expoMessages)
-      });
+  const seen = new Set();
+  tokens = tokens.filter((subscription) => {
+    const key = subscription.token || subscription.subscription?.endpoint;
+    if (!key || seen.has(key) || !notificationAudience(subscription, audience) || (preference && !(subscription.preferences?.[preference] ?? quietDefaults[preference] ?? true))) return false;
+    seen.add(key);
+    return true;
+  });
+  const [threads, calls] = tokens.length ? await Promise.all([listConversations(500), listCallLog(300)]) : [[], []];
+  const ttl = data.type === "unanswered-text" ? 7 * 86400000 : data.messageId || data.callId ? 86400000 : 120000;
+  const deliveries = await Promise.all(tokens.map((subscription) => notificationLedger.deliver(`push:${eventKey}:${subscription.token || subscription.subscription?.endpoint}`, async () => {
+    if (/^Expo(nent)?PushToken\[[^\]]+\]$/.test(subscription.token || "")) {
+      const badge = decorateConversations(threads, calls, await workspace.get({ id: subscription.staffId, name: subscription.staffName, role: subscription.staffRole })).filter((thread) => thread.unread || thread.needsFollowUp).length;
+      const response = await fetch("https://exp.host/--/api/v2/push/send", { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, signal: AbortSignal.timeout(15000), body: JSON.stringify({ to: subscription.token, badge, ...notificationAudio(subscription, preference), priority: "high", title, body, data: { app: "ddd-ai-dispatch", ...data } }) });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const message = payload?.errors?.[0]?.message || payload?.message || `Expo push failed with ${response.status}`;
-        console.warn(message);
-        errors.push(message);
-      } else {
-        sent += expoMessages.length;
-      }
+      if (!response.ok) return { ok: false, error: `Expo push failed with ${response.status}` };
+      return expoTicketResults(payload, 1)[0];
     }
-
-    if (webSubscriptions.length) {
-      await getWebPushVapidKeys();
-      const webPayload = JSON.stringify({
-        title,
-        body,
-        data: {
-          app: "ddd-ai-dispatch",
-          url: "/",
-          ...data
-        }
-      });
-      const deliveries = await Promise.allSettled(
-        webSubscriptions.map((subscription) => webPush.sendNotification(subscription.subscription, webPayload))
-      );
-      for (const delivery of deliveries) {
-        if (delivery.status === "fulfilled") {
-          sent += 1;
-        } else {
-          const message = delivery.reason?.message || "Browser push failed.";
-          console.warn(message);
-          errors.push(message);
-        }
-      }
-    }
-    const emailResult = await emailResultPromise;
-    return { ok: errors.length === 0 && (emailResult.ok || emailResult.skipped), sent, skipped: false, email: emailResult, errors: [...errors, emailResult.error].filter(Boolean) };
-  } catch (error) {
-    console.warn(`Push failed: ${error.message}`);
-    const emailResult = await emailResultPromise;
-    return { ok: Boolean(emailResult.ok), sent, skipped: false, email: emailResult, errors: [error.message, ...errors, emailResult.error].filter(Boolean) };
-  }
+    if (!subscription.subscription?.endpoint || /^https:\/\/example\.com\//i.test(subscription.subscription.endpoint)) return { ok: false, skipped: true, reason: "Invalid notification device." };
+    await getWebPushVapidKeys();
+    await webPush.sendNotification(subscription.subscription, JSON.stringify({ title, body, data: { app: "ddd-ai-dispatch", url: "/", ...data } }), { timeout: 15000 });
+    return { ok: true, status: "accepted" };
+  }, { ttl })));
+  const sent = deliveries.filter((result) => result.ok && !result.skipped).length;
+  const pushFailed = deliveries.some((result) => !result.ok);
+  if (deliveries.length && !deliveries.every((result) => result.alreadyAccepted)) await notificationLedger.observe("push", pushFailed ? "failed" : "accepted");
+  const email = await emailPromise;
+  const accepted = deliveries.some((result) => result.ok) || (email.ok && (!email.skipped || email.alreadyAccepted));
+  const errors = [...deliveries.filter((result) => !result.ok).map((result) => result.error || result.reason), ...(!email.ok && !email.skipped ? [email.error || "Email failed."] : [])];
+  return { ok: Boolean(accepted && !pushFailed && (email.ok || email.skipped && !email.pending && !email.uncertain)), stopRetry: Boolean(email.uncertain && !email.retryable && !pushFailed), sent, skipped: !accepted && !errors.length, email, errors };
 }
 
 async function sendTeamAlertEmail(payload) {
   if (!actionableNotification(payload.data)) return { ok: true, skipped: true, reason: "Routine update stays in the workspace" };
-  const attentionKey = callAttentionEmailKey(payload.data);
-  if (attentionKey) {
-    if (!await notificationLedger.claim(attentionKey)) return { ok: true, skipped: true, reason: "This call already has an attention email" };
-    const result = await sendAlertEmail(payload);
-    if (!result.ok) await notificationLedger.release(attentionKey);
-    return result;
-  }
-  // Twilio and the AI can both announce the same incoming call. Coalesce email
-  // only; a genuine redial with a new call ID must still get its own push alert.
-  if (payload.data.type !== "call" || !payload.data.from) return sendAlertEmail(payload);
-  const key = `incoming-call-email:${normalizeE164(payload.data.from)}`;
-  if (!await notificationLedger.claim(key, 30000)) {
-    return { ok: true, skipped: true, reason: "Incoming-call email already sent" };
-  }
-  const result = await sendAlertEmail(payload);
-  if (!result.ok) await notificationLedger.release(key);
-  return result;
+  if (!emailAlertsReady() || process.env.EMAIL_ALERTS_ENABLED === "false") return { ok: false, skipped: true, reason: "Email alerts are not configured." };
+  const key = callAttentionEmailKey(payload.data) || `email:${payload.eventKey}`;
+  const recipients = splitEmailList((payload.audience?.emailTo || getAlertEmailConfig().to).join(","));
+  if (!recipients.length) return { ok: false, skipped: true, reason: "No email address for the selected staff." };
+  const results = await Promise.all(recipients.map((emailRecipient) => notificationLedger.deliver(`${key}:recipient:${emailRecipient}`, () => sendAlertEmail({ ...payload, emailRecipient }), { ttl: 7 * 86400000, holdOnUncertain: true })));
+  const uncertain = results.some((result) => result.uncertain);
+  const pending = results.some((result) => result.pending);
+  if (uncertain) await notificationLedger.observe("email", "uncertain").catch(() => {});
+  else if (results.some((result) => !result.ok && !result.pending)) await notificationLedger.observe("email", "failed").catch(() => {});
+  const retryable = results.some((result) => !result.ok && !result.uncertain);
+  return { ok: results.every((result) => result.ok), uncertain, pending, retryable, alreadyAccepted: results.every((result) => result.alreadyAccepted), skipped: results.every((result) => result.skipped), error: results.filter((result) => !result.ok).map((result) => result.error || result.reason).join(" | ") };
 }
 
 function queueTeamNotification(payload, label = "team-alert") {
@@ -3380,8 +3397,8 @@ async function notifyTeamTracked(payload, label = "team-alert") {
   const result = await notifyTeam(payload);
   if (result.reason === "Duplicate alert suppressed") return result;
   const errors = Array.isArray(result?.errors) ? result.errors.filter(Boolean) : [];
-  const status = result?.ok ? "sent" : result?.skipped ? "skipped" : "failed";
-  const emailStatus = result?.email?.ok ? "sent" : result?.email?.skipped ? "skipped" : "failed";
+  const status = result?.skipped ? "skipped" : result?.ok ? "accepted" : "failed";
+  const emailStatus = result?.email?.uncertain ? "uncertain" : result?.email?.skipped ? "skipped" : result?.email?.ok ? "accepted" : "failed";
   const suffix = errors.length ? ` errors=${errors.join(" | ")}` : "";
   console.log(`Team notification ${label} ${status}; email=${emailStatus}; pushSent=${result?.sent || 0}${suffix}`);
   if (payload?.data?.from || payload?.data?.callId) {
@@ -3470,28 +3487,51 @@ app.use((error, _req, res, _next) => {
   res.status(status).json({ ok: false, error: status === 500 ? "Something went wrong. Please try again." : error.message });
 });
 
+let notificationRetryRunning = false;
+async function retryTeamNotifications() {
+  if (notificationRetryRunning) return;
+  notificationRetryRunning = true;
+  try {
+    for (const event of await notificationLedger.pending()) await notifyTeamTracked(event.payload, "notification-retry");
+  } catch (error) { console.error("Notification retry scan failed", error.message); }
+  finally { notificationRetryRunning = false; }
+}
 let reminderScanRunning = false;
 async function checkUnansweredTexts() {
   if (reminderScanRunning || process.env.REPLY_REMINDERS_ENABLED === "false") return;
   reminderScanRunning = true;
   try {
-    const minutes = Math.min(60, Math.max(1, Number(process.env.REPLY_REMINDER_MINUTES) || 5));
-    const pending = pendingTextReminders(await listConversations(500), { minutes });
+    const policy = await replyPolicies.get();
+    // Persist before scanning: a first deployment must never escalate the
+    // historical inbox. A failed activation write pauses this entire scan.
+    const since = await notificationLedger.activation("reply-escalation-v1");
+    const [conversations, state, directory] = await Promise.all([listConversations(500), workspace.get({ id: "__reminder_worker__" }), getStaffDirectory()]);
+    const pending = pendingTextReminders(conversations, { minutes: policy.remindAfterMinutes, escalateMinutes: policy.escalateAfterMinutes, since, state });
     for (const item of pending) {
       const key = `unanswered-text:${item.key}`;
-      if (!await notificationLedger.claim(key, 7 * 86400000)) continue;
+      // Preserve the old single-reminder claim without blocking the distinct
+      // escalation stage for genuinely post-activation messages.
+      if (item.stage === "reminder" && await notificationLedger.hasClaim(`unanswered-text:${item.phone}:${item.message.messageSid || item.message.createdAt}`)) continue;
       try {
-        const result = await notifyTeamTracked({ title: "Customer needs a reply", body: `${formatPhoneForAlert(item.phone)} has been waiting ${item.minutesWaiting} minutes. ${String(item.message.body || "").slice(0, 160)}`, data: { type: "unanswered-text", from: item.phone, messageId: `reminder:${item.key}`, message: item.message.body || "", reminderKey: item.key } }, "unanswered-text");
-        if (!result.ok && !result.sent && !result.email?.ok) await notificationLedger.release(key);
-      } catch (error) { await notificationLedger.release(key); throw error; }
+        // Recheck shared handling/reply state immediately before delivering.
+        const fresh = pendingTextReminders(await listConversations(500), { minutes: policy.remindAfterMinutes, escalateMinutes: policy.escalateAfterMinutes, since, state: await workspace.get({ id: "__reminder_worker__" }) }).find((candidate) => candidate.key === item.key);
+        if (!fresh) continue;
+        const escalation = fresh.stage === "escalation";
+        const audience = reminderAudience(fresh, directory.team, { adminEmails: getAlertEmailConfig().to, adminStaff: process.env.ADMIN_PIN ? { name: process.env.ADMIN_STAFF_NAME || "Brianna", role: "admin" } : null });
+        audience.emailTo = splitEmailList(audience.emailTo.join(","));
+        await notificationLedger.deliver(key, () => notifyTeamTracked({ title: escalation ? "Customer reply overdue" : "Customer needs a reply", body: `${formatPhoneForAlert(item.phone)} has been waiting ${item.minutesWaiting} minutes. ${String(item.message.body || "").slice(0, 160)}`, data: { type: "unanswered-text", from: item.phone, messageId: `reminder:${item.key}`, message: item.message.body || "", reminderKey: item.key, stage: item.stage }, audience }, "unanswered-text"), { ttl: 7 * 86400000 });
+      } catch (error) { throw error; }
     }
   } catch (error) { console.error("Unanswered-text reminder scan failed", error.message); }
   finally { reminderScanRunning = false; }
 }
 
-app.listen(port, () => {
+if (process.env.NODE_ENV !== "test") app.listen(port, () => {
   console.log(`AI receptionist listening on http://localhost:${port}`);
+  checkUnansweredTexts();
+  retryTeamNotifications();
   setInterval(checkUnansweredTexts, 60000).unref();
+  setInterval(retryTeamNotifications, 60000).unref();
 });
 
 function escapeHtml(value) {
@@ -3851,3 +3891,5 @@ function bookingPage() {
   </body>
 </html>`;
 }
+
+export { app, sendAlertEmail, sendSmtpMail, sendTeamAlertEmail, publicBookingInput, notifyTeam, checkUnansweredTexts, sendCallStartSmsIfNeeded, sendMissedCallSms, sendCompletedCallSmsIfNeeded, callSelfServiceSmsMessage };
