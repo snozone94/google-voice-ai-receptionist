@@ -506,11 +506,107 @@ function ddd_ai_dispatch_booking_photos(WP_REST_Request $request) {
     ];
 }
 
+/** Only confirmed custom-table identifiers are used; no schema or endpoint discovery. */
+function ddd_ai_dispatch_history_table_exists($table) {
+    global $wpdb;
+    if (!preg_match('/^[A-Za-z0-9_]+$/D', $table)) {
+        return false;
+    }
+    return $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table))) === $table;
+}
+
+function ddd_ai_dispatch_history_datetime($value, $legacy_gmt = false) {
+    $value = trim((string) $value);
+    if (!$value || strpos($value, '0000-00-00') === 0) {
+        return '';
+    }
+    $timezone = $legacy_gmt ? new DateTimeZone('UTC') : wp_timezone();
+    $date = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $value, $timezone);
+    $errors = DateTimeImmutable::getLastErrors();
+    if (!$date || ($errors && ($errors['warning_count'] || $errors['error_count']))) {
+        return '';
+    }
+    return $date->format(DATE_ATOM);
+}
+
+function ddd_ai_dispatch_find_customer_jobs($phone, $limit) {
+    global $wpdb;
+    $phone = ddd_ai_dispatch_normalize_phone($phone);
+    $limit = max(1, min(50, (int) $limit));
+    $table = $wpdb->prefix . 'ddd_jobs';
+    if (!$phone || !ddd_ai_dispatch_history_table_exists($table)) {
+        return [];
+    }
+    // Equality on normalized digits, never substring/last-ten matching. PHP
+    // verifies normalization again before any customer data leaves this function.
+    $digits = substr($phone, 1);
+    if (strlen($digits) !== 11 || strpos($digits, '1') !== 0) {
+        return [];
+    }
+    $national_digits = substr($digits, 1);
+    $phone_sql = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(customer_phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', ''), '.', ''), CHAR(9), ''), CHAR(10), ''), CHAR(13), '')";
+    $rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT job_uuid, customer_name, customer_phone, service_type, vehicle, service_address, notes, status, assigned_tech_id, assigned_tech_label, created_at, updated_at, completed_at FROM `{$table}` WHERE {$phone_sql} IN (%s, %s) ORDER BY created_at DESC, job_uuid DESC LIMIT %d",
+        $digits, $national_digits, $limit
+    ), ARRAY_A);
+    // Confirmed platform LEAD_TABLE is a suffix, like the jobs table.
+    $lead_table = $wpdb->prefix . 'ddd_business_leads';
+    $has_leads = ddd_ai_dispatch_history_table_exists($lead_table);
+    $records = [];
+    foreach ((array) $rows as $row) {
+        if (ddd_ai_dispatch_normalize_phone($row['customer_phone']) !== $phone || empty($row['job_uuid'])) {
+            continue;
+        }
+        $job_id = (string) $row['job_uuid'];
+        $legacy_gmt = strpos($job_id, 'DDD-FORM') === 0;
+        $record = [
+            'source' => 'ddd_jobs',
+            'id' => $job_id,
+            'job' => $job_id,
+            'jobId' => $job_id,
+            'job_uuid' => $job_id,
+            'name' => (string) $row['customer_name'],
+            'customer_phone' => $phone,
+            'service' => (string) $row['service_type'],
+            'serviceType' => (string) $row['service_type'],
+            'vehicle' => (string) $row['vehicle'],
+            'location' => (string) $row['service_address'],
+            'notes' => (string) $row['notes'],
+            'status' => (string) $row['status'],
+            'jobStatus' => (string) $row['status'],
+            'assignedTechId' => (string) $row['assigned_tech_id'],
+            'assignedTechName' => (string) $row['assigned_tech_label'],
+            'assignedTo' => (string) $row['assigned_tech_id'],
+            'assignee' => (string) $row['assigned_tech_label'],
+            'assigneeName' => (string) $row['assigned_tech_label'],
+            'createdAt' => ddd_ai_dispatch_history_datetime($row['created_at'], $legacy_gmt),
+            'updatedAt' => ddd_ai_dispatch_history_datetime($row['updated_at'], $legacy_gmt),
+            'completedAt' => ddd_ai_dispatch_history_datetime($row['completed_at'], $legacy_gmt),
+        ];
+        if ($has_leads) {
+            // At most one read per returned job, exact UUID only, newest lead wins.
+            $lead = $wpdb->get_row($wpdb->prepare(
+                "SELECT lead_uuid, job_uuid, preferred_time, created_at, updated_at FROM `{$lead_table}` WHERE job_uuid = %s ORDER BY updated_at DESC, created_at DESC, lead_uuid DESC LIMIT 1",
+                $job_id
+            ), ARRAY_A);
+            if ($lead && (string) $lead['job_uuid'] === $job_id) {
+                $preferred_time = trim((string) $lead['preferred_time']);
+                if ($preferred_time !== '') {
+                    $record['preferredTime'] = $preferred_time;
+                    $record['serviceTime'] = ddd_ai_dispatch_history_datetime($preferred_time, $legacy_gmt) ?: $preferred_time;
+                }
+            }
+        }
+        $records[] = $record;
+    }
+    return $records;
+}
+
 function ddd_ai_dispatch_find_customer_records($phone, $limit = 12) {
     $limit = max(1, min(50, (int) $limit));
     $digits = preg_replace('/\D+/', '', $phone);
     $variants = array_unique([$phone, $digits, substr($digits, -10)]);
-    $records = [];
+    $records = ddd_ai_dispatch_find_customer_jobs($phone, $limit);
 
     $query = new WP_Query([
         'post_type' => 'any',
