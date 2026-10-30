@@ -3548,6 +3548,22 @@ async function handleRealtimeEvent(message) {
 }
 
 
+function formatTaskWait(minutes) {
+  if (minutes == null || !Number.isFinite(Number(minutes)) || Number(minutes) < 0) return "";
+  const value = Math.floor(Number(minutes));
+  return value < 60 ? `${value}m waiting` : value < 1440 ? `${Math.floor(value / 60)}h waiting` : `${Math.floor(value / 1440)}d ago`;
+}
+function renderHomeTaskGroups(items, olderOpen = false) {
+  const current = items.filter((task) => task.historical !== true);
+  const older = items.filter((task) => task.historical === true);
+  const renderTask = (task) => {
+    const waiting = formatTaskWait(task.minutesWaiting);
+    return `<button class="home-task${task.historical === true ? " home-task-older" : ""}" type="button" data-home-phone="${escapeHtml(task.phone || "")}"><strong>${escapeHtml(formatPhone(task.phone || ""))}</strong><span>${escapeHtml(task.reason || "Needs reply")} · ${escapeHtml(ownerLabel(task.assignedTo))}${waiting ? ` · ${escapeHtml(waiting)}` : ""}${task.historical !== true && task.priority ? ` · ${escapeHtml(task.priority)}` : ""}</span></button>`;
+  };
+  const currentHtml = current.length ? current.map(renderTask).join("") : `<p class="empty-state">${older.length ? "No current requests waiting." : "You’re caught up. No replies waiting."}</p>`;
+  return currentHtml + (older.length ? `<p class="home-older-note">${older.length} older request${older.length === 1 ? "" : "s"}. Included in the reply count above.</p><details id="homeOlderRequests"${olderOpen ? " open" : ""}><summary>Older requests (${older.length})</summary>${older.map(renderTask).join("")}</details>` : "");
+}
+
 function ownerLabel(owner) {
   return owner ? `Owner: ${typeof owner === "object" ? owner.name || owner.id || "Assigned" : owner}` : "Unassigned";
 }
@@ -3592,8 +3608,8 @@ async function refreshHome() {
     };
     summary.innerHTML = [["Active calls", counts.activeCalls, "calls"], ["Unread messages", counts.unreadMessages, "unread"], ["Needs reply", counts.needsReply, "attention"], ["Today's open bookings", counts.todayOpenBookings ?? (Array.isArray(data.bookings) ? bookings.length : "—"), "bookings"]].map(([label, value, view]) => `<button type="button" data-home-view="${view}"><strong>${escapeHtml(String(value ?? "—"))}</strong><span>${label}</span></button>`).join("");
     const items = data.tasks || threads.filter((t) => t.unread || t.needsFollowUp || t.needsReply).sort((a, b) => String(b.lastMessageAt || "").localeCompare(String(a.lastMessageAt || ""))).map((t) => ({ phone: t.phone, reason: t.followUpReason || (t.needsFollowUp || t.needsReply ? "Needs reply" : "Unread text"), assignedTo: t.assignedTo || t.owner }));
-    tasks.innerHTML = items.length ? items.slice(0, 12).map((t) => `<button class="home-task" type="button" data-home-phone="${escapeHtml(t.phone || "")}"><strong>${escapeHtml(formatPhone(t.phone || ""))}</strong><span>${escapeHtml(t.reason || "Needs reply")} · ${escapeHtml(ownerLabel(t.assignedTo))}${t.minutesWaiting != null ? ` · ${escapeHtml(String(t.minutesWaiting))} min waiting` : ""}${t.priority ? ` · ${escapeHtml(t.priority)}` : ""}</span></button>`).join("") : '<p class="empty-state">You’re caught up. No replies waiting.</p>';
-    document.querySelector("#homeReplyPolicy").textContent = data.replyPolicy ? `Reply reminder: ${data.replyPolicy.remindAfterMinutes} min · Escalation: ${data.replyPolicy.escalateAfterMinutes} min${counts.overdueReplies != null ? ` · ${counts.overdueReplies} overdue replies` : ""}` : "";
+    tasks.innerHTML = renderHomeTaskGroups(items, Boolean(tasks.querySelector?.("#homeOlderRequests")?.open));
+    document.querySelector("#homeReplyPolicy").textContent = data.replyPolicy ? `Reply reminder: ${data.replyPolicy.remindAfterMinutes} min · Escalation: ${data.replyPolicy.escalateAfterMinutes} min` : "";
     if (isAdminStaff()) {
       if (data.replyPolicy && !policyDirty && !document.querySelector("#replyPolicyForm").contains(document.activeElement)) fillReplyPolicy(data.replyPolicy);
       health.hidden = false;
