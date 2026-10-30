@@ -114,3 +114,22 @@ export function validateReplyPolicy(value) {
   if (!Number.isInteger(remindAfterMinutes) || remindAfterMinutes < 1 || remindAfterMinutes > 60 || !Number.isInteger(escalateAfterMinutes) || escalateAfterMinutes <= remindAfterMinutes || escalateAfterMinutes > 1440) throw new Error('Reminder must be 1–60 minutes. Escalation must be later, within 24 hours.');
   return { remindAfterMinutes, escalateAfterMinutes };
 }
+
+// Group for display only: ownership, unread and follow-up state stay untouched.
+export function splitHomeTasks(tasks = []) {
+  const current = [], historical = [];
+  for (const task of tasks) (task.historical === true ? historical : current).push(task);
+  return { current, historical };
+}
+export function taskWaitLabel(minutesWaiting) {
+  if (minutesWaiting == null || minutesWaiting === '' || !Number.isFinite(Number(minutesWaiting))) return 'Waiting for follow-up';
+  const minutes = Math.max(0, Math.floor(Number(minutesWaiting)));
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} min waiting`;
+  if (minutes < 1440) {
+    const hours = Math.floor(minutes / 60), remaining = minutes % 60;
+    return `${hours} ${hours === 1 ? 'hour' : 'hours'}${remaining ? ` ${remaining} min` : ''} waiting`;
+  }
+  const days = Math.floor(minutes / 1440);
+  return `${days} ${days === 1 ? 'day' : 'days'} waiting`;
+}
