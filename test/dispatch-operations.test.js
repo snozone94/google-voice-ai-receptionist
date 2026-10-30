@@ -12,7 +12,7 @@ test("operations preserves legacy fields, exposes safe team/capabilities and Eas
   const input = { staff, conversations: [{ phone: "+15135550100", messages: [{ direction: "inbound", createdAt: "2026-10-29T03:30:00Z", body: "Need a tire" }] }], calls: [], bookings: [{ status: "Requested", createdAt: "2026-10-29T03:00:00Z" }, { status: "Requested", createdAt: "2026-10-29T04:30:00Z" }, { status: "Completed", createdAt: "2026-10-29T04:30:00Z" }], voice: { ready: true }, activeCalls: [{}], replyPolicy: policy, team: [{ ...staff, code: "secret", email: "private@example.test" }], now: Date.parse("2026-10-29T05:00:00Z"), health: [{ key: "storage" }] };
   const result = operationsSnapshot(input);
   for (const key of ["staff", "conversations", "calls", "bookings", "attention", "voice"]) assert.ok(key in result);
-  assert.deepEqual(result.summary, { activeCalls: 1, unreadMessages: 1, needsReply: 1, openBookings: 2, todayOpenBookings: 1, overdueReplies: 1 });
+  assert.deepEqual(result.summary, { olderRequests: 0, activeCalls: 1, unreadMessages: 1, needsReply: 1, openBookings: 2, todayOpenBookings: 1, overdueReplies: 1 });
   assert.deepEqual(result.team, [{ id: "one", name: "One", role: "tech", active: true }]);
   assert.equal(result.health, undefined);
   assert.deepEqual(result.conversations[0].capabilities, { claim: true, assign: false, release: false, unassign: false });
@@ -143,4 +143,36 @@ test("normative missing lifecycle overrides legacy fresh without treating an ID-
   assert.match(result.detail, /1 unverified/);
   assert.match(result.detail, /1 absent remote matches/);
   assert.match(result.detail, /No verified lifecycle match timestamp/);
+});
+
+test("current call follow-up sorts before ten-week-old unanswered requests without resolving the backlog", () => {
+  const now = Date.parse("2026-10-29T16:00:00Z");
+  const oldPhone = "+15135550100", callPhone = "+15135550101";
+  const ancient = new Date(now - 70 * 86400000).toISOString();
+  const result = operationsSnapshot({ staff, replyPolicy: policy, voice: {}, bookings: [], now,
+    conversations: [{ phone: oldPhone, messages: [{ direction: "inbound", body: "Old unanswered request", createdAt: ancient }] }, { phone: callPhone, messages: [] }],
+    calls: [{ callId: "current-call", caller: callPhone, startedAt: new Date(now - 120000).toISOString(), endedAt: new Date(now - 60000).toISOString(), status: "completed", completion: "incomplete" }]
+  });
+  assert.deepEqual(result.tasks.map((task) => task.phone), [callPhone, oldPhone]);
+  assert.equal(result.tasks[0].historical, false);
+  assert.equal(result.tasks[0].priority, "normal");
+  assert.equal(result.tasks[1].historical, true);
+  assert.equal(result.tasks[1].priority, "review");
+  assert.equal(result.summary.olderRequests, 1);
+  assert.equal(result.summary.needsReply, 1);
+  assert.equal(result.attention.followUp, 2);
+  assert.equal(result.conversations[0].needsReply, true);
+  assert.equal(result.conversations[0].waitingSince, ancient);
+});
+
+test("recent activity on an old thread keeps it active; exactly 24 hours is not historical", () => {
+  const now = Date.parse("2026-10-29T16:00:00Z");
+  const ancient = new Date(now - 70 * 86400000).toISOString();
+  const conversation = (phone, messages) => ({ phone, messages: messages.map((createdAt) => ({ direction: "inbound", body: "Need help", createdAt })) });
+  const result = operationsSnapshot({ staff, replyPolicy: policy, voice: {}, bookings: [], calls: [], now,
+    conversations: [conversation("+15135550100", [ancient, new Date(now - 60000).toISOString()]), conversation("+15135550101", [new Date(now - 86400000).toISOString()]), conversation("+15135550102", [new Date(now - 86400001).toISOString()])]
+  });
+  assert.deepEqual(result.tasks.map((task) => task.historical), [false, false, true]);
+  assert.equal(result.summary.olderRequests, 1);
+  assert.equal(result.summary.needsReply, 3);
 });
