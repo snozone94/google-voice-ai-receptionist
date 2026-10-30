@@ -3561,7 +3561,7 @@ function renderHomeTaskGroups(items, olderOpen = false) {
     return `<button class="home-task${task.historical === true ? " home-task-older" : ""}" type="button" data-home-phone="${escapeHtml(task.phone || "")}"><strong>${escapeHtml(formatPhone(task.phone || ""))}</strong><span>${escapeHtml(task.reason || "Needs reply")} · ${escapeHtml(ownerLabel(task.assignedTo))}${waiting ? ` · ${escapeHtml(waiting)}` : ""}${task.historical !== true && task.priority ? ` · ${escapeHtml(task.priority)}` : ""}</span></button>`;
   };
   const currentHtml = current.length ? current.map(renderTask).join("") : `<p class="empty-state">${older.length ? "No current requests waiting." : "You’re caught up. No replies waiting."}</p>`;
-  return currentHtml + (older.length ? `<p class="home-older-note">${older.length} older request${older.length === 1 ? "" : "s"}. Included in the reply count above.</p><details id="homeOlderRequests"${olderOpen ? " open" : ""}><summary>Older requests (${older.length})</summary>${older.map(renderTask).join("")}</details>` : "");
+  return currentHtml + (older.length ? `<p class="home-older-note">${older.length} older request${older.length === 1 ? "" : "s"}. Unanswered texts still count as needing a reply.</p><details id="homeOlderRequests"${olderOpen ? " open" : ""}><summary>Older requests (${older.length})</summary>${older.map(renderTask).join("")}</details>` : "");
 }
 
 function ownerLabel(owner) {
