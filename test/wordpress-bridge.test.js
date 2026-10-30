@@ -54,3 +54,51 @@ test('history route retains authentication and credentials still require verific
   assert.match(auth, /ddd_ai_dispatch_platform_token_is_valid/);
   assert.match(auth, /'rest_forbidden'.*\['status' => 401\]/);
 });
+
+test('custom job history uses guarded explicit read-only SQL and exact normalized phone equality', () => {
+  const guard = section('ddd_ai_dispatch_history_table_exists');
+  assert.match(guard, /\^\[A-Za-z0-9_\]\+\$/);
+  assert.match(guard, /SHOW TABLES LIKE %s/);
+  assert.match(guard, /esc_like\(\$table\)/);
+  const code = section('ddd_ai_dispatch_find_customer_jobs');
+  assert.match(code, /\$wpdb->prefix \. 'ddd_jobs'/);
+  assert.match(code, /!ddd_ai_dispatch_history_table_exists\(\$table\)/);
+  assert.match(code, /SELECT job_uuid, customer_name, customer_phone, service_type, vehicle, service_address, notes, status, assigned_tech_id, assigned_tech_label, created_at, updated_at, completed_at FROM/);
+  assert.match(code, /WHERE \{\$phone_sql\} IN \(%s, %s\)/);
+  assert.match(code, /strlen\(\$digits\) !== 11 \|\| strpos\(\$digits, '1'\) !== 0/);
+  assert.match(code, /\$national_digits = substr\(\$digits, 1\)/);
+  assert.match(code, /\$digits, \$national_digits, \$limit/);
+  assert.doesNotMatch(code, /substr\(\$phone, 2\)|RIGHT\(|LIKE.*phone/i);
+  assert.match(code, /ORDER BY created_at DESC, job_uuid DESC LIMIT %d/);
+  assert.match(code, /ddd_ai_dispatch_normalize_phone\(\$row\['customer_phone'\]\) !== \$phone/);
+  assert.match(code, /min\(50,/);
+  assert.doesNotMatch(code, /SELECT\s*\*|token_hash|\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE|DROP)\b/i);
+  assert.match(section('ddd_ai_dispatch_find_customer_records'), /ddd_ai_dispatch_find_customer_jobs\(\$phone, \$limit\)/);
+});
+
+test('job UUID, status and technician namespaces follow actual platform fields without inferred external IDs', () => {
+  const code = section('ddd_ai_dispatch_find_customer_jobs');
+  for (const field of ['id', 'job', 'jobId', 'job_uuid']) assert.ok(code.includes(`'${field}' => $job_id`), field);
+  for (const field of ['status', 'jobStatus']) assert.ok(code.includes(`'${field}' => (string) $row['status']`), field);
+  assert.match(code, /'assignedTechId' => \(string\) \$row\['assigned_tech_id'\]/);
+  assert.match(code, /'assignedTechName' => \(string\) \$row\['assigned_tech_label'\]/);
+  assert.match(code, /'assignee' => \(string\) \$row\['assigned_tech_label'\]/);
+  assert.doesNotMatch(code, /external_booking_id|post_status|completed_at.*=>.*status/);
+});
+
+test('preferred time is read only from the confirmed lead table with exact UUID, latest bounded one', () => {
+  const code = section('ddd_ai_dispatch_find_customer_jobs');
+  assert.match(code, /\$lead_table = \$wpdb->prefix \. 'ddd_business_leads'/);
+  assert.match(code, /\$has_leads = ddd_ai_dispatch_history_table_exists\(\$lead_table\)/);
+  assert.match(code, /if \(\$has_leads\)/);
+  assert.match(code, /SELECT lead_uuid, job_uuid, preferred_time, created_at, updated_at FROM/);
+  assert.match(code, /WHERE job_uuid = %s ORDER BY updated_at DESC, created_at DESC, lead_uuid DESC LIMIT 1/);
+  assert.match(code, /\(string\) \$lead\['job_uuid'\] === \$job_id/);
+  assert.match(code, /\['serviceTime'\] = ddd_ai_dispatch_history_datetime\(\$preferred_time, \$legacy_gmt\) \?: \$preferred_time/);
+  const date = section('ddd_ai_dispatch_history_datetime');
+  assert.match(date, /new DateTimeZone\('UTC'\) : wp_timezone\(\)/);
+  assert.match(date, /createFromFormat\('!Y-m-d H:i:s'/);
+  assert.match(date, /warning_count/);
+  assert.match(date, /format\(DATE_ATOM\)/);
+  assert.match(code, /strpos\(\$job_id, 'DDD-FORM'\) === 0/);
+});

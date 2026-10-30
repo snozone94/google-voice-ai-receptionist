@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { adminRole, decorateConversations, safeStaff } from "./dispatch-workspace.js";
+import { adminRole, decorateConversations, safeStaff, conversationPhone } from "./dispatch-workspace.js";
 
 export function validateReplyPolicy(value) {
   const remindAfterMinutes = Number(value.remindAfterMinutes);
@@ -126,11 +126,29 @@ export function operationsSnapshot({ staff, conversations, calls, bookings, stat
     thread.capabilities = { assign: writable && isAdmin, claim: writable && (!thread.assignedTo || owner), release: writable && Boolean(thread.assignedTo) && (owner || isAdmin), unassign: writable && Boolean(thread.assignedTo) && (owner || isAdmin) };
   }
   const attention = { unread: threads.filter((thread) => thread.unread > 0).length, followUp: threads.filter((thread) => thread.needsFollowUp).length, count: threads.filter((thread) => thread.unread > 0 || thread.needsFollowUp).length };
+  const activityTime = (value) => {
+    const stamp = Date.parse(value || "");
+    return Number.isFinite(stamp) && stamp <= now + 5000 ? stamp : 0;
+  };
+  const callActivity = new Map();
+  for (const call of calls) {
+    const phone = conversationPhone(/^client:/i.test(call.caller || "") ? call.destination : call.caller || call.phone);
+    if (phone) callActivity.set(phone, Math.max(callActivity.get(phone) || 0, ...[call.startedAt, call.endedAt, call.createdAt].map(activityTime)));
+  }
+  for (const call of activeCalls) {
+    const phone = conversationPhone(call.phone || call.caller);
+    if (phone) callActivity.set(phone, now);
+  }
   const tasks = threads.filter((thread) => thread.needsFollowUp).map((thread) => {
     const minutesWaiting = thread.waitingSince ? Math.max(0, Math.floor((now - Date.parse(thread.waitingSince)) / 60000)) : 0;
-    return { phone: thread.phone, reason: thread.followUpReason, assignedTo: thread.assignedTo, minutesWaiting, priority: thread.needsReply && minutesWaiting >= replyPolicy.escalateAfterMinutes ? "urgent" : "normal" };
-  }).sort((a, b) => Number(b.priority === "urgent") - Number(a.priority === "urgent") || b.minutesWaiting - a.minutesWaiting);
-  return { staff: { ...safeStaff(staff), ok: Boolean(staff.ok), role: staff.role, ...(staff.source ? { source: staff.source } : {}) }, conversations: threads, calls, bookings, attention, voice, team: team.map((member) => ({ ...safeStaff(member), role: member.role || "staff", active: member.active !== false })), summary: { activeCalls: activeCalls.length, unreadMessages: threads.reduce((sum, thread) => sum + thread.unread, 0), needsReply: threads.filter((thread) => thread.needsReply).length, openBookings: bookings.filter(isOpenBooking).length, todayOpenBookings: bookings.filter((booking) => isOpenBooking(booking) && bookingServiceDay(booking) === easternBookingDay(now)).length, overdueReplies: tasks.filter((task) => task.minutesWaiting >= replyPolicy.remindAfterMinutes && threads.find((thread) => thread.phone === task.phone)?.needsReply).length }, tasks, ...(adminRole(staff.role) ? { health: health || [] } : {}), replyPolicy, updatedAt: new Date(now).toISOString() };
+    const latestActivity = Math.max(activityTime(thread.lastMessageAt), callActivity.get(conversationPhone(thread.phone)) || 0,
+      ...thread.messages.map((message) => activityTime(message.createdAt)),
+      ...(thread.bookings || []).flatMap((booking) => [activityTime(booking.createdAt), activityTime(booking.updatedAt)]));
+    const historical = !latestActivity || now - latestActivity > 86400000;
+    return { phone: thread.phone, reason: thread.followUpReason, assignedTo: thread.assignedTo, minutesWaiting, historical, lastActivityAt: latestActivity ? new Date(latestActivity).toISOString() : null, priority: historical ? "review" : thread.needsReply && minutesWaiting >= replyPolicy.escalateAfterMinutes ? "urgent" : "normal" };
+  }).sort((a, b) => Number(a.historical) - Number(b.historical) || activityTime(b.lastActivityAt) - activityTime(a.lastActivityAt) || Number(b.priority === "urgent") - Number(a.priority === "urgent") || b.minutesWaiting - a.minutesWaiting);
+
+  return { staff: { ...safeStaff(staff), ok: Boolean(staff.ok), role: staff.role, ...(staff.source ? { source: staff.source } : {}) }, conversations: threads, calls, bookings, attention, voice, team: team.map((member) => ({ ...safeStaff(member), role: member.role || "staff", active: member.active !== false })), summary: { olderRequests: tasks.filter((task) => task.historical).length, activeCalls: activeCalls.length, unreadMessages: threads.reduce((sum, thread) => sum + thread.unread, 0), needsReply: threads.filter((thread) => thread.needsReply).length, openBookings: bookings.filter(isOpenBooking).length, todayOpenBookings: bookings.filter((booking) => isOpenBooking(booking) && bookingServiceDay(booking) === easternBookingDay(now)).length, overdueReplies: tasks.filter((task) => task.minutesWaiting >= replyPolicy.remindAfterMinutes && threads.find((thread) => thread.phone === task.phone)?.needsReply).length }, tasks, ...(adminRole(staff.role) ? { health: health || [] } : {}), replyPolicy, updatedAt: new Date(now).toISOString() };
 }
 
 // Receives observations, never credentials or provider error bodies.

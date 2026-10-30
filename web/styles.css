@@ -5898,3 +5898,8 @@ body:not(.workspace-signed-in) .login-card { box-shadow: none !important; border
   }
   .workspace-signed-in[data-view="inbox"] #newConversationForm { flex: 0 0 auto; min-width: 0; }
 }
+/* Historical requests remain available without competing with current work. */
+#homeOlderRequests { margin-top: 12px; padding: 12px; border: 1px solid #405671; border-radius: 8px; }
+#homeOlderRequests > summary { color: #c6d5e8; min-height: 44px; display: list-item; line-height: 2; }
+#homeTasks .home-older-note { color: #c6d5e8; font-size: 14px; margin: 16px 0 6px; }
+#homeTasks .home-task-older { background: #192b43 !important; color: #edf3fc !important; border-color: #405671; }

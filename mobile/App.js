@@ -1,4 +1,4 @@
-import { mergeConversations, ownerLabel, needsReply, isOpenBooking, newestUnreadIndex, workspaceSummary, bookingOwnerLabel, bookingRequestedLabel, bookingStatusLabel, conversationPhone, canWork, ownershipActions, workspaceState, notificationDestination, validateReplyPolicy } from "./workspace-view";
+import { mergeConversations, ownerLabel, needsReply, isOpenBooking, newestUnreadIndex, workspaceSummary, splitHomeTasks, taskWaitLabel, bookingOwnerLabel, bookingRequestedLabel, bookingStatusLabel, conversationPhone, canWork, ownershipActions, workspaceState, notificationDestination, validateReplyPolicy } from "./workspace-view";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
@@ -667,8 +667,11 @@ export default function App() {
 }
 
 function WorkspaceHome({ staff, activity, isAdmin, onSelect, onNewText, onDial, onThread }) {
+  const [olderOpen, setOlderOpen] = useState(false);
   const summary = workspaceSummary(activity);
-  const tasks = Array.isArray(activity.tasks) ? activity.tasks : mergeConversations(activity.conversations).filter(needsReply).map(item => ({ phone: item.phone, reason: item.followUpReason || "Needs reply", assignedTo: ownerLabel(item) }));
+  const tasks = Array.isArray(activity.tasks) ? activity.tasks : mergeConversations(activity.conversations).filter(needsReply).map(item => ({ phone: item.phone, reason: item.followUpReason || "Needs reply", assignedTo: ownerLabel(item), historical: item.historical === true }));
+  const { current, historical } = splitHomeTasks(tasks);
+  const renderTask = (task, index) => <Pressable key={`${task.phone}-${index}`} accessibilityRole="button" disabled={!task.phone} onPress={() => onThread(task.phone)} style={styles.listCard}><Text style={styles.listTitle}>{formatPhone(task.phone) || "Customer"}</Text><Text style={styles.record}>{task.reason || "Needs reply"} · {ownerLabel(task)}</Text><Text style={styles.muted}>{taskWaitLabel(task.minutesWaiting)}{!task.historical && task.priority ? ` · ${task.priority}` : ""}</Text></Pressable>;
   const replyPolicy = activity.replyPolicy;
   return <>
     <Text style={styles.screenHeading}>Home</Text>
@@ -680,7 +683,11 @@ function WorkspaceHome({ staff, activity, isAdmin, onSelect, onNewText, onDial, 
       <View style={styles.buttonRow}><ActionButton disabled={!canWork(staff)} label="New text" onPress={onNewText} /><ActionButton disabled={!canWork(staff)} label="Dial" onPress={onDial} variant="light" /><ActionButton disabled={!canWork(staff)} label="Listen / Answer" onPress={() => onSelect("Calls")} variant="light" /></View>
     </Card>
     <Card title="Needs attention">
-      {tasks.length ? tasks.map((task, index) => <Pressable key={`${task.phone}-${index}`} accessibilityRole="button" disabled={!task.phone} onPress={() => onThread(task.phone)} style={styles.listCard}><Text style={styles.listTitle}>{formatPhone(task.phone) || "Customer"}</Text><Text style={styles.record}>{task.reason || "Needs reply"} · {ownerLabel(task)}</Text><Text style={styles.muted}>{task.minutesWaiting != null ? `${task.minutesWaiting} min waiting` : "Waiting for follow-up"}{task.priority ? ` · ${task.priority}` : ""}</Text></Pressable>) : <Text style={styles.record}>You're caught up.</Text>}
+      {current.length ? current.map(renderTask) : <Text style={styles.record}>{historical.length ? "No current requests need attention." : "You're caught up."}</Text>}
+      {historical.length ? <>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Older requests (${historical.length})`} accessibilityState={{ expanded: olderOpen }} onPress={() => setOlderOpen(value => !value)} style={[styles.listHeader, { minHeight: 48 }]}><Text style={styles.record}>Older requests ({historical.length})</Text><ChevronDown size={20} color="#203040" style={{ transform: [{ rotate: olderOpen ? "180deg" : "0deg" }] }} /></Pressable>
+        {olderOpen ? historical.map(renderTask) : null}
+      </> : null}
     </Card>
     {replyPolicy ? <Card title="Reply guidance"><Text style={styles.record}>{typeof replyPolicy === "string" ? replyPolicy : replyPolicy.message || replyPolicy.description || (replyPolicy.remindAfterMinutes != null ? `Reminder after ${replyPolicy.remindAfterMinutes} min · Escalation after ${replyPolicy.escalateAfterMinutes} min` : "Follow up with waiting customers.")}</Text></Card> : null}
     {isAdmin && activity.health ? <Card title="Service status">{Object.entries(activity.health).map(([key, value]) => <Text key={key} style={styles.record}>{value?.label || key.replace(/([a-z])([A-Z])/g, "$1 $2")}: {typeof value === "object" && value ? value.message || value.status || (value.ok === true ? "Available" : "Check service") : String(value)}</Text>)}</Card> : null}
