@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { reserveCallSms } from "./call-sms-policy.js";
 import path from "node:path";
 import { cleanTranscript, callIdResolver } from "./call-evidence.js";
 import { analyzeConversationQuality } from "./conversation-quality.js";
@@ -52,7 +53,7 @@ const defaultHumanHandoffRules =
 const defaultApplyInstructions =
   "For work, contractor, technician, or job-interest calls, collect name, phone, email, role or service type, experience, and location, then direct them to the DDD apply to work link.";
 const defaultSmsFollowUpText =
-  "Thanks for calling DDD. Reply with your service, vehicle, and location.\n\nBook online:\n{{link}}\n\nDDD Mobile for iPhone:\n{{iosAppLink}}\n\nDDD Mobile for Android:\n{{androidAppLink}}\n\nReply STOP to stop.";
+  "Thanks for calling DDD. Book here: {{link}} Reply with your service, vehicle, and location. Reply STOP to stop.";
 const defaultReviewFollowUpUrl = "https://g.page/r/CfVinSqxHOIDEAE/review";
 const defaultReviewFollowUpText =
   "Thanks again for choosing DDD. If everything went well, please leave a quick Google review here: {{reviewLink}}";
@@ -320,31 +321,54 @@ export async function saveCallSummary(summary) {
   return record;
 }
 
-export async function saveBookingRequest(booking) {
-  const record = normalizeBookingRecord(booking);
-  record.confidence = calculateBookingConfidence(record);
-  const sync = await syncBookingRequest(record);
-  record.externalSync = sync;
-  if (sync.ok && sync.trackingUrl) {
-    record.customerStatusUrl = sync.trackingUrl;
-  }
-  await ensureDataDir();
-  await fs.appendFile(bookingsPath, `${JSON.stringify(record)}\n`);
-  await postOptionalWebhook(process.env.LEAD_WEBHOOK_URL, { ...record, type: "booking_request" });
-  await sendOptionalSmsFollowUp(record, "booking_request");
-  return record;
+let bookingWrites = Promise.resolve();
+export function saveBookingRequest(booking) {
+  const operation = bookingWrites.then(async () => {
+    const record = normalizeBookingRecord(booking);
+    const existing = (await listRecords(bookingsPath, Infinity)).find((item) => item.bookingId === record.bookingId);
+    if (existing) {
+      // A public client ID is not a credential. Only the existing bearer token
+      // authorizes replay retrieval, including when the supplied phone matches.
+      const token = booking.statusToken || booking.customerStatusToken;
+      if (typeof token === "string" && token && token === existing.statusToken) return existing;
+      const error = new Error("Booking request conflicts with an existing ID.");
+      error.status = 409;
+      error.statusCode = 409;
+      throw error;
+    }
+    record.confidence = calculateBookingConfidence(record);
+    // Persist before any external side effect; an uncertain result is never retried.
+    record.externalSync = { ok: false, pending: true, reason: "External result not yet recorded; do not automatically retry." };
+    await ensureDataDir();
+    await fs.appendFile(bookingsPath, `${JSON.stringify(record)}\n`);
+    const sync = await syncBookingRequest(record);
+    record.externalSync = sync;
+    if (sync.ok && sync.trackingUrl) record.customerStatusUrl = sync.trackingUrl;
+    // Append a snapshot rather than rewriting concurrent location/photo updates.
+    await fs.appendFile(bookingsPath, `${JSON.stringify({ bookingId: record.bookingId, externalSync: sync, ...(sync.ok && sync.trackingUrl ? { customerStatusUrl: sync.trackingUrl } : {}) })}\n`);
+    await postOptionalWebhook(process.env.LEAD_WEBHOOK_URL, { ...record, type: "booking_request" });
+    await sendOptionalSmsFollowUp(record, "booking_request");
+    return record;
+  });
+  bookingWrites = operation.catch(() => {});
+  return operation;
 }
 
 export async function listRecords(filePath, limit = 50) {
   try {
     const raw = await fs.readFile(filePath, "utf8");
-    return raw
+    const records = raw
       .trim()
       .split("\n")
       .filter(Boolean)
-      .map((line) => JSON.parse(line))
-      .slice(-limit)
-      .reverse();
+      .map((line) => JSON.parse(line));
+    const snapshots = new Map();
+    if (filePath === bookingsPath) records.forEach((record, index) => {
+      const key = record.bookingId || `row:${index}`;
+      snapshots.set(key, { ...snapshots.get(key), ...record });
+    });
+    const unique = filePath === bookingsPath ? [...snapshots.values()] : records;
+    return unique.slice(-limit).reverse();
   } catch (error) {
     if (error.code === "ENOENT") return [];
     throw error;
@@ -376,7 +400,7 @@ export async function listSummaries(limit) {
 
 export async function listBookings(limit) {
   const records = await listRecords(bookingsPath, limit);
-  return records.map((booking) => ({ ...booking, confidence: booking.confidence || calculateBookingConfidence(booking) }));
+  return refreshBookings(records);
 }
 
 export async function buildBusinessInsights() {
@@ -425,11 +449,11 @@ function summarizeLatestActiveDay(now, records) {
 
 export async function listCallLog(limit = 50) {
   const [calls, summaries, leads, bookings, sms] = await Promise.all([
-    listRecords(callsPath, 1000),
-    listRecords(summariesPath, 1000),
-    listRecords(leadsPath, 1000),
-    listRecords(bookingsPath, 1000),
-    listSms(1000)
+    listRecords(callsPath, Infinity),
+    listRecords(summariesPath, Infinity),
+    listRecords(leadsPath, Infinity),
+    listRecords(bookingsPath, Infinity),
+    listSms(Infinity)
   ]);
   const corrections = await readJsonObject(callCorrectionsPath, {});
   const canonicalId = callIdResolver(calls);
@@ -480,6 +504,7 @@ export async function listCallLog(limit = 50) {
         type: latestEvent.type || firstEvent.type || "call",
         caller,
         destination,
+        direction: firstEvent.direction || latestEvent.direction || "",
         status: finalStatus,
         displayStatus,
         statusEvents: sortedEvents.map((event) => ({
@@ -800,11 +825,8 @@ function extractCommonQuestions(text = "") {
 export async function listBookingsByPhone(phone, limit = 20) {
   const target = normalizeE164(phone);
   if (!target) return [];
-  const records = await listRecords(bookingsPath, 1000);
-  return records
-    .filter((booking) => normalizeE164(booking.phone || booking.customer_phone) === target)
-    .map((booking) => ({ ...booking, confidence: booking.confidence || calculateBookingConfidence(booking) }))
-    .slice(0, limit);
+  const records = await listRecords(bookingsPath, Infinity);
+  return refreshBookings(records.filter((booking) => normalizeE164(booking.phone || booking.customer_phone) === target).slice(0, limit));
 }
 
 export async function getCustomerHistory(phone, limit = 8) {
@@ -856,6 +878,71 @@ export async function getCustomerHistory(phone, limit = 8) {
   };
 }
 
+const historyCache = new Map();
+async function cachedPlatformHistory(phone) {
+  const key = `${process.env.DDD_CUSTOMER_HISTORY_URL || ""}|${phone}`;
+  let entry = historyCache.get(key);
+  if (entry && entry.expires > Date.now()) return entry.promise;
+  entry = { checkedAt: Date.now(), expires: Date.now() + 30_000, promise: fetchDddCustomerHistory(phone, 20) };
+  historyCache.set(key, entry);
+  if (historyCache.size > 200) historyCache.delete(historyCache.keys().next().value);
+  return entry.promise;
+}
+
+function exactPlatformMatch(local, remote) {
+  const externalIds = [remote.external_booking_id, remote.externalBookingId].filter((id) => id !== undefined && id !== null && String(id) !== "");
+  if (externalIds.length) return externalIds.every((id) => String(id) === String(local.bookingId));
+  const jobId = local.externalSync?.jobId;
+  return Boolean(jobId && [remote.id, remote.jobId, remote.job_id, remote.job_uuid].some((id) => id !== undefined && String(id) === String(jobId)));
+}
+
+async function refreshBookings(records) {
+  // Refresh the oldest/unvisited customers first; open jobs win ties. Reuse
+  // every cached customer, rather than dropping those outside this request's batch.
+  const phoneOf = (record) => normalizeConversationPhone(record.phone || record.customer_phone);
+  const keyOf = (phone) => `${process.env.DDD_CUSTOMER_HISTORY_URL || ""}|${phone}`;
+  const phones = [...new Set(records.map(phoneOf).filter(Boolean))];
+  const openPhones = new Set(records.filter((row) => !/^(completed|cancelled|canceled|closed)$/i.test(row.status || "")).map(phoneOf));
+  const now = Date.now();
+  const selected = phones.filter((phone) => !(historyCache.get(keyOf(phone))?.expires > now))
+    .sort((a, b) => (historyCache.get(keyOf(a))?.checkedAt || 0) - (historyCache.get(keyOf(b))?.checkedAt || 0) || Number(openPhones.has(b)) - Number(openPhones.has(a)))
+    .slice(0, 8);
+  for (let i = 0; i < selected.length; i += 4) {
+    await Promise.all(selected.slice(i, i + 4).map(cachedPlatformHistory));
+  }
+  const histories = new Map();
+  await Promise.all(phones.map(async (phone) => {
+    const entry = historyCache.get(keyOf(phone));
+    if (entry) histories.set(phone, { ...(await entry.promise), checkedAt: entry.checkedAt, expires: entry.expires });
+  }));
+  return records.map((local) => {
+    const history = histories.get(phoneOf(local));
+    const candidates = history?.bookings || [];
+    const matches = candidates.filter((remote) => exactPlatformMatch(local, remote));
+    const result = { ...local, confidence: local.confidence || calculateBookingConfidence(local) };
+    const checkedAt = history ? new Date(history.checkedAt).toISOString() : null;
+    const remote = matches.length === 1 ? matches[0] : null;
+    const authoritativeStatus = remote && [remote.status, remote.job_status].find((value) => typeof value === "string" && value.trim());
+    // Identity alone is not evidence of a refreshed lifecycle. matchedAt is the
+    // cached fetch time, never the time a consumer rereads the same snapshot.
+    result.statusSync = {
+      status: history?.fetchError ? "error" : authoritativeStatus ? "matched" : "missing",
+      matchedAt: authoritativeStatus ? checkedAt : null,
+      checkedAt
+    };
+    result.platformRefresh = {
+      state: !authoritativeStatus ? "unverified" : history.expires <= Date.now() ? "stale" : "fresh",
+      checkedAt
+    };
+    if (!remote) return result;
+    for (const [field, aliases] of Object.entries({ status: ["status", "job_status"], assignee: ["assignee", "assigned_to", "technician", "technician_name"], serviceTime: ["serviceTime", "service_time", "scheduled_at"] })) {
+      const value = aliases.map((key) => remote[key]).find((value) => value !== undefined && value !== null && value !== "");
+      if (value !== undefined) result[field] = value;
+    }
+    return result;
+  });
+}
+
 async function fetchDddCustomerHistory(phone, limit) {
   const url = String(process.env.DDD_CUSTOMER_HISTORY_URL || "").trim();
   if (!url) return { bookings: [], knownVehicles: [] };
@@ -867,8 +954,8 @@ async function fetchDddCustomerHistory(phone, limit) {
     requestUrl.searchParams.set("phone", phone);
     requestUrl.searchParams.set("limit", String(Math.min(20, Math.max(1, Number(limit) || 8))));
     const response = await fetch(requestUrl, { headers, signal: AbortSignal.timeout(6000) });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) return { bookings: [], knownVehicles: [] };
+    const payload = await response.json();
+    if (!response.ok || payload?.ok === false) return { bookings: [], knownVehicles: [], fetchError: true };
     const records = Array.isArray(payload)
       ? payload
       : Array.isArray(payload.bookings)
@@ -879,7 +966,7 @@ async function fetchDddCustomerHistory(phone, limit) {
             ? payload.data
             : [];
     return {
-      bookings: records.map(normalizeHistoryBooking).filter((booking) => booking.serviceType || booking.vehicle || booking.notes),
+      bookings: records.map(normalizeHistoryBooking),
       knownVehicles: dedupeTextValues([
         ...(Array.isArray(payload.knownVehicles) ? payload.knownVehicles : []),
         ...(Array.isArray(payload.vehicles) ? payload.vehicles : []).map((vehicle) =>
@@ -888,7 +975,7 @@ async function fetchDddCustomerHistory(phone, limit) {
       ])
     };
   } catch {
-    return { bookings: [], knownVehicles: [] };
+    return { bookings: [], knownVehicles: [], fetchError: true };
   }
 }
 
@@ -904,6 +991,7 @@ function mergeCustomerBookings(localBookings = [], platformBookings = []) {
 
 function normalizeHistoryBooking(booking = {}) {
   return {
+    ...booking,
     bookingId: cleanText(booking.bookingId || booking.id || booking.job_uuid || booking.job || "", "", 120),
     createdAt: cleanText(booking.createdAt || booking.created_at || booking.submitted_at || booking.updated_at || "", "", 80),
     name: cleanText(booking.name || booking.customer_name || booking.customerName || "", "", 160),
@@ -925,7 +1013,7 @@ export async function getBookingStatus(bookingId, token) {
   if (!bookingId || !token) return null;
   const records = await listRecords(bookingsPath, 1000);
   const booking = records.find((item) => item.bookingId === bookingId && item.statusToken === token) || null;
-  return booking ? { ...booking, confidence: booking.confidence || calculateBookingConfidence(booking) } : null;
+  return booking ? (await refreshBookings([booking]))[0] : null;
 }
 
 export async function updateCallCorrection(callId, correction = {}) {
@@ -1120,15 +1208,18 @@ export async function listPushTokens(limit = 100) {
 
 export async function listConversations(limit = 200) {
   // A thread limit must not truncate the inbox to only that many text messages.
-  const messages = await listSms(Math.max(10000, limit * 20));
-  const bookings = await listRecords(bookingsPath, 1000);
-  const calls = await listCallLog(1000);
-  const archivedPhones = await listArchivedConversationPhones();
+  const messages = await listSms(Infinity);
+  const bookings = await listBookings(Infinity);
+  const calls = await listCallLog(Infinity);
+  const archives = await readJsonObject(archivedConversationsPath, {});
+  const activity = new Map();
+  const touch = (phone, at) => { const time = Date.parse(at); if (Number.isFinite(time)) activity.set(phone, Math.max(activity.get(phone) || 0, time)); };
   const bookingsByPhone = new Map();
   for (const booking of bookings) {
     const phone = normalizeConversationPhone(booking.phone || booking.customer_phone);
     if (!phone) continue;
     if (!bookingsByPhone.has(phone)) bookingsByPhone.set(phone, []);
+    touch(phone, booking.createdAt);
     bookingsByPhone.get(phone).push({ ...booking, confidence: booking.confidence || calculateBookingConfidence(booking) });
   }
   const conversations = new Map();
@@ -1137,6 +1228,7 @@ export async function listConversations(limit = 200) {
     const customerPhone = direction === "outbound" ? message.to : message.from;
     const key = normalizeConversationPhone(customerPhone);
     if (!key) continue;
+    if (direction === "inbound") touch(key, message.createdAt);
     if (!conversations.has(key)) {
       conversations.set(key, {
         phone: key,
@@ -1159,9 +1251,10 @@ export async function listConversations(limit = 200) {
   }
   for (const call of [...calls].reverse()) {
     if (call.type === "ddd.notification") continue;
-    const appOutbound = /^client:/i.test(call.caller || "") && normalizeConversationPhone(call.destination);
+    const appOutbound = (/^client:/i.test(call.caller || "") || /outbound/i.test(call.direction || "")) && normalizeConversationPhone(call.destination);
     const key = appOutbound || normalizeConversationPhone(call.caller);
     if (!key) continue;
+    if (!appOutbound && !/outbound/i.test(call.direction || "")) touch(key, call.createdAt || call.startedAt);
     const status = call.status || (call.durationSeconds ? `completed in ${formatDuration(call.durationSeconds)}` : "call received");
     const callNote = `${appOutbound ? "Outgoing call · " : ""}${formatConversationCallNote(call, status)}`;
     if (!conversations.has(key)) {
@@ -1195,13 +1288,23 @@ export async function listConversations(limit = 200) {
     }
   }
 
+  for (const [phone, rows] of bookingsByPhone) {
+    const latest = rows.reduce((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")) > 0 ? b : a);
+    if (!conversations.has(phone)) conversations.set(phone, { phone, lastMessageAt: latest.createdAt, lastBody: latest.serviceType || "Booking request", unread: 0, bookings: rows, messages: [] });
+    else if (String(latest.createdAt || "").localeCompare(String(conversations.get(phone).lastMessageAt || "")) > 0) {
+      conversations.get(phone).lastMessageAt = latest.createdAt;
+      conversations.get(phone).lastBody = latest.serviceType || "Booking request";
+    }
+  }
+  const archivedAt = new Map(Object.entries(archives).map(([phone, record]) => [normalizeConversationPhone(phone), Date.parse(record.archivedAt) || Infinity]));
   return [...conversations.values()]
-    .filter((conversation) => !archivedPhones.has(normalizeConversationPhone(conversation.phone)))
+    .filter((conversation) => !archivedAt.has(conversation.phone) || (activity.get(conversation.phone) || 0) > archivedAt.get(conversation.phone))
     .map((conversation) => ({
       ...conversation,
       messages: conversation.messages.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
     }))
-    .sort((a, b) => String(b.lastMessageAt).localeCompare(String(a.lastMessageAt)));
+    .sort((a, b) => String(b.lastMessageAt).localeCompare(String(a.lastMessageAt)))
+    .slice(0, Math.max(0, Number(limit) || 0));
 }
 
 function formatConversationCallNote(call = {}, status = "") {
@@ -1209,7 +1312,14 @@ function formatConversationCallNote(call = {}, status = "") {
   return getCleanStatusLabel(display || status || "Call received");
 }
 
-export async function archiveConversation(phone, archivedBy = "DDD team") {
+let archiveWrites = Promise.resolve();
+export function archiveConversation(phone, archivedBy = "DDD team") {
+  const operation = archiveWrites.then(() => writeConversationArchive(phone, archivedBy));
+  archiveWrites = operation.catch(() => {});
+  return operation;
+}
+
+async function writeConversationArchive(phone, archivedBy) {
   const normalizedPhone = normalizeConversationPhone(phone);
   if (!normalizedPhone || !normalizeE164(normalizedPhone)) {
     throw new Error("Enter a valid customer phone number.");
@@ -1221,7 +1331,8 @@ export async function archiveConversation(phone, archivedBy = "DDD team") {
     archivedBy: cleanText(archivedBy, "DDD team", 80)
   };
   await ensureDataDir();
-  await fs.writeFile(archivedConversationsPath, `${JSON.stringify(archived, null, 2)}\n`);
+  await fs.writeFile(`${archivedConversationsPath}.tmp`, `${JSON.stringify(archived, null, 2)}\n`);
+  await fs.rename(`${archivedConversationsPath}.tmp`, archivedConversationsPath);
   return archived[normalizedPhone];
 }
 
@@ -1955,10 +2066,11 @@ function appendMissingGuidance(value, fallback, additions) {
 
 function migrateSmsMessage(message) {
   const text = cleanLongText(message, defaultSmsFollowUpText, 500);
+  if (text === "Thanks for calling DDD. Reply with your service, vehicle, and location.\n\nBook online:\n{{link}}\n\nDDD Mobile for iPhone:\n{{iosAppLink}}\n\nDDD Mobile for Android:\n{{androidAppLink}}\n\nReply STOP to stop.") return defaultSmsFollowUpText;
   if (/^Thanks for calling DDD\. Reply with the service, vehicle, and location, or book here:/i.test(text) && /DDD Mobile: iPhone/i.test(text)) return defaultSmsFollowUpText;
   if (/^Thanks for calling DDD\. Your request was received:/i.test(text) && /Non-iPhone users:/i.test(text)) return defaultSmsFollowUpText;
   if (/^Thanks for calling DDD\. No worries if you do not want to stay on the AI call\./i.test(text) && /book\/manage service here:/i.test(text)) return defaultSmsFollowUpText;
-  if (/Here is the best next link for your request|Use this link for the best next step/i.test(text)) return defaultSmsFollowUpText;
+
   return text;
 }
 
@@ -2645,10 +2757,11 @@ async function sendOptionalSmsFollowUp(record, type) {
     `${record.reason || ""} ${record.serviceType || ""} ${record.nextStep || ""}`
   );
   const followUpDestination = destination;
-  const template = type === "booking" && settings.smsFollowUp.message === defaultSmsFollowUpText
-    ? "Your DDD service request is saved. Reply here if anything changes.\n\nView your booking using the same phone number:\n\nDDD Mobile for iPhone:\n{{iosAppLink}}\n\nDDD Mobile for Android:\n{{androidAppLink}}\n\nWebsite login:\n{{webLoginLink}}\n\nReply STOP to stop."
-    : settings.smsFollowUp.message;
+  const template = settings.smsFollowUp.message;
   const message = renderSmsTemplate(template, followUpDestination, settings, record);
+  const recent = await listSms(1000);
+  if (recent.some((sms) => sms.direction === "outbound" && normalizeE164(sms.to) === normalizeE164(record.phone) && !["failed", "undelivered"].includes(sms.status) && Date.now() - Date.parse(sms.createdAt) < 30 * 60_000)) return;
+  if (!await reserveCallSms({ dataDir, phone: record.phone })) return;
   const delivery = await sendConfiguredSms(record.phone, message);
   await postOptionalWebhook(process.env.SMS_FOLLOWUP_WEBHOOK_URL, {
     type,

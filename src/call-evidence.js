@@ -36,8 +36,9 @@ export function alertDisplayType(type = "") {
 }
 
 export function callAttentionEmailKey(data = {}) {
-  return data.callId && ["ai-pickup-failed", "early-hangup", "missed-call"].includes(data.type)
-    ? `call-attention-email:${data.callId}` : null;
+  const callId = data.parentCallId || data.callId;
+  return callId && ["ai-pickup-failed", "openai-accept-failed", "ai-off-missed-call", "early-hangup", "missed-call"].includes(data.type)
+    ? `call-attention-email:${callId}` : null;
 }
 
 export function notificationPreference(data = {}) {
@@ -58,4 +59,15 @@ export function callIdResolver(records) {
     while (parents.has(id) && !seen.has(id)) { seen.add(id); id = parents.get(id); }
     return id;
   };
+}
+
+// HTTP 200 means the Expo batch was processed, not that its tickets succeeded.
+export function expoTicketResults(payload, expectedCount) {
+  const tickets = Array.isArray(payload?.data) ? payload.data : payload?.data ? [payload.data] : [];
+  return Array.from({ length: expectedCount }, (_, index) => {
+    const ticket = tickets[index];
+    return ticket?.status === "ok" && typeof ticket.id === "string" && ticket.id
+      ? { ok: true, ticketId: ticket.id }
+      : { ok: false, error: ticket?.details?.error || ticket?.message || "Expo did not accept this notification." };
+  });
 }
