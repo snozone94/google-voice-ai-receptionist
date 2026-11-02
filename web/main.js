@@ -2437,7 +2437,7 @@ function renderQuickReplies(conversation, booking, confidence) {
 
   if (confidence?.missing?.includes("location")) {
     addReply(
-      "Get location",
+      "Location",
       locationUrl
         ? `Please confirm the service location here: ${locationUrl}`
         : "Please send the exact address, business name, or nearest cross street for service."
@@ -2445,7 +2445,7 @@ function renderQuickReplies(conversation, booking, confidence) {
   }
 
   if (confidence?.missing?.includes("vehicle") || /\b(car|truck|vehicle|oil|brake|rotor|hub|tire|spare|jump|battery|lockout)\b/i.test(text)) {
-    addReply("Get vehicle", "Please send the vehicle year, make, model, and color. If parts/materials are needed, let us know if you already have them.");
+    addReply("Vehicle", "Please send the vehicle year, make, model, and color. If parts/materials are needed, let us know if you already have them.");
   }
 
   if (/\b(tire|spare|wheel|lug|lock key|wheel lock)\b/i.test(text)) {
@@ -2473,15 +2473,19 @@ function renderQuickReplies(conversation, booking, confidence) {
   }
 
   addReply("On it", "Thanks. DDD has this and will follow up shortly.");
-  addReply("Booking link", "Book or manage service here: https://dddcincy.com/book-service/");
+  addReply("Book service", "Book online:\nhttps://dddcincy.com/book-service/\n\nDDD Mobile for iPhone:\nhttps://apps.apple.com/app/id6762315831\n\nDDD Mobile for Android:\nhttps://play.google.com/store/apps/details?id=com.dddroadside.mobile");
   addReply("Google review", buildGoogleReviewReply());
   addReply("Call back soon", "Thanks for reaching out. DDD has your message and will follow up as soon as possible.");
 
-  quickReplies.innerHTML = replies
-    .map((reply) => `<button type="button" data-reply="${escapeHtml(reply.text)}">${escapeHtml(reply.label)}</button>`)
-    .join("");
+  const pinned = replies.filter(reply => ["Book service", "Google review"].includes(reply.label));
+  const contextual = replies.filter(reply => !pinned.includes(reply));
+  const visible = [...contextual.slice(0, 2), ...pinned];
+  const extra = contextual.slice(2);
+  const renderReply = reply => `<button class="reply-chip" type="button" title="${escapeHtml(reply.text)}" aria-label="Draft: ${escapeHtml(reply.label)}" data-reply="${escapeHtml(reply.text)}">${escapeHtml(reply.label)}</button>`;
+  quickReplies.innerHTML = `<div class="reply-chip-grid">${visible.map(renderReply).join("")}</div>${extra.length ? `<details class="reply-more"><summary>More replies</summary><div class="reply-chip-grid">${extra.map(renderReply).join("")}</div></details>` : ""}`;
   for (const button of quickReplies.querySelectorAll("button")) {
     button.addEventListener("click", () => {
+      for (const chip of quickReplies.querySelectorAll("button")) chip.setAttribute("aria-pressed", String(chip === button));
       replyMessageInput.value = button.dataset.reply || "";
       sendReplyButton.disabled = !replyMessageInput.value.trim();
       replyMessageInput.focus();

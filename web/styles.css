@@ -5903,3 +5903,15 @@ body:not(.workspace-signed-in) .login-card { box-shadow: none !important; border
 #homeOlderRequests > summary { color: #c6d5e8; min-height: 44px; display: list-item; line-height: 2; }
 #homeTasks .home-older-note { color: #c6d5e8; font-size: 14px; margin: 16px 0 6px; }
 #homeTasks .home-task-older { background: #192b43 !important; color: #edf3fc !important; border-color: #405671; }
+
+/* Compact, readable reply drafts; selecting a chip never sends the text. */
+.workspace-signed-in[data-view="inbox"] .quick-replies { display: block; max-height: none; overflow: visible; }
+.reply-chip-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; }
+.quick-replies .reply-chip { min-height: 44px; margin: 0; width: 100%; padding: 10px 12px; border: 1px solid #526b94; border-radius: 12px; color: #f8fbff; background: linear-gradient(120deg, #31365b, #173e50); font-size: 14px; line-height: 1.25; font-weight: 700; text-align: center; white-space: normal; box-shadow: none; }
+.quick-replies .reply-chip:hover, .quick-replies .reply-chip:focus-visible, .quick-replies .reply-chip[aria-pressed="true"] { color: #fff; background: linear-gradient(120deg, #734188, #136b78); border-color: #a8def0; outline-offset: 2px; }
+.reply-more { margin-top: 8px; }
+.reply-more > summary { color: #a9ddef; cursor: pointer; padding: 8px 0; font-size: 13px; font-weight: 600; }
+.workspace-signed-in[data-view="inbox"] .quick-replies .reply-chip { color: #f8fbff !important; background: linear-gradient(120deg, #31365b, #173e50) !important; border-color: #526b94 !important; border-radius: 12px !important; }
+.workspace-signed-in[data-view="inbox"] .quick-replies .reply-chip:hover,
+.workspace-signed-in[data-view="inbox"] .quick-replies .reply-chip:focus-visible,
+.workspace-signed-in[data-view="inbox"] .quick-replies .reply-chip[aria-pressed="true"] { color: #fff !important; background: linear-gradient(120deg, #734188, #136b78) !important; border-color: #a8def0 !important; }
