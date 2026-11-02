@@ -3205,7 +3205,7 @@ function androidAppUrl() {
 }
 
 function defaultCallerSelfServiceSms() {
-  return `Thanks for calling DDD. Reply with your service, vehicle, and location.\n\nBook online: ${bookingUrl()}`;
+  return `Thanks for calling DDD. Reply with your service, vehicle, and location.\n\nBook online:\n${bookingUrl()}\n\nDDD Mobile for iPhone:\n${iosAppUrl()}\n\nDDD Mobile for Android:\n${androidAppUrl()}`;
 }
 
 function callSelfServiceSmsMessage(customMessage = "", fallbackMessage = defaultCallerSelfServiceSms()) {
@@ -3214,8 +3214,14 @@ function callSelfServiceSmsMessage(customMessage = "", fallbackMessage = default
   const oldIos = /https:\/\/apps\.apple\.com\/app\/id6762315831\b/i.test(custom);
   const oldAndroid = /https:\/\/play\.google\.com\/store\/apps\/details\?id=com\.dddroadside\.mobile\b/i.test(custom);
   const hasBookingLink = custom.includes(bookingUrl()) || /https:\/\/dddcincy\.com\/book-service(?:\/|\b)|\{\{link\}\}/i.test(custom);
-  if (stockOpening && oldIos && oldAndroid && hasBookingLink) return fallbackMessage;
-  return custom ? custom.replace(/\{\{link\}\}/g, bookingUrl()) : fallbackMessage;
+  let message = stockOpening && oldIos && oldAndroid && hasBookingLink
+    ? fallbackMessage
+    : custom ? custom.replace(/\{\{link\}\}/g, bookingUrl()) : fallbackMessage;
+  const footer = message.match(/\s*Reply STOP to stop\.\s*$/i)?.[0] || "";
+  if (footer) message = message.slice(0, -footer.length).trim();
+  if (!message.includes(iosAppUrl())) message += `\n\nDDD Mobile for iPhone:\n${iosAppUrl()}`;
+  if (!message.includes(androidAppUrl())) message += `\n\nDDD Mobile for Android:\n${androidAppUrl()}`;
+  return message + (footer ? "\n\nReply STOP to stop." : "");
 }
 
 async function startTwilioBridgeCall(staffPhone, customerPhone, requestedCallerId = "") {
