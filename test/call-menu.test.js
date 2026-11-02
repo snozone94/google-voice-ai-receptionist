@@ -12,6 +12,13 @@ test("published starting prices parse without inventing prices on a changed page
   assert.match(priceSpeech(prices), /already include the 25 dollar service fee/);
   assert.doesNotMatch(priceSpeech(prices), /before the visit fee|fee starts at|30 dollars|40 dollars|20 dollars|50 dollars/);
   assert.match(priceText(prices), /including the \$25 service fee/);
+  for (const message of [priceSpeech(prices), priceText(prices), priceSpeech({}), priceText({})]) {
+    assert.match(message, /11 AM to 7 PM/);
+    assert.match(message, /New-tire replacement service is available until 7 PM/);
+    assert.match(message, /After 7 PM, tire service is limited to spare-tire changes/);
+    assert.match(message, /24\/7 service is not guaranteed/);
+    assert.doesNotMatch(message, /10 PM/);
+  }
   assert.match(priceSpeech(prices), /final quote before service/);
   assert.deepEqual(parsePublishedPrices('<script>Battery jump-start Starting at $0</script>Unavailable'), {});
   assert.doesNotMatch(priceSpeech({ jump: 30 }), /start at 30/);
