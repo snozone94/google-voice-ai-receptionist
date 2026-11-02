@@ -436,7 +436,11 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
         for (const [identity, member] of Object.entries(record.staff || {})) {
           const participant = await findParticipant(record, `staff-${identity}`);
           const sid = participant?.callSid || member.callSid;
-          if (sid) await client().calls(sid).update({ status: "canceled" });
+          if (participant?.callSid) await conference(record).participants(participant.callSid).remove();
+          else if (sid) {
+            const leg = await client().calls(sid).fetch();
+            if (!terminal(leg.status)) await client().calls(sid).update({ status: leg.status === "in-progress" ? "completed" : "canceled" });
+          }
           else if (["creating", "uncertain"].includes(member.dialState)) throw failure("Call leg needs provider verification before redirecting.");
         }
         record.fallbackAttempted = true;
