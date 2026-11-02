@@ -86,7 +86,7 @@ test("sessions and call configuration survive restart without exposing join secr
   await calls.close();
   const restarted = createLiveCalls(dependencies);
   t.after(() => restarted.close());
-  assert.deepEqual(await restarted.config(), { enabled: true, ringTeam: false, transcribeCalls: true });
+  assert.deepEqual(await restarted.config(), { enabled: true, ringTeam: false, transcribeCalls: true, menuFirst: true });
   assert.equal((await restarted.list("one"))[0].phone, "+15135550100");
   assert.equal(await restarted.linkAi(id, "invalid", "rt-call"), null);
   await assert.rejects(restarted.events(id, { ConferenceSid: "wrong", FriendlyName: `ddd-${id}` }), /mismatch/);
