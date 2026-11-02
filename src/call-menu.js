@@ -10,9 +10,15 @@ export function parsePublishedPrices(html) {
 }
 export function priceSpeech(prices = {}) {
   const labels = { jump: "A battery jump", unlock: "A door unlock", plug: "A tire plug repair", spare: "A spare tire change" };
-  const lines = Object.entries(labels).filter(([key]) => prices[key]).map(([key, label]) => `${label} starts at ${prices[key]} dollars.`);
+  const lines = Object.entries(labels).filter(([key]) => prices[key]).map(([key, label]) => `${label} starts at ${Number((prices[key] + prices.fee).toFixed(2))} dollars total.`);
   if (!lines.length || !prices.fee) return "Please check the price list in your DDD text for current starting prices. The team confirms your final quote before service.";
-  return `Starting service prices, before the visit fee: ${lines.join(" ")} The visit fee starts at ${prices.fee} dollars. Parts and other charges may apply. The team confirms your final quote before service. The full price list is in your DDD text.`;
+  return `These starting totals already include the ${prices.fee} dollar service fee. ${lines.join(" ")} Parts and other charges may apply. The team confirms your final quote before service. The price list is in your DDD text.`;
+}
+export function priceText(prices = {}) {
+  const labels = { jump: "Jump-start", unlock: "Door unlock", plug: "Tire plug", spare: "Spare tire change" };
+  if (!prices.fee || !Object.keys(labels).some(key => prices[key])) return `DDD current service prices:\n${priceListUrl}\nThe team confirms your total, including the service fee, before service.`;
+  const lines = Object.entries(labels).filter(([key]) => prices[key]).map(([key, label]) => `${label}: from $${Number((prices[key] + prices.fee).toFixed(2))} total`);
+  return `DDD starting totals, including the $${prices.fee} service fee for one service:\n\n${lines.join("\n")}\n\nParts and other charges may apply. Final quote confirmed before service.\nMore service details: ${priceListUrl}`;
 }
 export function menuTwiml({ action, repeat = false }) {
   return `<Response><Gather input="dtmf" numDigits="1" timeout="4" actionOnEmptyResult="true" action="${xml(action)}" method="POST"><Say voice="Polly.Joanna-Neural">${repeat ? "Please choose an option." : "DDD Roadside."} Press 1 to book by text. 2 for prices. 3 for an existing booking. Or 4 for the team.</Say></Gather></Response>`;
@@ -62,9 +68,10 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
         const delivery = await sendBookingLinks(phone).catch(() => ({ ok: false }));
         content = delivery.ok ? "Use the booking and app links in your DDD text to request service. Your appointment is confirmed when the team confirms it." : "We could not confirm the booking text. You can book at D D D cincy dot com, or leave a message for the team.";
       } else if (digit === "2") {
-        const [published, delivery] = await Promise.all([prices(), sendPriceLink(phone, req.body.CallSid).catch(() => ({ ok: false }))]);
+        const published = await prices();
+        const delivery = await sendPriceLink(phone, req.body.CallSid, published).catch(() => ({ ok: false }));
         content = priceSpeech(published);
-        if (!delivery.ok) content = content.replace(/The full price list is in your DDD text\./, "See D D D cincy dot com for the full price list.").replace(/Please check the price list in your DDD text/, "Please check D D D cincy dot com");
+        if (!delivery.ok) content = content.replace(/The price list is in your DDD text\./, "See D D D cincy dot com for the full price list.").replace(/Please check the price list in your DDD text/, "Please check D D D cincy dot com");
       } else if (digit === "3") {
         content = "For booking details, open DDD Mobile using the same phone number or email as your booking. You can leave the team a message here.";
       } else if (req.query.repeat === "1" || req.query.stage === "followup") {

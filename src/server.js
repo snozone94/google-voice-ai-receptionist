@@ -1,4 +1,4 @@
-import { mountCallMenu, priceListUrl } from "./call-menu.js";
+import { mountCallMenu, priceText } from "./call-menu.js";
 import "dotenv/config";
 import crypto from "node:crypto";
 import express from "express";
@@ -192,8 +192,8 @@ const callMenu = mountCallMenu(app, {
     return buildHumanDialTwiml(settings, context);
   }, notify: queueTeamNotification,
   bypassAssistant: handleTwilioVoice, menuEnabled: async () => (await liveCalls.config()).menuFirst !== false,
-  sendPriceLink: async (phone, callId) => notificationLedger.deliver(`menu-prices:${callId}`, async () => {
-    const message = appendStopFooter(`DDD starting prices and service details:\n${priceListUrl}\n\nThe team confirms your final quote before service.`);
+  sendPriceLink: async (phone, callId, prices) => notificationLedger.deliver(`menu-prices:${callId}`, async () => {
+    const message = appendStopFooter(priceText(prices));
     const delivery = await sendTwilioSms(phone, message);
     await saveOutgoingSms({ to: phone, from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "", body: message, messageSid: delivery.sid || "", status: delivery.status || (delivery.ok ? "sent" : "failed"), source: "call_menu_prices", agentName: "DDD price list", errorCode: delivery.code || "", errorMessage: delivery.error || "" });
     return delivery;
