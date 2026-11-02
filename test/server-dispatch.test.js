@@ -116,15 +116,19 @@ test("dispatch HTTP contract, reviewer isolation, ownership, policy and provider
     await checkUnansweredTexts();
     assert.equal(pushes.length, 2);
   });
-  await t.test("HTTP 200 failed Expo tickets produce honest failure health, accepted tickets stay unverified", async () => {
+  await t.test("expired Expo devices are retired and newly registered tickets stay unverified", async () => {
     ticketFailure = true;
     const failed = await notifyTeam({ title: "Ticket test", body: "Test", data: { type: "sms", messageId: "SMticket-failed" } });
     assert.equal(failed.ok, false);
     assert.equal(failed.sent, 0);
     assert.ok(failed.errors.some((error) => /DeviceNotRegistered/.test(error)));
     let result = await request("/api/operations");
-    assert.equal(result.body.health.find((row) => row.key === "push").status, "error");
+    assert.equal(result.body.health.find((row) => row.key === "push").status, "unconfigured");
     ticketFailure = false;
+    const disabled = (await fs.readFile(path.join(dir, "push-tokens.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
+    assert.ok(disabled.every(device => device.enabled === false));
+    // A real device must register again after the provider expires its token.
+    await fs.writeFile(path.join(dir, "push-tokens.jsonl"), disabled.map(device => JSON.stringify({ ...device, enabled: true })).join("\n") + "\n");
     const accepted = await notifyTeam({ title: "Ticket test", body: "Test", data: { type: "sms", messageId: "SMticket-ok" } });
     assert.equal(accepted.ok, true);
     assert.equal(accepted.sent, 3);
@@ -184,6 +188,30 @@ test("dispatch HTTP contract, reviewer isolation, ownership, policy and provider
     const withFooter = callSelfServiceSmsMessage("Custom instructions. Reply STOP to stop.");
     assert.match(withFooter, /DDD Mobile for Android:[\s\S]+Reply STOP to stop\.$/);
 
+  });
+  await t.test("explicit book-by-text sends all links despite automatic cooldown and deduplicates retries", async () => {
+    const customer = "5135550140";
+    await sendCallStartSmsIfNeeded(customer);
+    const before = sms.length;
+    const body = new URLSearchParams({ CallSid: "CA" + "f".repeat(32), From: "+15135550140", To: "+15134091342", Digits: "1" });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await originalFetch(`${base}/api/twilio/call-menu?secret=test-webhook`, { method: "POST", body });
+      assert.equal(response.status, 200);
+      assert.match(await response.text(), /booking and app links/);
+    }
+    assert.equal(sms.length, before + 1);
+    for (const link of ["https://booking.invalid/request", "https://apps.apple.com/app/id6762315831", "https://play.google.com/store/apps/details?id=com.dddroadside.mobile"]) assert.ok(sms.at(-1).Body.includes(link));
+    smsNetworkFailure = true;
+    const uncertainBody = new URLSearchParams({ CallSid: "CA" + "e".repeat(32), From: "+15135550141", To: "+15134091342", Digits: "1" });
+    const count = sms.length;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await originalFetch(`${base}/api/twilio/call-menu?secret=test-webhook`, { method: "POST", body: uncertainBody });
+      assert.match(await response.text(), /could not confirm/);
+    }
+    smsNetworkFailure = false;
+    assert.equal(sms.length, count + 1);
+    const ledger = JSON.parse(await fs.readFile(path.join(dir, "notification-state.json"), "utf8"));
+    assert.ok(Object.values(ledger.deliveries).some(value => value.status === "uncertain"));
   });
   await t.test("public booking replay cannot recover another record or inject identity/status", async () => {
     const victim = { bookingId: "victim", statusToken: "private-bearer", name: "Existing private customer", phone: "+15135550999", createdAt: new Date().toISOString(), status: "Requested" };

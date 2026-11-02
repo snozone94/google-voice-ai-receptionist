@@ -19,6 +19,8 @@ test("published starting prices parse without inventing prices on a changed page
 
 test("short menu accepts keypad digits during the greeting and has no default AI or team dial", () => {
   const menu = menuTwiml({ action: '/menu?secret=test&repeat=1' });
+  assert.match(menu, /^<Response><Pause length="1"\/>/);
+  assert.match(menu, /Hey, thank you for calling Triple D’s automated system. How can we help you today\?/);
   assert.match(menu, /input="dtmf" numDigits="1" timeout="4" actionOnEmptyResult="true"/);
   assert.match(menu, /Press 1 to book by text. 2 for prices. 3 for an existing booking. Or 4 for the team/);
   assert.match(menu, /secret=test&amp;repeat=1/);

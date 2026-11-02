@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cleanTranscript, callIdResolver, actionableNotification, alertDisplayType, callAttentionEmailKey } from "../src/call-evidence.js";
+import { cleanTranscript, alertEmailPolicy, callIdResolver, actionableNotification, alertDisplayType, callAttentionEmailKey } from "../src/call-evidence.js";
 import { decorateConversations, pendingTextReminders } from "../src/dispatch-workspace.js";
 
 test("completed transcript replaces fragments without deleting later repeated speech", () => {
@@ -74,4 +74,17 @@ test("Expo HTTP-200 ticket errors and missing tickets are never accepted", async
 
 test("all pickup failure types share the root-call email key", () => {
   for (const type of ["openai-accept-failed", "ai-off-missed-call", "early-hangup"]) assert.equal(callAttentionEmailKey({ type, callId: "child", parentCallId: "root" }), "call-attention-email:root");
+});
+
+
+test("email is quiet while push reminders remain independent", () => {
+  assert.deepEqual(alertEmailPolicy({ type: "unanswered-text", from: "+15135550100" }), { send: false });
+  assert.deepEqual(alertEmailPolicy({ type: "call-completed" }), { send: false });
+  const first = alertEmailPolicy({ type: "early-hangup", callId: "call-one", from: "(513) 555-0100" });
+  const repeated = alertEmailPolicy({ type: "customer-voicemail", callId: "call-two", from: "+15135550100" });
+  assert.equal(first.key, repeated.key);
+  assert.equal(first.ttl, 10 * 60000);
+  assert.notEqual(first.key, alertEmailPolicy({ type: "missed-call", from: "+15135550101" }).key);
+  assert.equal(alertEmailPolicy({ type: "sms", from: "+15135550100" }).ttl, 5 * 60000);
+  assert.equal(alertEmailPolicy({ type: "booking", bookingId: "booking" }).send, true);
 });
