@@ -140,28 +140,32 @@ test("dispatch HTTP contract, reviewer isolation, ownership, policy and provider
     const results = await Promise.all([sendCallStartSmsIfNeeded("5135550123"), sendMissedCallSms("+15135550123"), sendCompletedCallSmsIfNeeded("(513) 555-0123")]);
     assert.equal(results.filter((result) => result.ok && !result.skipped).length, 1);
     assert.equal(sms.length, 1);
-    assert.equal((sms[0].Body.match(/https:\/\//g) || []).length, 1);
+    assert.equal((sms[0].Body.match(/https:\/\//g) || []).length, 3);
     assert.match(sms[0].Body, /service, vehicle, and location/);
-    assert.doesNotMatch(sms[0].Body, /apps.apple|play.google/);
-    assert.equal(callSelfServiceSmsMessage("Custom https://apps.apple.com/custom and {{link}}"), "Custom https://apps.apple.com/custom and https://booking.invalid/request");
+    assert.match(sms[0].Body, /DDD Mobile for iPhone:\nhttps:\/\/apps.apple/);
+    assert.match(sms[0].Body, /DDD Mobile for Android:\nhttps:\/\/play.google/);
+    assert.match(callSelfServiceSmsMessage("Custom https://apps.apple.com/custom and {{link}}"), /^Custom https:\/\/apps.apple.com\/custom and https:\/\/booking.invalid\/request/);
     smsNetworkFailure = true;
     await assert.rejects(() => sendCallStartSmsIfNeeded("5135550124"));
     smsNetworkFailure = false;
     assert.equal((await sendCompletedCallSmsIfNeeded("5135550124")).skipped, true);
     assert.equal(sms.length, 2);
   });
-  await t.test("known stock three-link env templates migrate; genuine custom templates and links remain unchanged", async () => {
+  await t.test("stock templates retain both apps with readable lines; custom instructions survive", async () => {
     const booking = "https://dddcincy.com/book-service/";
     const ios = "https://apps.apple.com/app/id6762315831";
     const android = "https://play.google.com/store/apps/details?id=com.dddroadside.mobile";
     for (const opening of ["Thanks for calling DDD.", "Sorry we missed you."]) {
       const old = `${opening} Reply with the service, vehicle, and location, or book here: ${booking} DDD Mobile: iPhone ${ios} Android ${android}`;
       const result = callSelfServiceSmsMessage(old);
-      assert.equal((result.match(/https:\/\//g) || []).length, 1);
-      assert.doesNotMatch(result, /apps.apple|play.google/);
+      assert.equal((result.match(/https:\/\//g) || []).length, 3);
+      assert.ok(result.includes(ios));
+      assert.ok(result.includes(android));
     }
     const custom = "Thanks for calling DDD. Our custom instructions: https://custom.invalid/one and https://custom.invalid/two";
-    assert.equal(callSelfServiceSmsMessage(custom), custom);
+    assert.ok(callSelfServiceSmsMessage(custom).startsWith(custom));
+    assert.ok(callSelfServiceSmsMessage(custom).includes(ios));
+    assert.ok(callSelfServiceSmsMessage(custom).includes(android));
     const allCustom = `Special campaign: ${booking} ${ios} ${android}`;
     assert.equal(callSelfServiceSmsMessage(allCustom), allCustom);
     const previous = process.env.CALL_START_SMS_MESSAGE;
@@ -169,8 +173,17 @@ test("dispatch HTTP contract, reviewer isolation, ownership, policy and provider
     const before = sms.length;
     await sendCallStartSmsIfNeeded("5135550125");
     assert.equal(sms.length, before + 1);
-    assert.equal((sms.at(-1).Body.match(/https:\/\//g) || []).length, 1);
+    assert.equal((sms.at(-1).Body.match(/https:\/\//g) || []).length, 3);
     if (previous === undefined) delete process.env.CALL_START_SMS_MESSAGE; else process.env.CALL_START_SMS_MESSAGE = previous;
+    for (const [send, phone] of [[sendMissedCallSms, "5135550126"], [sendCompletedCallSmsIfNeeded, "5135550127"]]) {
+      await send(phone);
+      assert.ok(sms.at(-1).Body.includes(ios));
+      assert.ok(sms.at(-1).Body.includes(android));
+      assert.equal((sms.at(-1).Body.match(/Reply STOP to stop\./g) || []).length, 1);
+    }
+    const withFooter = callSelfServiceSmsMessage("Custom instructions. Reply STOP to stop.");
+    assert.match(withFooter, /DDD Mobile for Android:[\s\S]+Reply STOP to stop\.$/);
+
   });
   await t.test("public booking replay cannot recover another record or inject identity/status", async () => {
     const victim = { bookingId: "victim", statusToken: "private-bearer", name: "Existing private customer", phone: "+15135550999", createdAt: new Date().toISOString(), status: "Requested" };
