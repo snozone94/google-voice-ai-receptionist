@@ -300,6 +300,9 @@ test("dispatch HTTP contract, reviewer isolation, ownership, policy and provider
     assert.equal(second.ok, true);
     assert.deepEqual(recipients.sort(), ["one@example.test", "two@example.test", "two@example.test"]);
     assert.deepEqual(acceptedRecipients.sort(), ["one@example.test", "two@example.test"]);
+    const upgraded = await notifyTeam({ title: "Voice message", body: "Test", data: { type: "customer-voicemail", callId: "smtp-root", from: "+15135550100" } });
+    assert.equal(upgraded.ok, true);
+    assert.equal(acceptedRecipients.length, 2, "new quiet email keys must honor already-accepted legacy alerts");
     process.env.EMAIL_ALERTS_ENABLED = "false";
   });
   await t.test("SMTP acceptance is preserved when outcome-observation persistence fails", async (child) => {

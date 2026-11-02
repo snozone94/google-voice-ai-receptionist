@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { menuTwiml, parsePublishedPrices, priceSpeech, priceText, mountCallMenu } from "../src/call-menu.js";
+import { menuTwiml, boundedMenuDelivery, parsePublishedPrices, priceSpeech, priceText, mountCallMenu } from "../src/call-menu.js";
 
 test("published starting prices parse without inventing prices on a changed page", () => {
   const prices = parsePublishedPrices('<p>Standard Service Fee: <b>Starting at</b> $25.00+</p><p>Battery jump-start — Starting at $30.00+</p><p>Door unlock — Starting at $40.00+</p><p>Tire plug repair — Starting at $20.00+</p><p>Spare tire change — Starting at $50.00+</p>');
@@ -69,4 +69,14 @@ test("keypad routing books without AI, handles text failures honestly, saves voi
   assert.equal(messages, before + 2);
   menu.recordingCompleted({ query: { menuMessage: "1" }, body: { RecordingStatus: "completed", RecordingDuration: "0" } });
   assert.equal(messages, before + 2);
+});
+
+
+test("slow or failed text delivery cannot hold the call menu open", async () => {
+  let complete;
+  const pending = new Promise(resolve => { complete = resolve; });
+  assert.deepEqual(await boundedMenuDelivery(() => pending, 5), { ok: true, queued: true });
+  complete({ ok: true });
+  assert.deepEqual(await boundedMenuDelivery(() => Promise.reject(new Error("provider offline")), 5), { ok: false });
+  assert.deepEqual(await boundedMenuDelivery(() => ({ ok: true }), 5), { ok: true });
 });
