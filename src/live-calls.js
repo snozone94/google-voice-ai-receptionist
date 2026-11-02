@@ -349,7 +349,7 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
         }
         const record = get(id);
         const recordingUrl = `${recordingCallback}${recordingCallback.includes("?") ? "&" : "?"}call=${encodeURIComponent(id)}`;
-        return `<Response><Dial><Conference participantLabel="customer" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" waitUrl="" record="record-from-start" recordingStatusCallback="${xml(recordingUrl)}" recordingStatusCallbackMethod="POST" statusCallback="${xml(callback(id))}" statusCallbackMethod="POST" statusCallbackEvent="start end join leave">${xml(record.room)}</Conference></Dial><Hangup/></Response>`;
+        return `<Response><Say voice="alice">Thanks for calling Triple D Roadside. One moment while we connect you.</Say><Dial><Conference participantLabel="customer" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" waitUrl="" record="record-from-start" recordingStatusCallback="${xml(recordingUrl)}" recordingStatusCallbackMethod="POST" statusCallback="${xml(callback(id))}" statusCallbackMethod="POST" statusCallbackEvent="start end join leave">${xml(record.room)}</Conference></Dial><Hangup/></Response>`;
       });
     },
     async events(id, event) {
@@ -420,6 +420,29 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
           if (member && (!member.callSid || member.callSid === event.CallSid)) { member.callSid ||= event.CallSid; member.status = event.CallStatus; }
         }
         await persist();
+      });
+    },
+    async assistantUnavailable(id, realtimeId) {
+      await ready;
+      return locked(id, async () => {
+        const record = records[id];
+        if (!active(record) || record.fallbackAttempted || record.aiRealtimeId !== realtimeId || !await callerConnected(record)) return;
+        record.aiState = "unavailable";
+        record.status = "Team needed";
+        // Resolve/cancel existing conference legs before redirecting; never
+        // duplicate a team call that may already be connected.
+        const ai = await findParticipant(record, "ddd-ai");
+        if (ai?.callSid) await conference(record).participants(ai.callSid).remove();
+        for (const [identity, member] of Object.entries(record.staff || {})) {
+          const participant = await findParticipant(record, `staff-${identity}`);
+          const sid = participant?.callSid || member.callSid;
+          if (sid) await client().calls(sid).update({ status: "canceled" });
+          else if (["creating", "uncertain"].includes(member.dialState)) throw failure("Call leg needs provider verification before redirecting.");
+        }
+        record.fallbackAttempted = true;
+        cancelRecovery(id);
+        await persist();
+        await fallback(record);
       });
     },
     async linkAi(id, linkToken, realtimeId) {

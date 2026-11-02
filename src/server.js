@@ -1945,11 +1945,11 @@ async function handleSipWebhook(req, res, next) {
       if (liveSession) await saveCallEvent({ type: "ddd.live.ai-linked", data: { call_id: callId, parent_call_id: liveSession.id, sip_headers: [{ name: "from", value: liveSession.phone }, { name: "to", value: liveSession.businessPhone }] } });
       const callerPhone = liveSession?.phone || getSipHeaderValue(event.data?.sip_headers || [], "from");
       const calledPhone = liveSession?.businessPhone || getSipHeaderValue(event.data?.sip_headers || [], "to");
-      await withNotificationDeadline(notifyTeamTracked({
+      queueTeamNotification({
         title: "New DDD call",
         body: `${formatPhoneForAlert(callerPhone)} is calling DDD AI Dispatch.`,
         data: { type: "call", callId: liveSession?.id || callId || "", from: callerPhone, to: calledPhone, route: "openai-sip" }
-      }, "incoming-openai-sip-call"), "incoming-openai-sip-call");
+      }, "incoming-openai-sip-call");
       queueCallStartSms(callerPhone);
       if (!settings.enabled) {
         console.warn("AI receptionist is off. Incoming call was logged but not accepted.");
@@ -1977,7 +1977,7 @@ async function handleSipWebhook(req, res, next) {
       try {
         await openAIClient().realtime.calls.accept(callId, callAcceptPayload(business, callSettings));
         console.log(`Accepted realtime SIP call ${callId}`);
-        monitorRealtimeCall(callId, { ...callSettings, callerPhone, parentCallId: liveSession?.id });
+        monitorRealtimeCall(callId, { ...callSettings, callerPhone, parentCallId: liveSession?.id, onUnavailable: () => liveSession ? liveCalls.assistantUnavailable(liveSession.id, callId) : Promise.resolve() });
       } catch (acceptError) {
         console.error(`Failed to accept realtime call ${callId}: ${acceptError.message}`);
         await notifyTeamTracked({

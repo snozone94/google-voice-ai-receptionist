@@ -30,9 +30,11 @@ export function monitorRealtimeCall(callId, settings = {}) {
 }
 
 export class CallMonitor {
-  constructor(callId, settings = {}, { Socket = WebSocket, openingTimeoutMs = 15000 } = {}) {
+  constructor(callId, settings = {}, { Socket = WebSocket, openingTimeoutMs = 15000, attachRetryMs = 250 } = {}) {
     this.Socket = Socket;
     this.openingTimeoutMs = openingTimeoutMs;
+    this.attachRetryMs = attachRetryMs;
+    this.attachAttempts = 0;
     this.callId = callId;
     this.settings = settings;
     this.transcript = [];
@@ -42,16 +44,23 @@ export class CallMonitor {
   }
 
   async start() {
+    this.attachAttempts += 1;
     return new Promise((resolve) => {
+      let opened = false;
+      let attachFailed = false;
       const ws = new this.Socket(`wss://api.openai.com/v1/realtime?call_id=${encodeURIComponent(this.callId)}`, {
+        handshakeTimeout: 4000,
         headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          ...(process.env.OPENAI_PROJECT_ID ? { "OpenAI-Project": process.env.OPENAI_PROJECT_ID } : {}),
+          ...(process.env.OPENAI_ORG_ID ? { "OpenAI-Organization": process.env.OPENAI_ORG_ID } : {})
         }
       });
 
       this.ws = ws;
 
       ws.on("open", () => {
+        opened = true;
         console.log(`Realtime monitor attached for call ${this.callId}`);
         if (this.settings.verificationMode) {
           console.log(`Verification capture mode active for call ${this.callId}; skipping greeting.`);
@@ -79,12 +88,20 @@ export class CallMonitor {
       ws.on("close", async () => {
         clearTimeout(this.openingTimer);
         this.opening = null;
-        await this.saveSummary().catch((error) => console.error("Summary save failed", error));
+        if (!opened && attachFailed && !this.stopped && this.attachAttempts < 4) {
+          setTimeout(() => resolve(this.start()), this.attachRetryMs * this.attachAttempts);
+          return;
+        }
+        if (!opened && !this.stopped) {
+          await this.settings.onUnavailable?.().catch((error) => console.error("Caller recovery failed", error.message));
+        }
+        if (opened) await this.saveSummary().catch((error) => console.error("Summary save failed", error));
         resolve();
       });
 
       ws.on("error", (error) => {
-        console.error("Realtime monitor socket failed", error);
+        attachFailed = !opened && /404|429|5\d\d|timeout|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN/i.test(error.message || "");
+        console.error("Realtime monitor socket failed", error.message);
       });
     });
   }
