@@ -9,11 +9,13 @@ export function parsePublishedPrices(html) {
   }));
 }
 export const serviceAvailability = "Our regular business hours are 11 AM to 7 PM. New-tire replacement service is available until 7 PM, subject to tire and technician availability. After 7 PM, tire service is limited to spare-tire changes when a technician is available. Service outside regular hours depends on technician availability; 24/7 service is not guaranteed. All service requests require confirmation.";
+export const shopVisitPolicy = "Shop visits are by confirmed appointment only. A booking request is not a confirmed appointment. Please wait for approval before traveling to the shop. The team will provide your confirmed location and directions with your appointment details.";
+export const tireAvailability = "New-tire replacements are available until 7 PM, subject to tire and technician availability. After 7 PM, tire service is limited to spare-tire changes when a technician is available.";
 export function priceSpeech(prices = {}) {
   const labels = { jump: "A battery jump", unlock: "A door unlock", plug: "A tire plug repair", spare: "A spare tire change" };
   const lines = Object.entries(labels).filter(([key]) => prices[key]).map(([key, label]) => `${label} starts at ${Number((prices[key] + prices.fee).toFixed(2))} dollars total.`);
-  if (!lines.length || !prices.fee) return `Please check the price list in your DDD text for current starting prices. The team confirms your final quote before service. ${serviceAvailability}`;
-  return `These starting totals already include the ${prices.fee} dollar service fee. ${lines.join(" ")} Parts and other charges may apply. The team confirms your final quote before service. The price list is in your DDD text. ${serviceAvailability}`;
+  if (!lines.length || !prices.fee) return `Please check the price list in your DDD text for current starting prices. The team confirms your final quote before service. ${tireAvailability} Press 4 for hours and shop information.`;
+  return `These starting totals already include the ${prices.fee} dollar service fee. ${lines.join(" ")} Parts and other charges may apply. The team confirms your final quote before service. The price list is in your DDD text. ${tireAvailability} Press 4 for hours and shop information.`;
 }
 export function priceText(prices = {}) {
   const labels = { jump: "Jump-start", unlock: "Door unlock", plug: "Tire plug", spare: "Spare tire change" };
@@ -22,7 +24,7 @@ export function priceText(prices = {}) {
   return `DDD starting totals, including the $${prices.fee} service fee for one service:\n\n${lines.join("\n")}\n\nParts and other charges may apply. Final quote confirmed before service.\nMore service details: ${priceListUrl}\n\n${serviceAvailability}`;
 }
 export function menuTwiml({ action, repeat = false }) {
-  return `<Response>${repeat ? "" : '<Pause length="1"/>'}<Gather input="dtmf" numDigits="1" timeout="4" actionOnEmptyResult="true" action="${xml(action)}" method="POST"><Say voice="Polly.Joanna-Neural">${repeat ? "Please choose an option." : "Hey, thank you for calling Triple D’s automated system. How can we help you today?"} Press 1 to book by text. 2 for prices. 3 for an existing booking. Or 4 for the team.</Say></Gather></Response>`;
+  return `<Response>${repeat ? "" : '<Pause length="1"/>'}<Gather input="dtmf" numDigits="1" timeout="4" actionOnEmptyResult="true" action="${xml(action)}" method="POST"><Say voice="Polly.Joanna-Neural">${repeat ? "Please choose an option." : "Hey, thank you for calling Triple D’s automated system. How can we help you today?"} Press 1 to book by text. 2 for prices. 3 for an existing booking. 4 for hours and shop information. Or 5 to reach the team.</Say></Gather></Response>`;
 }
 export async function boundedMenuDelivery(send, waitMs = 1500) {
   let timer;
@@ -63,8 +65,8 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
         return res.type("text/xml").send(`<Response><Say voice="Polly.Joanna-Neural">${saved ? "Your message is saved for the team. Thank you." : "No message was recorded. Please reply to DDD by text so the team can help."}</Say><Hangup/></Response>`);
       }
       const digit = String(req.body.Digits || "");
-      await saveEvent({ type: "twilio.menu.choice", data: { call_id: req.body.CallSid, status: ({ "1": "Booking links requested", "2": "Prices requested", "3": "Booking question", "4": "Team requested", "9": "Assistant requested" })[digit] || "Awaiting selection", sip_headers: headers } });
-      if (digit === "4") {
+      await saveEvent({ type: "twilio.menu.choice", data: { call_id: req.body.CallSid, status: ({ "1": "Booking links requested", "2": "Prices requested", "3": "Booking question", "4": "Hours and shop information requested", "5": "Team requested", "9": "Assistant requested" })[digit] || "Awaiting selection", sip_headers: headers } });
+      if (digit === "5") {
         notify({ title: "DDD customer requesting the team", body: "A caller selected the team. Answer the incoming call.", data: { type: "call", callId: req.body.CallSid, from: phone } }, "menu-team-call");
         const dial = await humanDial(await settings(), { customerPhone: phone, callId: req.body.CallSid, businessPhone: req.body.To || "" });
         return res.type("text/xml").send(/<Dial\b/.test(dial) ? dial : voicemail(req));
@@ -75,7 +77,7 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
       }
       let content;
       if (digit === "1") {
-        const delivery = await boundedMenuDelivery(() => sendBookingLinks(phone, req.body.CallSid));
+        const delivery = await boundedMenuDelivery(() => sendBookingLinks(phone, req.body.CallSid, req.query.info === "hours"));
         content = delivery.queued ? "We are sending the booking and app links by text. You can also book at D D D cincy dot com. The team will confirm your appointment." : delivery.ok ? "Use the booking and app links in your DDD text to request service. Your appointment is confirmed when the team confirms it." : "We could not confirm the booking text. You can book at D D D cincy dot com, or leave a message for the team.";
       } else if (digit === "2") {
         const published = await prices();
@@ -83,6 +85,8 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
         content = priceSpeech(published);
         if (delivery.queued) content = content.replace("The price list is in your DDD text.", "We are sending the price list by text.");
         if (!delivery.ok) content = content.replace(/The price list is in your DDD text\./, "See D D D cincy dot com for the full price list.").replace(/Please check the price list in your DDD text/, "Please check D D D cincy dot com");
+      } else if (digit === "4") {
+        content = `${serviceAvailability} ${shopVisitPolicy} Press 1 to receive booking and shop information by text.`;
       } else if (digit === "3") {
         content = "For booking details, open DDD Mobile using the same phone number or email as your booking. You can leave the team a message here.";
       } else if (req.query.repeat === "1" || req.query.stage === "followup") {
@@ -90,7 +94,7 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
       } else {
         return res.type("text/xml").send(menuTwiml({ action: action(req, { repeat: "1" }), repeat: true }));
       }
-      return res.type("text/xml").send(`<Response><Gather input="dtmf" numDigits="1" timeout="3" actionOnEmptyResult="true" action="${xml(action(req, { stage: "followup" }))}" method="POST"><Say voice="Polly.Joanna-Neural">${xml(content)} Press 4 for the team, or stay on the line to leave a message.</Say></Gather></Response>`);
+      return res.type("text/xml").send(`<Response><Gather input="dtmf" numDigits="1" timeout="3" actionOnEmptyResult="true" action="${xml(action(req, { stage: "followup", ...(digit === "4" ? { info: "hours" } : {}) }))}" method="POST"><Say voice="Polly.Joanna-Neural">${xml(content)} Press 5 to reach the team, or stay on the line to leave a message.</Say></Gather></Response>`);
     } catch (error) {
       console.error("Phone menu request failed", error.message);
       if (!res.headersSent) return res.status(200).type("text/xml").send(`<Response><Say voice="Polly.Joanna-Neural">Sorry, we could not finish that step. You can book at D D D cincy dot com, or leave the team a message.</Say>${message(req)}</Response>`);

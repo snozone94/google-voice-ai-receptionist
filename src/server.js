@@ -1,5 +1,5 @@
 import { mountReplyPolish } from "./reply-polish.js";
-import { mountCallMenu, priceText } from "./call-menu.js";
+import { mountCallMenu, priceText, serviceAvailability, shopVisitPolicy } from "./call-menu.js";
 import "dotenv/config";
 import crypto from "node:crypto";
 import express from "express";
@@ -189,8 +189,8 @@ const liveCalls = createLiveCalls({ directory: dataDir, startTranscription: (id)
 
 const callMenu = mountCallMenu(app, {
   express, authenticate: hasTwilioSmsAccess, settings: loadReceptionistSettings, saveEvent: saveCallEvent,
-  sendBookingLinks: async (phone, callId) => notificationLedger.deliver(`menu-booking-links:${callId}`, async () => {
-    const message = appendStopFooter(defaultCallerSelfServiceSms());
+  sendBookingLinks: async (phone, callId, includeShopInfo = false) => notificationLedger.deliver(`menu-booking-links:${callId}${includeShopInfo ? ":hours" : ""}`, async () => {
+    const message = appendStopFooter(`${defaultCallerSelfServiceSms()}${includeShopInfo ? `\n\n${serviceAvailability}\n\n${shopVisitPolicy}` : ""}`);
     let delivery;
     try { delivery = await sendTwilioSms(phone, message); }
     catch (error) { error.uncertain = true; throw error; }
