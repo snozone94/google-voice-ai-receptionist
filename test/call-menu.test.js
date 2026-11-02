@@ -96,3 +96,20 @@ test("slow or failed text delivery cannot hold the call menu open", async () => 
   assert.deepEqual(await boundedMenuDelivery(() => Promise.reject(new Error("provider offline")), 5), { ok: false });
   assert.deepEqual(await boundedMenuDelivery(() => ({ ok: true }), 5), { ok: true });
 });
+
+test('verified booking flow is behind provider authentication and returns team calls to the normal last-option route', async () => {
+  let handler, lookups = 0, team = 0;
+  mountCallMenu({ post(_path, _parser, route) { handler = route; } }, {
+    express: { urlencoded: () => null }, authenticate: req => req.allowed,
+    settings: async () => ({}), saveEvent: async () => {}, notify: () => {},
+    bookingSelfService: async req => { lookups++; return req.body.Digits === '5' ? { team: true } : '<Response><Say>Verify your booking</Say></Response>'; },
+    humanDial: async () => { team++; return '<Response><Dial>team</Dial></Response>'; }
+  });
+  async function request(allowed, stage, Digits) {
+    const res = { code: 200, status(code) { this.code = code; return this; }, type() { return this; }, send(text) { this.text = text; return this; } };
+    await handler({ allowed, query: { stage }, body: { CallSid: 'CA' + 'b'.repeat(32), From: '+15135550100', To: '+15134091342', Digits } }, res, error => { throw error; }); return res;
+  }
+  assert.equal((await request(false, '', '3')).code, 403); assert.equal(lookups, 0);
+  assert.match((await request(true, '', '3')).text, /Verify your booking/);
+  assert.match((await request(true, 'booking-action', '5')).text, /<Dial>/); assert.equal(team, 1);
+});
