@@ -22,7 +22,7 @@ async function fixture(t, overrides = {}) {
   let failUnmute = false;
   const participants = (sid) => ({ update: async (patch) => { actions.push(["update", sid, patch]); if (failUnmute && patch.muted === false && sid !== "ai-leg") throw new Error("phone disconnected"); }, fetch: async () => { throw Object.assign(new Error("not found"), { status: 404 }); }, remove: async () => { actions.push(["remove", sid]); } });
   participants.create = async (options) => { actions.push(["create", options]); return { callSid: options.label === "ddd-ai" ? "ai-leg" : options.label }; };
-  const dependencies = { directory, client: () => ({ conferences: () => ({ participants }), calls: () => ({ fetch: async () => ({ status: "in-progress" }), update: async () => {} }) }), baseUrl: () => "https://dispatch.example.test", routingIdentities: async () => ["tech-one"], saveCallEvent: async (event) => actions.push(["event", event]), stopAssistant: () => actions.push(["stop-ai"]) };
+  const dependencies = { directory, client: () => ({ conferences: () => ({ participants }), calls: (sid) => ({ fetch: async () => ({ status: "in-progress" }), update: async (patch) => { actions.push(["call-update", sid, patch]); } }) }), baseUrl: () => "https://dispatch.example.test", routingIdentities: async () => ["tech-one"], saveCallEvent: async (event) => actions.push(["event", event]), stopAssistant: () => actions.push(["stop-ai"]) };
   Object.assign(dependencies, overrides);
   const calls = createLiveCalls(dependencies);
   t.after(async () => { await calls.close(); await fs.rm(directory, { recursive: true, force: true }); });
@@ -380,7 +380,7 @@ test("callers hear a carrier greeting before the AI conference is established", 
 
 test("unavailable AI control recovers only the matching active call and does not redirect twice", async t => {
   let redirected = 0;
-  const { calls, dependencies } = await fixture(t, { fallback: async () => { redirected++; } });
+  const { calls, dependencies, actions } = await fixture(t, { fallback: async () => { redirected++; } });
   // A mismatched/stale sideband cannot redirect another call.
   await calls.assistantUnavailable(id, "wrong");
   assert.equal(redirected, 0);
@@ -389,4 +389,5 @@ test("unavailable AI control recovers only the matching active call and does not
   await calls.assistantUnavailable(id, "rt-current");
   await calls.assistantUnavailable(id, "rt-current");
   assert.equal(redirected, 1);
+  assert.ok(actions.some(([kind, sid, patch]) => kind === "call-update" && sid === "staff-tech-one" && patch.status === "completed"));
 });
