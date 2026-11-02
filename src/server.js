@@ -1,3 +1,4 @@
+import { createBookingPhone } from "./booking-phone.js";
 import { mountReplyPolish } from "./reply-polish.js";
 import { mountCallMenu, priceText, serviceAvailability, shopVisitPolicy } from "./call-menu.js";
 import "dotenv/config";
@@ -28,6 +29,7 @@ import {
   listSms,
   listBookings,
   listBookingsByPhone,
+  getCustomerHistory,
   listCallLog,
   listLeads,
   listPushTokens,
@@ -187,8 +189,33 @@ const liveCalls = createLiveCalls({ directory: dataDir, startTranscription: (id)
   await twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN).calls(record.id).update({ twiml: response });
 } });
 
+const bookingPhone = createBookingPhone({
+  directory: dataDir,
+  lookup: phone => getCustomerHistory(phone, 12),
+  voicemail: req => callMenu.voicemail(req),
+  sendCode: (phone, callId, code) => notificationLedger.deliver(`booking-verification:${callId}`, async () => {
+    try { return await sendTwilioSms(phone, `DDD booking verification code: ${code}. Expires in 10 minutes. Enter it only on your current DDD call. Do not share this code.`); }
+    catch (error) { error.uncertain = true; throw error; }
+  }, { ttl: 10 * 60000, holdOnUncertain: true }),
+  publishRequest: request => notificationLedger.deliver(`booking-change-inbox:${request.id}`, async () => {
+    const label = ({ reschedule: "Reschedule", cancel: "Cancellation", add_notes: "Booking update" })[request.type];
+    await saveIncomingSms({ From: request.phone, To: request.businessPhone, MessageSid: request.id, Body: `${label} requested by verified caller. Pending team review.\nService: ${request.booking.serviceType || "Service"}\nCurrent appointment: ${request.booking.serviceTime || request.booking.preferredTime || "Time awaiting confirmation"}\nBooking: ${request.booking.bookingId || "Match by caller and appointment details"}\n${request.details ? `Requested update: ${request.details}\n` : ""}Original appointment remains unchanged. Reply to the customer after reviewing availability. Reference: ${request.id}` });
+    queueTeamNotification({ title: `DDD ${label.toLowerCase()} request`, body: "A verified customer requested a booking change. Review their conversation and confirm the outcome.", data: { type: "booking", from: request.phone, callId: request.callId, requestId: request.id } }, "phone-booking-change");
+    return { ok: true };
+  }, { ttl: 30 * 86400000, holdOnUncertain: true }),
+  sendReceipt: request => notificationLedger.deliver(`booking-change-receipt:${request.id}`, async () => {
+    const label = ({ reschedule: "reschedule", cancel: "cancellation", add_notes: "booking update" })[request.type];
+    const body = appendStopFooter(`DDD received your ${label} request${request.details ? `: ${request.details}` : "."}\nYour original appointment remains unchanged until the team confirms the outcome. Service depends on technician availability.`);
+    let delivery;
+    try { delivery = await sendTwilioSms(request.phone, body); }
+    catch (error) { error.uncertain = true; throw error; }
+    await saveOutgoingSms({ to: request.phone, from: request.businessPhone, body, messageSid: delivery.sid || "", status: delivery.status || (delivery.ok ? "sent" : "failed"), source: "booking_change_receipt", agentName: "DDD booking updates" });
+    return delivery;
+  }, { ttl: 30 * 86400000, holdOnUncertain: true })
+});
+
 const callMenu = mountCallMenu(app, {
-  express, authenticate: hasTwilioSmsAccess, settings: loadReceptionistSettings, saveEvent: saveCallEvent,
+  express, authenticate: hasTwilioSmsAccess, settings: loadReceptionistSettings, saveEvent: saveCallEvent, bookingSelfService: req => bookingPhone.handle(req),
   sendBookingLinks: async (phone, callId, includeShopInfo = false) => notificationLedger.deliver(`menu-booking-links:${callId}${includeShopInfo ? ":hours" : ""}`, async () => {
     const message = appendStopFooter(`${defaultCallerSelfServiceSms()}${includeShopInfo ? `\n\n${serviceAvailability}\n\n${shopVisitPolicy}` : "\n\nShop visits require an approved appointment. Please wait for confirmation before traveling to the shop."}`);
     let delivery;

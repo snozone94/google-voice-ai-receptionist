@@ -851,6 +851,9 @@ export async function getCustomerHistory(phone, limit = 8) {
     returningCustomer: bookings.length > 0,
     source: platformHistory.bookings.length ? "ddd-platform-and-ai" : "ai-dispatch",
     bookings: bookings.map((booking) => ({
+      bookingId: booking.bookingId,
+      serviceTime: booking.serviceTime,
+      source: booking.source,
       createdAt: booking.createdAt,
       name: booking.name,
       serviceType: booking.serviceType,

@@ -35,7 +35,7 @@ export async function boundedMenuDelivery(send, waitMs = 1500) {
     ]);
   } finally { clearTimeout(timer); }
 }
-export function mountCallMenu(app, { express, authenticate, settings, saveEvent, sendBookingLinks, sendPriceLink, humanDial, notify, bypassAssistant, menuEnabled }) {
+export function mountCallMenu(app, { express, authenticate, settings, saveEvent, sendBookingLinks, sendPriceLink, humanDial, notify, bypassAssistant, menuEnabled, bookingSelfService }) {
   let priceCache;
   async function prices() {
     if (priceCache && priceCache.expires > Date.now()) return priceCache.value;
@@ -54,6 +54,12 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
     try {
       if (!authenticate(req)) return res.status(403).send("Forbidden");
       if (!/^CA[0-9a-f]{32}$/i.test(req.body.CallSid || "")) return res.status(400).send("Invalid call");
+      if (bookingSelfService && (String(req.query.stage || "").startsWith("booking-") || String(req.body.Digits || "") === "3" && !req.query.stage)) {
+        const result = await bookingSelfService(req);
+        if (typeof result === "string") return res.type("text/xml").send(result);
+        req = { ...req, query: { ...req.query, stage: "" }, body: { ...req.body, Digits: result?.team ? "5" : "9" } };
+        if (!result?.team) return res.type("text/xml").send(menuTwiml({ action: action(req) }));
+      }
       const phone = req.body.From || "";
       const headers = [{ name: "from", value: phone }, { name: "to", value: req.body.To || "" }];
       if (req.query.stage === "saved") {
