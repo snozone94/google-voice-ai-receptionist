@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { mountNativeVoice, voiceNumber, voiceIdentity } from "../src/native-voice.js";
+import { mountNativeVoice, voiceNumber, voiceIdentity, usesNativeIncomingCall } from "../src/native-voice.js";
 
 test("voice numbers normalize and staff identities do not reveal credentials", () => {
   assert.equal(voiceNumber("(513) 409-1342"), "+15134091342");
@@ -69,4 +69,19 @@ test("native credential setup is admin-only, idempotent and encrypted at rest", 
     Object.assign(process.env, previous);
     await fs.rm(directory, { recursive: true, force: true });
   }
+});
+
+
+test("registered iPhones use native incoming calls instead of a duplicate regular push", () => {
+  const iphone = { platform: "ios", token: "ExponentPushToken[phone]", staffId: "one", staffName: "Bria" };
+  const identities = [voiceIdentity({ id: "one" })];
+  assert.equal(usesNativeIncomingCall(iphone, identities), true);
+  assert.equal(usesNativeIncomingCall(iphone, []), false);
+  assert.equal(usesNativeIncomingCall({ ...iphone, staffId: "two" }, identities), false);
+  assert.equal(usesNativeIncomingCall({ ...iphone, platform: "android" }, identities), false);
+  assert.equal(usesNativeIncomingCall({ ...iphone, platform: "web", token: "" }, identities), false);
+  assert.equal(usesNativeIncomingCall({ platform: "ios", token: iphone.token }, identities), false);
+  assert.equal(usesNativeIncomingCall({ ...iphone, token: "invalid" }, identities), false);
+  const legacy = { ...iphone, staffId: "" };
+  assert.equal(usesNativeIncomingCall(legacy, [voiceIdentity({ name: "Bria" })]), true);
 });
