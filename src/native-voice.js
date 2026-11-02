@@ -38,7 +38,7 @@ export function nativeVoiceStatus() {
 
 export function configuredAiSipUri() { return configuration().TWILIO_VOICE_AI_SIP_URI || ""; }
 
-export function mountNativeVoice(app, { express, authenticate, directory, callerIds, saveCallEvent, getLiveCalls = () => null, getCallTranscripts = () => null, createClient = twilio }) {
+export function mountNativeVoice(app, { express, authenticate, directory, callerIds, saveCallEvent, getLiveCalls = () => null, getCallTranscripts = () => null, onHumanNoAnswer, createClient = twilio }) {
   const file = path.join(directory, "voice-sessions.json");
   const configFile = path.join(directory, "voice-connection.enc.json");
   let provisioning;
@@ -238,9 +238,9 @@ export function mountNativeVoice(app, { express, authenticate, directory, caller
       res.sendStatus(204);
     } catch (error) { next(error); }
   });
-  app.post("/api/voice/human-result", express.urlencoded({ extended: false }), signedTwilio, (req, res) => {
+  app.post("/api/voice/human-result", express.urlencoded({ extended: false }), signedTwilio, async (req, res) => {
     const completed = req.body.DialCallStatus === "completed";
-    res.type("text/xml").send(completed ? "<Response><Hangup/></Response>" : "<Response><Say>We could not reach the team. Please reply to DDD by text and we will follow up.</Say><Hangup/></Response>");
+    res.type("text/xml").send(completed ? "<Response><Hangup/></Response>" : onHumanNoAnswer ? await onHumanNoAnswer(req) : "<Response><Say>We could not reach the team. Please reply to DDD by text and we will follow up.</Say><Hangup/></Response>");
   });
   app.get("/api/live-calls/config", staffOnly, async (_req, res, next) => {
     if (res.locals.staff.role !== "admin") return res.status(403).json({ error: "Admin access required." });

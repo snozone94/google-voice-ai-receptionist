@@ -45,7 +45,7 @@ const defaultBusinessKnowledge =
   "DDD Mobile is a woman-owned Cincinnati mobile roadside and light mobile maintenance service. DDD helps with jump starts, battery installs, lockouts, fuel delivery, tire inflation, tire plugs, spare tire changes, oil change requests, brake pads, rotors, bolt-in hub bearing requests, light mobile maintenance, DDD Mobile app/status help, DDD Auto Doc vehicle guidance, booking help, existing booking messages, and apply-to-work questions. DDD does not tow. Accepted payment methods are cash, card, tap pay, and installments. No checks. Use dddcincy.com links only for DDD Mobile, DDD Mobile app/status, DDD Auto Doc, roadside service booking, emergency service requests, shop roadside services, and apply-to-work requests. The receptionist should push callers toward booking/status/apply quickly instead of holding long conversations. If pricing, exact availability, or service-area details are unknown, collect details and say the DDD team will confirm.";
 const defaultServiceArea = "Greater Cincinnati, Liberty Township, Northern Kentucky, and nearby tri-state areas DDD confirms case by case.";
 const defaultPricingNotes =
-  "Public starting points only, not final quotes: standard service fee $25, gas by the gallon $10, 5-gallon fuel refill $35, tire inflation $15, tire plug $20, spare tire change $50, battery jump-start $30, battery installation $40, door unlock $40, oil change labor $25 when customer provides oil/filter, brake pads $50 per axle or listed per-wheel/all-wheel options, rotor add-on +$20 per axle, rotor replacement only $50 per axle, full brake pad replacement four wheels $200, brake and rotor all wheels $280, bolt-in hub bearing $200 per axle. For brakes/rotors/tires, confirm quantity or position before giving a starting estimate. Accepted payment methods: cash, card, tap pay, and installments. No checks. Say DDD will confirm final price before service.";
+  "Public starting points only, not final quotes: standard service fee $25, gas by the gallon $10, 5-gallon fuel refill $35, tire inflation $15, tire plug $20, spare tire change $50, battery jump-start $30, battery installation $40, door unlock $40, oil change labor $25 when customer provides oil/filter, brake pads $50 per wheel or listed per-wheel/all-wheel options, rotor add-on +$20 per wheel, rotor replacement only $50 per wheel, full brake pad replacement four wheels $200, brake and rotor all wheels $280, bolt-in hub bearing $200 per wheel. For brakes/rotors/tires, confirm quantity or position before giving a starting estimate. Accepted payment methods: cash, card, tap pay, and installments. No checks. Say DDD will confirm final price before service.";
 const defaultEmergencyInstructions =
   "For stranded or urgent roadside callers, be extremely brief. Ask if they are safe, get exact location, vehicle year/make/model/color, what happened, callback number, and whether they can receive a text. Then direct them to the emergency service request option and save the lead.";
 const defaultHumanHandoffRules =
@@ -2388,7 +2388,7 @@ function estimateStartingPrice(message) {
     return "Brake pads and rotors all four wheels start around $280 before final confirmation.";
   }
   if (/brake|pads/.test(message) && /rotor/.test(message) && /front|rear|back|axle/.test(message)) {
-    return "Brake pads start around $50 per axle, plus rotor add-on around $20 per axle, so one axle starts around $70 before final confirmation.";
+    return "Brake pads start around $50 per wheel, plus rotor add-on around $20 per wheel, so one axle starts around $70 before final confirmation.";
   }
   if (/brake|pads/.test(message) && /all four|4|four|all wheels|both axles/.test(message)) {
     return "Full brake pad replacement for four wheels starts around $200 before final confirmation.";
@@ -2397,10 +2397,10 @@ function estimateStartingPrice(message) {
     return "Rotor replacement for both axles starts around $100 before final confirmation.";
   }
   if (/brake|pads/.test(message) && /front|rear|back|axle/.test(message)) {
-    return "Brake pads start around $50 per axle before final confirmation.";
+    return "Brake pads start around $50 per wheel before final confirmation.";
   }
   if (/rotor/.test(message) && /front|rear|back|axle/.test(message)) {
-    return "Rotor replacement starts around $50 per axle, or rotor add-on starts around $20 per axle before final confirmation.";
+    return "Rotor replacement starts around $50 per wheel, or rotor add-on starts around $20 per wheel before final confirmation.";
   }
   if (/tire plug|plug/.test(message) && /\btwo\b|\b2\b/.test(message)) {
     return "Tire plugs start around $20 per tire, so two starts around $40 before final confirmation.";

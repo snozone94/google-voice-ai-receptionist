@@ -1,3 +1,4 @@
+import { mountCallMenu, priceListUrl } from "./call-menu.js";
 import "dotenv/config";
 import crypto from "node:crypto";
 import express from "express";
@@ -178,11 +179,23 @@ function openAIClient() {
 }
 
 const callTranscripts = createCallTranscripts({ directory: dataDir });
-const nativeVoice = mountNativeVoice(app, { express, authenticate: getStaffAccess, directory: dataDir, callerIds: outboundCallerIds, saveCallEvent, getLiveCalls: () => liveCalls, getCallTranscripts: () => callTranscripts });
+const nativeVoice = mountNativeVoice(app, { express, authenticate: getStaffAccess, directory: dataDir, callerIds: outboundCallerIds, saveCallEvent, getLiveCalls: () => liveCalls, getCallTranscripts: () => callTranscripts, onHumanNoAnswer: req => callMenu.voicemail(req) });
 const liveCalls = createLiveCalls({ directory: dataDir, startTranscription: (id) => callTranscripts.start(id), getTranscription: (id) => callTranscripts.get(id), routingIdentities: () => nativeVoice.routingIdentities(), saveCallEvent, transcript: listLiveCalls, stopAssistant: stopRealtimeAssistant, notify: (alert) => notifyTeamTracked(alert, "live-call-needs-team"), fallback: async (record) => {
   const response = await buildHumanDialTwiml(await loadReceptionistSettings(), { customerPhone: record.phone });
   await twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN).calls(record.id).update({ twiml: response });
 } });
+
+const callMenu = mountCallMenu(app, {
+  express, authenticate: hasTwilioSmsAccess, settings: loadReceptionistSettings, saveEvent: saveCallEvent,
+  sendBookingLinks: sendCallStartSmsIfNeeded, humanDial: buildHumanDialTwiml, notify: queueTeamNotification,
+  bypassAssistant: handleTwilioVoice, menuEnabled: async () => (await liveCalls.config()).menuFirst !== false,
+  sendPriceLink: async (phone, callId) => notificationLedger.deliver(`menu-prices:${callId}`, async () => {
+    const message = appendStopFooter(`DDD starting prices and service details:\n${priceListUrl}\n\nThe team confirms your final quote before service.`);
+    const delivery = await sendTwilioSms(phone, message);
+    await saveOutgoingSms({ to: phone, from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "", body: message, messageSid: delivery.sid || "", status: delivery.status || (delivery.ok ? "sent" : "failed"), source: "call_menu_prices", agentName: "DDD price list", errorCode: delivery.code || "", errorMessage: delivery.error || "" });
+    return delivery;
+  }, { ttl: 86400000 })
+});
 
 app.get("/vendor/twilio-voice.js", (_req, res) => res.sendFile(path.join(root, "node_modules/@twilio/voice-sdk/dist/twilio.min.js")));
 
@@ -1148,6 +1161,10 @@ async function handleTwilioVoice(req, res, next) {
       }
     });
     queueCallStartSms(req.body?.From || req.query?.From || "");
+    if (!req.dddMenuBypass && await callMenu.enabled()) {
+      res.type("text/xml").send(callMenu.render(req));
+      return;
+    }
     queueTeamNotification({
       title: "New DDD call",
       body: `${formatPhoneForAlert(req.body?.From || req.query?.From)} is calling DDD AI Dispatch.`,

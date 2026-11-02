@@ -11,7 +11,7 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
   const file = path.join(directory, "live-call-sessions.json");
   const configFile = path.join(directory, "live-call-options.json");
   let records = {};
-  let options = { enabled: false, ringTeam: true, transcribeCalls: true };
+  let options = { enabled: false, ringTeam: true, transcribeCalls: true, menuFirst: true };
   let writes = Promise.resolve();
   const locks = new Map();
   const pendingAiAlerts = new Map();
@@ -328,7 +328,7 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
     async config(patch) {
       await ready;
       if (patch) {
-        const next = { enabled: patch.enabled === true, ringTeam: patch.ringTeam !== false, transcribeCalls: patch.transcribeCalls === undefined ? options.transcribeCalls : patch.transcribeCalls === true };
+        const next = { menuFirst: patch.menuFirst === undefined ? options.menuFirst : patch.menuFirst === true, enabled: patch.enabled === true, ringTeam: patch.ringTeam !== false, transcribeCalls: patch.transcribeCalls === undefined ? options.transcribeCalls : patch.transcribeCalls === true };
         await fs.mkdir(directory, { recursive: true });
         await fs.writeFile(`${configFile}.tmp`, JSON.stringify(next), { mode: 0o600 });
         await fs.rename(`${configFile}.tmp`, configFile);

@@ -32,12 +32,12 @@ export function actionableNotification(data = {}) {
 }
 
 export function alertDisplayType(type = "") {
-  return ({ "ai-pickup-failed": "Call needs a team member", "early-hangup": "Caller hung up early", "missed-call": "Missed call", "call-completed": "Call completed", sms: "New customer text", "unanswered-text": "Customer awaiting a reply", booking: "Booking update", "staff-text-reply": "Text delivery update", "staff-outbound-call": "Outgoing call update" })[type] || "Dispatch update";
+  return ({ "ai-pickup-failed": "Call needs a team member", "early-hangup": "Caller hung up early", "missed-call": "Missed call", "call-completed": "Call completed", sms: "New customer text", "unanswered-text": "Customer awaiting a reply", booking: "Booking update", "customer-voicemail": "New voice message", "staff-text-reply": "Text delivery update", "staff-outbound-call": "Outgoing call update" })[type] || "Dispatch update";
 }
 
 export function callAttentionEmailKey(data = {}) {
   const callId = data.parentCallId || data.callId;
-  return callId && ["ai-pickup-failed", "openai-accept-failed", "ai-off-missed-call", "early-hangup", "missed-call"].includes(data.type)
+  return callId && ["ai-pickup-failed", "openai-accept-failed", "ai-off-missed-call", "early-hangup", "missed-call", "customer-voicemail"].includes(data.type)
     ? `call-attention-email:${callId}` : null;
 }
 
@@ -47,6 +47,7 @@ export function notificationPreference(data = {}) {
   if (data.type === "unanswered-text") return "texts";
   if (data.type === "booking") return "bookings";
   if (data.type === "call") return "newCalls";
+  if (data.type === "customer-voicemail") return "missedCalls";
   if (/missed|hangup|pickup|ai-off/.test(data.type || "")) return "missedCalls";
   if (["staff-text-reply", "staff-outbound-call", "call-completed"].includes(data.type) && !/failed|undelivered/.test(data.status || "")) return "teamActivity";
   return "qaIssues";
