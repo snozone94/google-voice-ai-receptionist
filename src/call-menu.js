@@ -8,17 +8,18 @@ export function parsePublishedPrices(html) {
     return match && Number(match[1]) > 0 ? [[key, Number(match[1])]] : [];
   }));
 }
+export const serviceAvailability = "Our regular business hours are 11 AM to 7 PM. New-tire replacement service is available until 7 PM, subject to tire and technician availability. After 7 PM, tire service is limited to spare-tire changes when a technician is available. Service outside regular hours depends on technician availability; 24/7 service is not guaranteed. All service requests require confirmation.";
 export function priceSpeech(prices = {}) {
   const labels = { jump: "A battery jump", unlock: "A door unlock", plug: "A tire plug repair", spare: "A spare tire change" };
   const lines = Object.entries(labels).filter(([key]) => prices[key]).map(([key, label]) => `${label} starts at ${Number((prices[key] + prices.fee).toFixed(2))} dollars total.`);
-  if (!lines.length || !prices.fee) return "Please check the price list in your DDD text for current starting prices. The team confirms your final quote before service.";
-  return `These starting totals already include the ${prices.fee} dollar service fee. ${lines.join(" ")} Parts and other charges may apply. The team confirms your final quote before service. The price list is in your DDD text.`;
+  if (!lines.length || !prices.fee) return `Please check the price list in your DDD text for current starting prices. The team confirms your final quote before service. ${serviceAvailability}`;
+  return `These starting totals already include the ${prices.fee} dollar service fee. ${lines.join(" ")} Parts and other charges may apply. The team confirms your final quote before service. The price list is in your DDD text. ${serviceAvailability}`;
 }
 export function priceText(prices = {}) {
   const labels = { jump: "Jump-start", unlock: "Door unlock", plug: "Tire plug", spare: "Spare tire change" };
-  if (!prices.fee || !Object.keys(labels).some(key => prices[key])) return `DDD current service prices:\n${priceListUrl}\nThe team confirms your total, including the service fee, before service.`;
+  if (!prices.fee || !Object.keys(labels).some(key => prices[key])) return `DDD current service prices:\n${priceListUrl}\nThe team confirms your total, including the service fee, before service.\n\n${serviceAvailability}`;
   const lines = Object.entries(labels).filter(([key]) => prices[key]).map(([key, label]) => `${label}: from $${Number((prices[key] + prices.fee).toFixed(2))} total`);
-  return `DDD starting totals, including the $${prices.fee} service fee for one service:\n\n${lines.join("\n")}\n\nParts and other charges may apply. Final quote confirmed before service.\nMore service details: ${priceListUrl}`;
+  return `DDD starting totals, including the $${prices.fee} service fee for one service:\n\n${lines.join("\n")}\n\nParts and other charges may apply. Final quote confirmed before service.\nMore service details: ${priceListUrl}\n\n${serviceAvailability}`;
 }
 export function menuTwiml({ action, repeat = false }) {
   return `<Response>${repeat ? "" : '<Pause length="1"/>'}<Gather input="dtmf" numDigits="1" timeout="4" actionOnEmptyResult="true" action="${xml(action)}" method="POST"><Say voice="Polly.Joanna-Neural">${repeat ? "Please choose an option." : "Hey, thank you for calling Triple D’s automated system. How can we help you today?"} Press 1 to book by text. 2 for prices. 3 for an existing booking. Or 4 for the team.</Say></Gather></Response>`;
