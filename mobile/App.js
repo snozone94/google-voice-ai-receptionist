@@ -1626,7 +1626,7 @@ function ConversationCard({ keyboardVisible, onPolish, onRead, staff, team, isAd
         {(conversation.calls || []).map((call, index) => <View key={call.callId || call.callSid || index} style={styles.listCard}><Text style={styles.record}>Call · {formatDateTime(call.createdAt || call.startedAt)} · {call.status || "Logged"}</Text><Text selectable style={styles.record}>{formatCallTranscript(call) || call.summary || "No transcript available"}</Text></View>)}
         {(conversation.bookings || []).map((item, index) => <BookingCard key={item.bookingId || item.id || index} booking={item} />)}
       </ScrollView>
-      <ActionButton label="Latest" variant="light" onPress={() => { onRead(); initialPositionRef.current = true; messageScrollRef.current?.scrollToEnd({ animated: true }); }} />
+      {!keyboardVisible ? <ActionButton label="Latest" variant="light" onPress={() => { onRead(); initialPositionRef.current = true; messageScrollRef.current?.scrollToEnd({ animated: true }); }} /> : null}
       {suggestionsOpen ? <View style={styles.quickReplyGrid}>
         {(moreReplies ? quickReplies : quickReplies.slice(0, 4)).map((reply) => (
           <Pressable key={reply.label} onPress={() => { onDraftChange(customerPhone, reply.text); setSuggestionsOpen(false); setMoreReplies(false); }} style={styles.quickReplyButton}>
