@@ -51,6 +51,7 @@ export function notificationState(directory) {
         return initialTimestamp;
       });
     },
+    deliveryStatus(key) { return update(state => state.deliveries[hash(key)]?.status || ""); },
     hasClaim(key) { return update((state) => Boolean(state.claims[hash(key)])); },
     claim(key, ttl = 86400000) {
       return update((state, now) => {

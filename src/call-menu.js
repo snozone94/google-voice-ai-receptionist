@@ -23,6 +23,15 @@ export function priceText(prices = {}) {
 export function menuTwiml({ action, repeat = false }) {
   return `<Response>${repeat ? "" : '<Pause length="1"/>'}<Gather input="dtmf" numDigits="1" timeout="4" actionOnEmptyResult="true" action="${xml(action)}" method="POST"><Say voice="Polly.Joanna-Neural">${repeat ? "Please choose an option." : "Hey, thank you for calling Triple D’s automated system. How can we help you today?"} Press 1 to book by text. 2 for prices. 3 for an existing booking. Or 4 for the team.</Say></Gather></Response>`;
 }
+export async function boundedMenuDelivery(send, waitMs = 1500) {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(send).catch(() => ({ ok: false })),
+      new Promise(resolve => { timer = setTimeout(() => resolve({ ok: true, queued: true }), waitMs); })
+    ]);
+  } finally { clearTimeout(timer); }
+}
 export function mountCallMenu(app, { express, authenticate, settings, saveEvent, sendBookingLinks, sendPriceLink, humanDial, notify, bypassAssistant, menuEnabled }) {
   let priceCache;
   async function prices() {
@@ -65,12 +74,13 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
       }
       let content;
       if (digit === "1") {
-        const delivery = await sendBookingLinks(phone, req.body.CallSid).catch(() => ({ ok: false }));
-        content = delivery.ok ? "Use the booking and app links in your DDD text to request service. Your appointment is confirmed when the team confirms it." : "We could not confirm the booking text. You can book at D D D cincy dot com, or leave a message for the team.";
+        const delivery = await boundedMenuDelivery(() => sendBookingLinks(phone, req.body.CallSid));
+        content = delivery.queued ? "We are sending the booking and app links by text. You can also book at D D D cincy dot com. The team will confirm your appointment." : delivery.ok ? "Use the booking and app links in your DDD text to request service. Your appointment is confirmed when the team confirms it." : "We could not confirm the booking text. You can book at D D D cincy dot com, or leave a message for the team.";
       } else if (digit === "2") {
         const published = await prices();
-        const delivery = await sendPriceLink(phone, req.body.CallSid, published).catch(() => ({ ok: false }));
+        const delivery = await boundedMenuDelivery(() => sendPriceLink(phone, req.body.CallSid, published));
         content = priceSpeech(published);
+        if (delivery.queued) content = content.replace("The price list is in your DDD text.", "We are sending the price list by text.");
         if (!delivery.ok) content = content.replace(/The price list is in your DDD text\./, "See D D D cincy dot com for the full price list.").replace(/Please check the price list in your DDD text/, "Please check D D D cincy dot com");
       } else if (digit === "3") {
         content = "For booking details, open DDD Mobile using the same phone number or email as your booking. You can leave the team a message here.";
@@ -80,7 +90,10 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
         return res.type("text/xml").send(menuTwiml({ action: action(req, { repeat: "1" }), repeat: true }));
       }
       return res.type("text/xml").send(`<Response><Gather input="dtmf" numDigits="1" timeout="3" actionOnEmptyResult="true" action="${xml(action(req, { stage: "followup" }))}" method="POST"><Say voice="Polly.Joanna-Neural">${xml(content)} Press 4 for the team, or stay on the line to leave a message.</Say></Gather></Response>`);
-    } catch (error) { next(error); }
+    } catch (error) {
+      console.error("Phone menu request failed", error.message);
+      if (!res.headersSent) return res.status(200).type("text/xml").send(`<Response><Say voice="Polly.Joanna-Neural">Sorry, we could not finish that step. You can book at D D D cincy dot com, or leave the team a message.</Say>${message(req)}</Response>`);
+    }
   });
   return { voicemail, recordingCompleted(req) {
     if (req.query.menuMessage === "1" && req.body.RecordingStatus === "completed" && Number(req.body.RecordingDuration) > 0 && req.body.RecordingUrl) {

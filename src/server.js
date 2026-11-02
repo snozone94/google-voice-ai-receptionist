@@ -3444,7 +3444,16 @@ async function sendTeamAlertEmail(payload) {
   const key = policy.key || callAttentionEmailKey(payload.data) || `email:${payload.eventKey}`;
   const recipients = splitEmailList((payload.audience?.emailTo || getAlertEmailConfig().to).join(","));
   if (!recipients.length) return { ok: false, skipped: true, reason: "No email address for the selected staff." };
-  const results = await Promise.all(recipients.map((emailRecipient) => notificationLedger.deliver(`${key}:recipient:${emailRecipient}`, () => sendAlertEmail({ ...payload, emailRecipient }), { ttl: policy.ttl || 7 * 86400000, holdOnUncertain: true })));
+  const legacyKey = callAttentionEmailKey(payload.data) || `email:${payload.eventKey}`;
+  const results = await Promise.all(recipients.map(async emailRecipient => {
+    if (policy.key && legacyKey !== key) {
+      const previous = await notificationLedger.deliveryStatus(`${legacyKey}:recipient:${emailRecipient}`);
+      if (previous === "accepted") return { ok: true, skipped: true, alreadyAccepted: true };
+      if (previous === "uncertain") return { ok: false, skipped: true, uncertain: true, reason: "Previous email acceptance is unverified; it will not be resent." };
+      if (previous === "pending") return { ok: false, skipped: true, pending: true };
+    }
+    return notificationLedger.deliver(`${key}:recipient:${emailRecipient}`, () => sendAlertEmail({ ...payload, emailRecipient }), { ttl: policy.ttl || 7 * 86400000, holdOnUncertain: true });
+  }));
   const uncertain = results.some((result) => result.uncertain);
   const pending = results.some((result) => result.pending);
   if (uncertain) await notificationLedger.observe("email", "uncertain").catch(() => {});
