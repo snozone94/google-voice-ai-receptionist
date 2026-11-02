@@ -16,7 +16,7 @@ import { operationsHandlers, operationsSnapshot, operationsHealth, replyPolicySt
 import { reserveCallSms } from "./call-sms-policy.js";
 import { safeStaff } from "./dispatch-workspace.js";
 import { notificationAudio } from "./notification-sounds.js";
-import { mountNativeVoice, nativeVoiceStatus, voiceIdentity, configuredAiSipUri } from "./native-voice.js";
+import { mountNativeVoice, nativeVoiceStatus, voiceIdentity, configuredAiSipUri, usesNativeIncomingCall } from "./native-voice.js";
 import { createLiveCalls } from "./live-calls.js";
 import { createCallTranscripts } from "./call-transcripts.js";
 import {
@@ -3347,8 +3347,23 @@ async function deliverTeamNotification({ title, body, data, audience, eventKey }
   catch (error) { const email = await emailPromise; return { ok: false, sent: 0, email, errors: ["Could not load notification devices."] }; }
   const preference = notificationPreference(data);
   const quietDefaults = { newCalls: false, teamActivity: false };
+  let incomingCallIdentities = [];
+  if (data.type === "call") {
+    try {
+      const liveConfig = await liveCalls.config();
+      const settings = await loadReceptionistSettings();
+      const directlyRingsTeam = settings.enabled === false || settings.humanRouting?.mode === "humans";
+      if (directlyRingsTeam || (liveConfig.enabled && liveConfig.ringTeam)) {
+        incomingCallIdentities = await nativeVoice.routingIdentities();
+      }
+    } catch (error) {
+      // If native routing cannot be verified, preserve the notification fallback.
+      console.warn("Incoming call routing could not be verified; retaining alert fallback.");
+    }
+  }
   const seen = new Set();
   tokens = tokens.filter((subscription) => {
+    if (usesNativeIncomingCall(subscription, incomingCallIdentities)) return false;
     const key = subscription.token || subscription.subscription?.endpoint;
     if (!key || seen.has(key) || !notificationAudience(subscription, audience) || (preference && !(subscription.preferences?.[preference] ?? quietDefaults[preference] ?? true))) return false;
     seen.add(key);

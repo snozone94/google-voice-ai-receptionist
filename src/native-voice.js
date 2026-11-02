@@ -4,6 +4,15 @@ import crypto from "node:crypto";
 import twilio from "twilio";
 
 export const voiceIdentity = (staff) => `ddd_${crypto.createHash("sha256").update(String(staff.id || staff.name)).digest("hex").slice(0, 32)}`;
+// A normal alert must not race the system incoming-call UI on registered iPhones.
+// Keep alert fallback for unregistered devices and other platforms.
+export function usesNativeIncomingCall(subscription, identities = []) {
+  return subscription.platform === "ios" &&
+    /^Expo(nent)?PushToken\[[^\]]+\]$/.test(subscription.token || "") &&
+    Boolean(subscription.staffId || subscription.staffName) &&
+    identities.includes(voiceIdentity({ id: subscription.staffId, name: subscription.staffName }));
+}
+
 export const voiceNumber = (value) => {
   const digits = String(value || "").replace(/\D/g, "");
   if (digits.length === 10) return `+1${digits}`;
