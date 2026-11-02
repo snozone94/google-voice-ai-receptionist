@@ -30,7 +30,7 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
     } catch { return {}; }
   }
   const action = (req, params = {}) => `/api/twilio/call-menu?${new URLSearchParams({ secret: String(req.query.secret || ""), ...params })}`;
-  const message = req => `<Say voice="Polly.Joanna-Neural">After the tone, leave your name, service, vehicle, and location, or your booking question. Press pound when finished.</Say><Record maxLength="90" finishOnKey="#" playBeep="true" action="${xml(action(req, { stage: "saved" }))}" method="POST" recordingStatusCallback="${xml('/api/twilio/recording?' + new URLSearchParams({ secret: String(req.query.secret || "") }))}" recordingStatusCallbackMethod="POST"/><Say voice="Polly.Joanna-Neural">Thank you. Please reply to DDD by text if your message did not save.</Say><Hangup/>`;
+  const message = req => `<Say voice="Polly.Joanna-Neural">After the tone, leave your name, service, vehicle, and location, or your booking question. Press pound when finished.</Say><Record maxLength="90" finishOnKey="#" playBeep="true" action="${xml(action(req, { stage: "saved" }))}" method="POST" recordingStatusCallback="${xml('/api/twilio/recording?' + new URLSearchParams({ secret: String(req.query.secret || ""), menuMessage: "1" }))}" recordingStatusCallbackMethod="POST"/><Say voice="Polly.Joanna-Neural">Thank you. Please reply to DDD by text if your message did not save.</Say><Hangup/>`;
   const voicemail = req => `<Response><Say voice="Polly.Joanna-Neural">The team is not available right now. You can reply to DDD by text, or leave a message.</Say>${message(req)}</Response>`;
   app.post("/api/twilio/call-menu", express.urlencoded({ extended: false }), async (req, res, next) => {
     try {
@@ -47,10 +47,10 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
         return res.type("text/xml").send(`<Response><Say voice="Polly.Joanna-Neural">${saved ? "Your message is saved for the team. Thank you." : "No message was recorded. Please reply to DDD by text so the team can help."}</Say><Hangup/></Response>`);
       }
       const digit = String(req.body.Digits || "");
-      await saveEvent({ type: "twilio.menu.choice", data: { call_id: req.body.CallSid, status: digit ? `menu-option-${digit}` : "menu-no-selection", sip_headers: headers } });
+      await saveEvent({ type: "twilio.menu.choice", data: { call_id: req.body.CallSid, status: ({ "1": "Booking links requested", "2": "Prices requested", "3": "Booking question", "4": "Team requested", "9": "Assistant requested" })[digit] || "Awaiting selection", sip_headers: headers } });
       if (digit === "4") {
         notify({ title: "DDD customer requesting the team", body: "A caller selected the team. Answer the incoming call.", data: { type: "call", callId: req.body.CallSid, from: phone } }, "menu-team-call");
-        const dial = await humanDial(await settings(), { customerPhone: phone });
+        const dial = await humanDial(await settings(), { customerPhone: phone, callId: req.body.CallSid, businessPhone: req.body.To || "" });
         return res.type("text/xml").send(/<Dial\b/.test(dial) ? dial : voicemail(req));
       }
       if (digit === "9" && (await settings()).enabled !== false) {
@@ -75,5 +75,9 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
       return res.type("text/xml").send(`<Response><Gather input="dtmf" numDigits="1" timeout="3" actionOnEmptyResult="true" action="${xml(action(req, { stage: "followup" }))}" method="POST"><Say voice="Polly.Joanna-Neural">${xml(content)} Press 4 for the team, or stay on the line to leave a message.</Say></Gather></Response>`);
     } catch (error) { next(error); }
   });
-  return { voicemail, async enabled() { return process.env.CALL_MENU_ENABLED !== "false" && (await menuEnabled()); }, render(req) { return menuTwiml({ action: action(req) }); } };
+  return { voicemail, recordingCompleted(req) {
+    if (req.query.menuMessage === "1" && req.body.RecordingStatus === "completed" && Number(req.body.RecordingDuration) > 0 && req.body.RecordingUrl) {
+      notify({ title: "New DDD voice message", body: "A customer left a message. Open their conversation to listen and reply.", data: { type: "customer-voicemail", callId: req.body.CallSid, from: req.body.From || "" } }, "menu-voice-message");
+    }
+  }, async enabled() { return process.env.CALL_MENU_ENABLED !== "false" && (await menuEnabled()); }, render(req) { return menuTwiml({ action: action(req) }); } };
 }

@@ -117,7 +117,7 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
         const ai = await findParticipant(record, "ddd-ai");
         if (ai?.status === "connected") { record.aiState = "connected"; record.aiAlertPending = false; await persist(); return; }
         record.status = "Team needed";
-        const result = await notify({ title: "DDD call needs a person", body: "A caller is still connected and needs a team member. Open Dispatch to answer.", data: { type: "ai-pickup-failed", callId: id, from: record.phone } });
+        const result = await notify({ title: "DDD call needs a person", body: "A caller is still connected and needs a team member. Open Dispatch to answer.", data: { type: record.teamOnly ? "missed-call" : "ai-pickup-failed", callId: id, from: record.phone } });
         // Existing void-returning notifiers remain supported; explicit failures
         // (including skipped delivery) must not be recorded as delivered.
         if (result && typeof result === "object" && result.ok !== true) throw new Error("Team notification was not delivered");
@@ -232,7 +232,7 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
     await saveCallEvent({ type: "ddd.live.takeover", data: { call_id: record.id, status: "team-answering", staffName: member.name || "DDD team" } });
   }
   async function addAi(record) {
-    if (record.fallbackAttempted || record.owner || (record.aiState && record.aiState !== "retryable") || (record.aiAttempts || 0) >= maxAttempts) return;
+    if (record.teamOnly || record.fallbackAttempted || record.owner || (record.aiState && record.aiState !== "retryable") || (record.aiAttempts || 0) >= maxAttempts) return;
     if (record.aiState === "retryable") {
       const existing = await findParticipant(record, "ddd-ai");
       if (existing) { record.aiCallSid = existing.callSid; record.aiState = existing.status === "connected" ? "connected" : "submitted"; await persist(); return; }
@@ -336,20 +336,20 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
       }
       return { ...options };
     },
-    async start({ id, phone, businessPhone, aiUri, recordingCallback }) {
+    async start({ id, phone, businessPhone, aiUri, recordingCallback, teamOnly = false }) {
       await ready;
       if (!/^CA[0-9a-f]{32}$/i.test(id)) throw failure("Invalid incoming call.", 400);
       return locked(id, async () => {
         if (!records[id]) {
           // Retain ended sessions for callback deduplication, not indefinitely.
           for (const [key, record] of Object.entries(records)) if (record.endedAt && Date.now() - Date.parse(record.endedAt) > 7 * 86400000) delete records[key];
-          records[id] = { id, phone, businessPhone, aiUri, room: `ddd-${id}`, linkToken: crypto.randomBytes(24).toString("hex"), ringTeam: options.ringTeam, startedAt: new Date().toISOString(), status: "Connecting", staff: {} };
+          records[id] = { id, phone, businessPhone, aiUri, room: `ddd-${id}`, linkToken: crypto.randomBytes(24).toString("hex"), teamOnly, ringTeam: teamOnly || options.ringTeam, startedAt: new Date().toISOString(), status: "Connecting", staff: {} };
           await persist();
           scheduleRecovery(id, pickupTimeoutMs);
         }
         const record = get(id);
         const recordingUrl = `${recordingCallback}${recordingCallback.includes("?") ? "&" : "?"}call=${encodeURIComponent(id)}`;
-        return `<Response><Say voice="alice">Thanks for calling Triple D Roadside. One moment while we connect you.</Say><Dial><Conference participantLabel="customer" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" waitUrl="" record="record-from-start" recordingStatusCallback="${xml(recordingUrl)}" recordingStatusCallbackMethod="POST" statusCallback="${xml(callback(id))}" statusCallbackMethod="POST" statusCallbackEvent="start end join leave">${xml(record.room)}</Conference></Dial><Hangup/></Response>`;
+        return `<Response><Say voice="Polly.Joanna-Neural">${record.teamOnly ? "Connecting you to the team." : "Thanks for calling Triple D Roadside. One moment while we connect you."}</Say><Dial><Conference participantLabel="customer" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" waitUrl="" record="record-from-start" recordingStatusCallback="${xml(recordingUrl)}" recordingStatusCallbackMethod="POST" statusCallback="${xml(callback(id))}" statusCallbackMethod="POST" statusCallbackEvent="start end join leave">${xml(record.room)}</Conference></Dial><Hangup/></Response>`;
       });
     },
     async events(id, event) {

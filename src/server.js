@@ -181,13 +181,16 @@ function openAIClient() {
 const callTranscripts = createCallTranscripts({ directory: dataDir });
 const nativeVoice = mountNativeVoice(app, { express, authenticate: getStaffAccess, directory: dataDir, callerIds: outboundCallerIds, saveCallEvent, getLiveCalls: () => liveCalls, getCallTranscripts: () => callTranscripts, onHumanNoAnswer: req => callMenu.voicemail(req) });
 const liveCalls = createLiveCalls({ directory: dataDir, startTranscription: (id) => callTranscripts.start(id), getTranscription: (id) => callTranscripts.get(id), routingIdentities: () => nativeVoice.routingIdentities(), saveCallEvent, transcript: listLiveCalls, stopAssistant: stopRealtimeAssistant, notify: (alert) => notifyTeamTracked(alert, "live-call-needs-team"), fallback: async (record) => {
-  const response = await buildHumanDialTwiml(await loadReceptionistSettings(), { customerPhone: record.phone });
+  const response = record.teamOnly ? callMenu.voicemail({ query: { secret: process.env.TWILIO_SMS_WEBHOOK_SECRET || "" }, body: { CallSid: record.id, From: record.phone, To: record.businessPhone } }) : await buildHumanDialTwiml(await loadReceptionistSettings(), { customerPhone: record.phone });
   await twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN).calls(record.id).update({ twiml: response });
 } });
 
 const callMenu = mountCallMenu(app, {
   express, authenticate: hasTwilioSmsAccess, settings: loadReceptionistSettings, saveEvent: saveCallEvent,
-  sendBookingLinks: sendCallStartSmsIfNeeded, humanDial: buildHumanDialTwiml, notify: queueTeamNotification,
+  sendBookingLinks: sendCallStartSmsIfNeeded, humanDial: async (settings, context) => {
+    if ((await liveCalls.config()).enabled && context.callId) return liveCalls.start({ id: context.callId, phone: context.customerPhone, businessPhone: context.businessPhone, teamOnly: true, aiUri: "", recordingCallback: `${String(process.env.PUBLIC_BASE_URL).replace(/\/$/, "")}/api/twilio/recording?secret=${encodeURIComponent(process.env.TWILIO_SMS_WEBHOOK_SECRET || "")}` });
+    return buildHumanDialTwiml(settings, context);
+  }, notify: queueTeamNotification,
   bypassAssistant: handleTwilioVoice, menuEnabled: async () => (await liveCalls.config()).menuFirst !== false,
   sendPriceLink: async (phone, callId) => notificationLedger.deliver(`menu-prices:${callId}`, async () => {
     const message = appendStopFooter(`DDD starting prices and service details:\n${priceListUrl}\n\nThe team confirms your final quote before service.`);
@@ -1148,12 +1151,13 @@ async function handleTwilioVoice(req, res, next) {
       : `/api/twilio/human-fallback?secret=${secret}`;
     const routeMode = settings.humanRouting?.mode || "ai_then_humans";
     const humanNumbers = settings.humanRouting?.numbers || [];
+    const menuFirst = !req.dddMenuBypass && await callMenu.enabled();
 
     await saveCallEvent({
       type: "twilio.voice.incoming",
       data: {
         call_id: req.body?.CallSid || req.query?.CallSid || "",
-        status: getInitialVoiceRouteStatus({ routeMode, sipUri, humanNumbers }),
+        status: menuFirst ? "Phone menu" : getInitialVoiceRouteStatus({ routeMode, sipUri, humanNumbers }),
         sip_headers: [
           { name: "from", value: req.body?.From || req.query?.From || "" },
           { name: "to", value: req.body?.To || req.query?.To || "" }
@@ -1161,7 +1165,7 @@ async function handleTwilioVoice(req, res, next) {
       }
     });
     queueCallStartSms(req.body?.From || req.query?.From || "");
-    if (!req.dddMenuBypass && await callMenu.enabled()) {
+    if (menuFirst) {
       res.type("text/xml").send(callMenu.render(req));
       return;
     }
@@ -1308,6 +1312,10 @@ app.post("/api/twilio/recording", express.urlencoded({ extended: false }), async
       res.status(403).send("Forbidden");
       return;
     }
+    if (req.query.menuMessage === "1" && !req.body.From) {
+      const call = (await listCallLog(300)).find(row => row.callId === req.body.CallSid);
+      req.body.From = call?.caller || "";
+    }
     await saveCallEvent({
       type: "twilio.recording.completed",
       data: {
@@ -1321,6 +1329,7 @@ app.post("/api/twilio/recording", express.urlencoded({ extended: false }), async
         ]
       }
     });
+    callMenu.recordingCompleted(req);
     res.type("text/xml").send("<Response></Response>");
   } catch (error) {
     next(error);
