@@ -1529,6 +1529,7 @@ function ConversationCard({ onRead, staff, team, isAdmin, onState, conversation,
   const [assigning, setAssigning] = useState(false);
   const updateOwner = async (payload) => { setAssigning(true); try { await onState(payload); } finally { setAssigning(false); } };
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [moreReplies, setMoreReplies] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const booking = conversation.bookings?.[0];
@@ -1591,11 +1592,12 @@ function ConversationCard({ onRead, staff, team, isAdmin, onState, conversation,
       </ScrollView>
       <ActionButton label="Latest" variant="light" onPress={() => { onRead(); initialPositionRef.current = true; messageScrollRef.current?.scrollToEnd({ animated: true }); }} />
       {suggestionsOpen ? <View style={styles.quickReplyGrid}>
-        {quickReplies.map((reply) => (
-          <Pressable key={reply.label} onPress={() => onDraftChange(customerPhone, reply.text)} style={styles.quickReplyButton}>
+        {(moreReplies ? quickReplies : quickReplies.slice(0, 4)).map((reply) => (
+          <Pressable key={reply.label} onPress={() => { onDraftChange(customerPhone, reply.text); setSuggestionsOpen(false); setMoreReplies(false); }} style={styles.quickReplyButton}>
             <Text style={styles.quickReplyText}>{reply.label}</Text>
           </Pressable>
         ))}
+        {quickReplies.length > 4 ? <Pressable accessibilityRole="button" onPress={() => setMoreReplies(!moreReplies)} style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 8 }}><Text style={{ color: "#a9ddef", fontWeight: "600" }}>{moreReplies ? "Fewer replies" : "More replies"}</Text></Pressable> : null}
       </View> : null}
       <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end" }}>
         <Pressable accessibilityRole="button" accessibilityLabel={suggestionsOpen ? "Hide suggested replies" : "Suggested replies"} onPress={() => setSuggestionsOpen(!suggestionsOpen)} style={{ minWidth: 40, minHeight: 44, justifyContent: "center", alignItems: "center" }}><Sparkles size={22} color="#8c2387" /></Pressable>
@@ -2403,11 +2405,11 @@ function buildQuickReplies(conversation = {}, settings = blankSettings) {
   const text = `${conversation.lastBody || ""} ${(conversation.messages || []).map((message) => message.body || message.text || "").join(" ")}`.toLowerCase();
   const base = [
     {
-      label: "Professional follow-up",
+      label: "Follow up",
       text: "Hi, this is DDD. What service do you need, what vehicle is it for, and what is the service location? Reply STOP to stop."
     },
     {
-      label: "Booking link",
+      label: "Book service",
       text: "Book online:\nhttps://dddcincy.com/book-service/\n\nDDD Mobile for iPhone:\nhttps://apps.apple.com/app/id6762315831\n\nDDD Mobile for Android:\nhttps://play.google.com/store/apps/details?id=com.dddroadside.mobile\n\nReply STOP to stop."
     },
     {
@@ -2415,7 +2417,7 @@ function buildQuickReplies(conversation = {}, settings = blankSettings) {
       text: buildGoogleReviewReply(settings)
     },
     {
-      label: "Get location",
+      label: "Location",
       text: "Please send the exact address or nearest cross streets, plus the vehicle color. Reply STOP to stop."
     },
     {
@@ -2931,16 +2933,20 @@ const styles = StyleSheet.create({
   screenHeading: { color: "#f4f7fa", fontSize: 20, fontWeight: "700" },
   headerAction: { minHeight: 44, justifyContent: "center", paddingHorizontal: 8 },
   headerActionText: { color: "#8ce2ff", fontWeight: "700", fontSize: 12 },
-  quickReplyGrid: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  quickReplyGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   quickReplyButton: {
-    borderColor: "rgba(22, 184, 255, 0.18)",
-    borderRadius: 999,
+    borderColor: "#526b94",
+    borderRadius: 12,
     borderWidth: 1,
-    backgroundColor: "#f0fbff",
-    paddingHorizontal: 10,
-    paddingVertical: 8
+    backgroundColor: "#243f59",
+    width: "48%",
+    minHeight: 44,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10
   },
-  quickReplyText: { color: "#086e9e", fontSize: 12, fontWeight: "900" },
+  quickReplyText: { color: "#f8fbff", fontSize: 14, fontWeight: "700", textAlign: "center" },
   tinyStatusDot: {
     width: 14,
     height: 14,
