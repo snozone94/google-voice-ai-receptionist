@@ -78,7 +78,7 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
       let content;
       if (digit === "1") {
         const delivery = await boundedMenuDelivery(() => sendBookingLinks(phone, req.body.CallSid, req.query.info === "hours"));
-        content = delivery.queued ? "We are sending the booking and app links by text. You can also book at D D D cincy dot com. The team will confirm your appointment." : delivery.ok ? "Use the booking and app links in your DDD text to request service. Your appointment is confirmed when the team confirms it." : "We could not confirm the booking text. You can book at D D D cincy dot com, or leave a message for the team.";
+        content = delivery.queued ? "We are sending the booking and app links by text. You can also book at D D D cincy dot com. Please wait for team approval before visiting the shop." : delivery.ok ? "Use the booking and app links in your DDD text to request service. Please wait for team approval before visiting the shop." : "We could not confirm the booking text. You can book at D D D cincy dot com, or leave a message for the team.";
       } else if (digit === "2") {
         const published = await prices();
         const delivery = await boundedMenuDelivery(() => sendPriceLink(phone, req.body.CallSid, published));
