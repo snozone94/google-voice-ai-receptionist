@@ -14,6 +14,7 @@ import {
   Alert,
   AppState,
   KeyboardAvoidingView,
+  Keyboard,
   Image,
   Linking,
   Modal,
@@ -158,6 +159,14 @@ const blankSettings = {
 };
 
 export default function App() {
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+  const keyboardFrame = useRef(null);
+  useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow", () => setKeyboardVisible(true));
+    const hide = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide", () => setKeyboardVisible(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
   const [activeTab, setActiveTab] = useState("Home");
   const [dialRequest, setDialRequest] = useState(0);
   const [composeRequest, setComposeRequest] = useState(0);
@@ -543,6 +552,8 @@ export default function App() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
+      <View ref={keyboardFrame} onLayout={() => keyboardFrame.current?.measureInWindow((_x, y) => setKeyboardOffset(y))} style={{ flex: 1 }}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={keyboardOffset}>
       <LinearGradient colors={["#081426", "#10243a", "#081426"]} style={styles.shell}>
         <Header business={business} settings={settings} signedInStaff={signedInStaff} onProfile={() => setActiveTab("More")} onAlerts={() => enablePushNotifications()} />
         {canWork(signedInStaff) && phone.call ? <NativeCallBar phone={phone} onError={setSessionStatus} onTranscript={() => setActiveTab("Calls")} /> : null}
@@ -614,6 +625,7 @@ export default function App() {
           ) : null}
           {activeTab === "Inbox" ? (
             <InboxTab
+              keyboardVisible={keyboardVisible}
               notificationOnly={notificationOpen}
               initialPhone={contactPhone}
               adminPin={adminPin}
@@ -660,8 +672,10 @@ export default function App() {
           {loading ? <ActivityIndicator color="#7d4dff" /> : null}
           <Text style={styles.status}>{status}</Text>
         </WorkspaceContent>
-        <BottomTabs activeTab={activeTab} onSelect={(tab) => { setComposeRequest(0); setDialRequest(0); setActiveTab(tab); }} tabs={availableTabs} unread={(activity.conversations || []).reduce((sum, conversation) => sum + (conversation.unread || 0), 0)} />
+        {!keyboardVisible ? <BottomTabs activeTab={activeTab} onSelect={(tab) => { setComposeRequest(0); setDialRequest(0); setActiveTab(tab); }} tabs={availableTabs} unread={(activity.conversations || []).reduce((sum, conversation) => sum + (conversation.unread || 0), 0)} /> : null}
       </LinearGradient>
+      </KeyboardAvoidingView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -1311,7 +1325,7 @@ function TeamTab({ adminPin, editMode, saving, setEditMode, signedInStaff, onSav
   );
 }
 
-function InboxTab({ notificationOnly, staff, team, composeRequest, isAdmin, adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setStatus, settings, staffPhone, initialPhone, nativePhone }) {
+function InboxTab({ keyboardVisible, notificationOnly, staff, team, composeRequest, isAdmin, adminPin, apiBaseUrl, conversations, hasPin, onRefresh, setStatus, settings, staffPhone, initialPhone, nativePhone }) {
   const [allowRead, setAllowRead] = useState(!notificationOnly);
   const [composing, setComposing] = useState(false);
   const [search, setSearch] = useState("");
@@ -1491,8 +1505,10 @@ function InboxTab({ notificationOnly, staff, team, composeRequest, isAdmin, admi
         {!activeConversations.length ? <Text style={styles.muted}>No conversations found.</Text> : null}
       </View> : null}
       {selectedConversation ? (
-        <KeyboardAvoidingView style={{ flex: 1 }} keyboardVerticalOffset={100} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <View style={{ flex: 1, minHeight: 0 }}>
           <ConversationCard
+            keyboardVisible={keyboardVisible}
+            onPolish={(draft) => apiPost(apiBaseUrl, "/api/sms/polish", { draft }, adminPin)}
             onRead={() => setAllowRead(true)}
             staff={staff}
             team={team}
@@ -1512,13 +1528,33 @@ function InboxTab({ notificationOnly, staff, team, composeRequest, isAdmin, admi
             settings={settings}
             workingThread={workingThread}
           />
-        </KeyboardAvoidingView>
+        </View>
       ) : null}
     </>
   );
 }
 
-function ConversationCard({ onRead, staff, team, isAdmin, onState, conversation, draft, onArchive, onCall, onDraftChange, onSend, onHandled, settings, workingThread }) {
+function ConversationCard({ keyboardVisible, onPolish, onRead, staff, team, isAdmin, onState, conversation, draft, onArchive, onCall, onDraftChange, onSend, onHandled, settings, workingThread }) {
+  const [polishing, setPolishing] = useState(false);
+  const [polishMessage, setPolishMessage] = useState("");
+  const [undoDraft, setUndoDraft] = useState(null);
+  const currentDraft = useRef(draft);
+  currentDraft.current = draft;
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const polish = async () => {
+    const original = draft;
+    setPolishing(true); setPolishMessage("");
+    try {
+      const result = await onPolish(original);
+      if (!mounted.current) return;
+      if (currentDraft.current !== original) { setPolishMessage("Draft changed while polishing. Tap Polish again when ready."); return; }
+      setUndoDraft({ original, polished: result.text });
+      onDraftChange(getConversationCustomer(conversation), result.text);
+      setPolishMessage("Polished — review before sending.");
+    } catch (error) { if (mounted.current) setPolishMessage(error.message); }
+    finally { if (mounted.current) setPolishing(false); }
+  };
   const messageScrollRef = useRef(null);
   const initialPositionRef = useRef(false);
   const unreadIndexRef = useRef(newestUnreadIndex(conversation));
@@ -1550,21 +1586,21 @@ function ConversationCard({ onRead, staff, team, isAdmin, onState, conversation,
         <Text style={styles.pill}>{conversation.messages?.length || 0} messages</Text>
       </View>
       <Text style={styles.record}>{conversation.unread ? `${conversation.unread} unread · ` : ""}{needsReply(conversation) ? "Needs reply · " : ""}{ownerLabel(conversation)}</Text>
-      <View style={styles.buttonRow}>
+      {!keyboardVisible ? <View style={styles.buttonRow}>
         {actions.claim ? <ActionButton disabled={assigning} label="Claim" variant="light" onPress={() => updateOwner({ action: "claim" })} /> : null}
         {actions.assign ? <ActionButton label="Assign" variant="light" onPress={() => setAssignmentOpen(!assignmentOpen)} /> : null}
         {actions.release ? <ActionButton disabled={assigning} label="Release" variant="light" onPress={() => updateOwner({ action: "release" })} /> : null}
         {actions.unassign ? <ActionButton disabled={assigning} label="Unassign" variant="light" onPress={() => updateOwner({ action: "unassign" })} /> : null}
-      </View>
+      </View> : null}
       {assignmentOpen && actions.assign ? <View style={{ gap: 8 }}><Text style={styles.label}>Assign to</Text><ScrollView style={{ maxHeight: 200 }}>{roster.map(member => <ActionButton key={member.id} label={member.name} disabled={assigning} variant="light" onPress={async () => { await updateOwner({ action: "assign", assigneeId: member.id, assigneeName: member.name }); setAssignmentOpen(false); }} />)}</ScrollView>{!roster.length ? <Text style={styles.muted}>No team members available.</Text> : null}</View> : null}
-      <View style={styles.buttonRow}>
+      {!keyboardVisible ? <View style={styles.buttonRow}>
         <ActionButton disabled={callBusy || !canWork(staff)} label={callBusy ? "Calling..." : "Call"} onPress={() => onCall(customerPhone)} variant="light" />
         <ActionButton label="Customer details" onPress={() => setDetailsOpen(!detailsOpen)} variant="light" />
         <ActionButton label="More" onPress={() => setMenuOpen(!menuOpen)} variant="light" />
-      </View>
+      </View> : null}
       {detailsOpen ? <View><Text style={styles.record}>{booking?.serviceType || "No booking"}</Text><Text style={styles.record}>{booking?.vehicle || "Vehicle not saved"}</Text><Text style={styles.record}>{booking?.location || "Location not saved"}</Text>{booking?.customerStatusUrl ? <ActionButton label="Open booking" onPress={() => Linking.openURL(booking.customerStatusUrl)} /> : null}</View> : null}
       {menuOpen ? <View style={styles.buttonRow}><ActionButton disabled={archiveBusy || !canWork(staff)} label="Archive conversation" onPress={() => onArchive(customerPhone)} variant="light" />{needsReply(conversation) ? <ActionButton disabled={!canWork(staff)} label="Mark handled" onPress={onHandled} variant="light" /> : null}</View> : null}
-      <ScrollView onScrollBeginDrag={onRead} ref={messageScrollRef} style={styles.messageThread} contentContainerStyle={styles.messageThreadContent} nestedScrollEnabled
+      <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" onScrollBeginDrag={onRead} ref={messageScrollRef} style={styles.messageThread} contentContainerStyle={styles.messageThreadContent} nestedScrollEnabled
         onContentSizeChange={() => {
           if (!initialPositionRef.current) {
             const index = unreadIndexRef.current;
@@ -1599,9 +1635,14 @@ function ConversationCard({ onRead, staff, team, isAdmin, onState, conversation,
         ))}
         {quickReplies.length > 4 ? <Pressable accessibilityRole="button" onPress={() => setMoreReplies(!moreReplies)} style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 8 }}><Text style={{ color: "#a9ddef", fontWeight: "600" }}>{moreReplies ? "Fewer replies" : "More replies"}</Text></Pressable> : null}
       </View> : null}
-      <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end" }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Polish draft professionally" disabled={polishing || !draft.trim() || !canWork(staff)} onPress={polish} style={{ minHeight: 44, paddingHorizontal: 12, flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 12, backgroundColor: "#dcebee", opacity: polishing || !draft.trim() ? 0.5 : 1 }}><Sparkles size={17} color="#51378a" /><Text style={{ color: "#303158", fontWeight: "700" }}>{polishing ? "Polishing…" : "Polish"}</Text></Pressable>
+        {undoDraft && draft === undoDraft.polished ? <Pressable accessibilityRole="button" onPress={() => { onDraftChange(customerPhone, undoDraft.original); setUndoDraft(null); setPolishMessage(""); }} style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 12 }}><Text style={{ color: "#51378a" }}>Undo</Text></Pressable> : null}
+      </View>
+      {polishMessage ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{polishMessage}</Text> : null}
+      <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end", flexShrink: 0 }}>
         <Pressable accessibilityRole="button" accessibilityLabel={suggestionsOpen ? "Hide suggested replies" : "Suggested replies"} onPress={() => setSuggestionsOpen(!suggestionsOpen)} style={{ minWidth: 40, minHeight: 44, justifyContent: "center", alignItems: "center" }}><Sparkles size={22} color="#8c2387" /></Pressable>
-        <TextInput accessibilityLabel="Reply from DDD" placeholder="Message customer..." placeholderTextColor="#687785" multiline onChangeText={(message) => onDraftChange(customerPhone, message)} value={draft} style={{ flex: 1, minHeight: 44, maxHeight: 110, borderRadius: 8, borderWidth: 1, borderColor: "#c3d5dd", backgroundColor: "#fff", color: "#203040", padding: 12, fontSize: 15 }} />
+        <TextInput autoCorrect spellCheck autoCapitalize="sentences" textContentType="none" onFocus={() => { setSuggestionsOpen(false); setDetailsOpen(false); setMenuOpen(false); setAssignmentOpen(false); }} accessibilityLabel="Reply from DDD" placeholder="Message customer..." placeholderTextColor="#687785" multiline onChangeText={(message) => onDraftChange(customerPhone, message)} value={draft} style={{ flex: 1, minHeight: 44, maxHeight: 110, borderRadius: 8, borderWidth: 1, borderColor: "#c3d5dd", backgroundColor: "#fff", color: "#203040", padding: 12, fontSize: 15 }} />
         <Pressable disabled={smsBusy || !draft.trim() || !canWork(staff)} accessibilityRole="button" accessibilityLabel={smsBusy ? "Sending" : "Send text"} onPress={() => onSend(customerPhone)} style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "#007c69", opacity: smsBusy || !draft.trim() ? 0.4 : 1, justifyContent: "center", alignItems: "center" }}><Send size={20} color="#fff" /></Pressable>
       </View>
     </View>
@@ -2920,7 +2961,7 @@ const styles = StyleSheet.create({
   },
   messageThread: {
     flex: 1,
-    minHeight: 100,
+    minHeight: 0,
     borderColor: "rgba(118, 87, 255, 0.12)",
     borderRadius: 18,
     borderWidth: 1,
