@@ -739,7 +739,8 @@
             <div id="typingStatus" class="typing-status"></div>
             <form id="replyForm" class="reply-form">
               <details class="reply-suggestions"><summary>Suggested replies</summary><div class="quick-replies" id="quickReplies"></div></details>
-              <textarea id="replyMessageInput" rows="3" maxlength="1000" placeholder="Type a reply from DDD..."></textarea>
+              <div class="draft-tools"><button id="polishReplyButton" type="button">✨ Polish</button><button id="undoPolishButton" type="button" hidden>Undo</button><span id="polishStatus" role="status"></span></div>
+              <textarea autocorrect="on" autocapitalize="sentences" spellcheck="true" id="replyMessageInput" rows="3" maxlength="1000" placeholder="Type a reply from DDD..."></textarea>
               <button id="sendReplyButton" type="submit" disabled>Send text</button>
             </form>
             <p id="inboxStatus">Customer messages appear here.</p>

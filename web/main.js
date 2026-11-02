@@ -3874,3 +3874,53 @@ function bookingSyncLabel(booking = {}) {
 function renderBookingSyncBadge(booking) {
   return `<span class="booking-sync-badge">${escapeHtml(bookingSyncLabel(booking))}</span>`;
 }
+
+// Rewrite drafts only; never send or replace text edited during the request.
+const polishButton = document.querySelector("#polishReplyButton");
+const undoPolishButton = document.querySelector("#undoPolishButton");
+const polishStatus = document.querySelector("#polishStatus");
+let polishUndo = null;
+polishButton.addEventListener("click", async () => {
+  const draft = replyMessageInput.value;
+  const phone = selectedConversationPhone;
+  if (!draft.trim() || !phone) return;
+  polishButton.disabled = true; polishStatus.textContent = "Polishing…";
+  try {
+    const response = await fetch("/api/sms/polish", { method: "POST", headers: { ...adminHeaders(), "Content-Type": "application/json" }, body: JSON.stringify({ draft }) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Couldn't polish. Your draft is unchanged.");
+    if (phone !== selectedConversationPhone || draft !== replyMessageInput.value) { polishStatus.textContent = "Draft changed. Tap Polish again when ready."; return; }
+    replyMessageInput.value = result.text;
+    polishUndo = { phone, original: draft, polished: result.text };
+    undoPolishButton.hidden = false;
+    replyMessageInput.dispatchEvent(new Event("input"));
+    polishStatus.textContent = "Polished — review before sending.";
+    replyMessageInput.focus();
+  } catch (error) { polishStatus.textContent = error.message; }
+  finally { polishButton.disabled = false; }
+});
+undoPolishButton.addEventListener("click", () => {
+  if (polishUndo?.phone === selectedConversationPhone && replyMessageInput.value === polishUndo.polished) {
+    replyMessageInput.value = polishUndo.original;
+    replyMessageInput.dispatchEvent(new Event("input"));
+    replyMessageInput.focus();
+  }
+  polishUndo = null; undoPolishButton.hidden = true; polishStatus.textContent = "";
+});
+replyMessageInput.addEventListener("focus", () => {
+  document.querySelector(".reply-suggestions")?.removeAttribute("open");
+  setTimeout(() => replyMessageInput.scrollIntoView({ block: "nearest", behavior: "smooth" }), 250);
+});
+
+// Safari's layout viewport does not shrink when its software keyboard opens.
+function syncReplyViewport() {
+  const viewport = window.visualViewport;
+  const keyboardOpen = Boolean(viewport && window.innerHeight - viewport.height > 140 && document.activeElement === replyMessageInput);
+  document.body.classList.toggle("reply-keyboard-open", keyboardOpen);
+  document.documentElement.style.setProperty("--reply-viewport-height", `${viewport?.height || window.innerHeight}px`);
+  document.documentElement.style.setProperty("--reply-viewport-top", `${viewport?.offsetTop || 0}px`);
+}
+window.visualViewport?.addEventListener("resize", syncReplyViewport);
+window.visualViewport?.addEventListener("scroll", syncReplyViewport);
+replyMessageInput.addEventListener("focus", syncReplyViewport);
+replyMessageInput.addEventListener("blur", () => setTimeout(syncReplyViewport, 100));

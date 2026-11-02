@@ -5915,3 +5915,24 @@ body:not(.workspace-signed-in) .login-card { box-shadow: none !important; border
 .workspace-signed-in[data-view="inbox"] .quick-replies .reply-chip:hover,
 .workspace-signed-in[data-view="inbox"] .quick-replies .reply-chip:focus-visible,
 .workspace-signed-in[data-view="inbox"] .quick-replies .reply-chip[aria-pressed="true"] { color: #fff !important; background: linear-gradient(120deg, #734188, #136b78) !important; border-color: #a8def0 !important; }
+
+/* Draft controls stay readable and tappable above the message field. */
+.reply-form .draft-tools { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.reply-form .draft-tools button { min-height: 44px; padding: 8px 14px; background: #dcebee !important; color: #303158 !important; font-weight: 700; }
+.reply-form .draft-tools button[hidden] { display: none; }
+#polishStatus { font-size: 12px; color: #303158 !important; }
+#replyMessageInput { font-size: 16px; scroll-margin-bottom: 24px; }
+
+@media (max-width: 700px) {
+  body.workspace-signed-in[data-view="inbox"].thread-open.reply-keyboard-open .conversation-panel {
+    position: fixed; z-index: 80; inset: auto 0 auto; top: var(--reply-viewport-top, 0px);
+    height: var(--reply-viewport-height, 100dvh); min-height: 0 !important; max-height: none; border-radius: 0; padding: 8px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .reply-keyboard-open .conversation-panel .customer-details,
+  .reply-keyboard-open .conversation-panel .thread-records,
+  .reply-keyboard-open .conversation-panel .thread-ownership,
+  .reply-keyboard-open .conversation-panel .conversation-header .inbox-toolbar { display: none !important; }
+  .reply-keyboard-open .reply-form { flex: 0 0 auto; padding: 8px; gap: 6px; }
+  .reply-keyboard-open #replyMessageInput { max-height: 96px; min-height: 44px; }
+}
