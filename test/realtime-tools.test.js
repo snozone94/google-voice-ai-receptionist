@@ -105,3 +105,47 @@ test("rejected opening protection releases automatic turns without restarting gr
   await event({ type: "error" });
   assert.equal(responses(socket).length, 1);
 });
+
+test("a newly accepted call retries a transient 404 before giving up on audio control", async () => {
+  let attempts = 0, unavailable = 0;
+  const messages = [];
+  class AttachingSocket extends EventEmitter {
+    readyState = 1;
+    constructor() {
+      super();
+      const attempt = ++attempts;
+      queueMicrotask(() => {
+        if (attempt < 3) {
+          this.emit("error", new Error("Unexpected server response: 404"));
+          this.emit("close");
+        } else {
+          this.emit("open");
+          this.emit("message", JSON.stringify(session("session.created", null)));
+          setTimeout(() => this.emit("close"), 5);
+        }
+      });
+    }
+    send(raw) { messages.push(JSON.parse(raw)); }
+  }
+  const monitor = new CallMonitor("retry-test", { onUnavailable: async () => { unavailable++; } }, { Socket: AttachingSocket, attachRetryMs: 1 });
+  monitor.saveSummary = async () => {};
+  await monitor.start();
+  assert.equal(attempts, 3);
+  assert.equal(unavailable, 0);
+  assert.equal(messages.filter(event => event.type === "response.create").length, 1);
+});
+
+test("unavailable audio control triggers bounded caller recovery exactly once", async () => {
+  let attempts = 0, unavailable = 0;
+  class FailedSocket extends EventEmitter {
+    constructor() {
+      super(); attempts++;
+      queueMicrotask(() => { this.emit("error", new Error("Unexpected server response: 404")); this.emit("close"); });
+    }
+  }
+  const monitor = new CallMonitor("failed-test", { onUnavailable: async () => { unavailable++; } }, { Socket: FailedSocket, attachRetryMs: 1 });
+  monitor.saveSummary = async () => {};
+  await monitor.start();
+  assert.equal(attempts, 4);
+  assert.equal(unavailable, 1);
+});

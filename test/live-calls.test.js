@@ -370,3 +370,23 @@ test("legacy pre-delivery aiAlerted is rearmed once after actual provider verifi
   assert.equal(state.aiAlerted, true);
   assert.ok(state.aiAlertDeliveredAt);
 });
+
+test("callers hear a carrier greeting before the AI conference is established", async t => {
+  const { calls } = await fixture(t);
+  const twiml = await calls.start({ id, phone: "+15135550100", businessPhone: "+15134091342", aiUri: "sip:ai.invalid", recordingCallback: "https://dispatch.example.test/recording" });
+  assert.ok(twiml.indexOf("<Say") < twiml.indexOf("<Dial>"));
+  assert.match(twiml, /Thanks for calling Triple D Roadside/);
+});
+
+test("unavailable AI control recovers only the matching active call and does not redirect twice", async t => {
+  let redirected = 0;
+  const { calls, dependencies } = await fixture(t, { fallback: async () => { redirected++; } });
+  // A mismatched/stale sideband cannot redirect another call.
+  await calls.assistantUnavailable(id, "wrong");
+  assert.equal(redirected, 0);
+  const records = JSON.parse(await fs.readFile(path.join(dependencies.directory, "live-call-sessions.json"), "utf8"));
+  await calls.linkAi(id, records[id].linkToken, "rt-current");
+  await calls.assistantUnavailable(id, "rt-current");
+  await calls.assistantUnavailable(id, "rt-current");
+  assert.equal(redirected, 1);
+});
