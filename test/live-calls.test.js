@@ -391,3 +391,18 @@ test("unavailable AI control recovers only the matching active call and does not
   assert.equal(redirected, 1);
   assert.ok(actions.some(([kind, sid, patch]) => kind === "call-update" && sid === "staff-tech-one" && patch.status === "completed"));
 });
+
+test("menu team calls keep native answering and live transcription without dialing AI", async t => {
+  const transcribed = [];
+  const { calls, actions } = await fixture(t, { startTranscription: async call => transcribed.push(call) });
+  const teamId = `CA${"c".repeat(32)}`;
+  const twiml = await calls.start({ id: teamId, phone: "+15135550100", businessPhone: "+15134091342", aiUri: "", teamOnly: true, recordingCallback: "https://dispatch.example.test/recording" });
+  assert.match(twiml, /Connecting you to the team/);
+  actions.length = 0;
+  await calls.events(teamId, { ConferenceSid: conferenceSid, FriendlyName: `ddd-${teamId}`, ParticipantLabel: "customer", CallSid: teamId, StatusCallbackEvent: "participant-join" });
+  assert.equal(actions.filter(([kind, options]) => kind === "create" && options.label === "ddd-ai").length, 0);
+  assert.equal(actions.filter(([kind, options]) => kind === "create" && options.label === "staff-tech-one").length, 1);
+  assert.ok(transcribed.includes(teamId));
+  await calls.events(teamId, { ConferenceSid: conferenceSid, FriendlyName: `ddd-${teamId}`, ParticipantLabel: "staff-tech-one", CallSid: "staff-tech-one", StatusCallbackEvent: "participant-join" });
+  assert.equal((await calls.list("tech-one")).find(call => call.callId === teamId).ownedByYou, true);
+});

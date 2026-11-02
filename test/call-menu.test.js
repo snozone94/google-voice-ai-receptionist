@@ -57,4 +57,8 @@ test("keypad routing books without AI, handles text failures honestly, saves voi
   assert.equal(events.at(-1).data.status, 'message-saved');
   assert.match((await request('', { stage: 'saved' })).text, /No message was recorded/);
   assert.equal(messages, before + 1);
+  menu.recordingCompleted({ query: { menuMessage: "1" }, body: { CallSid: "CA" + "a".repeat(32), RecordingStatus: "completed", RecordingDuration: "8", RecordingUrl: "https://api.twilio.com/test.wav" } });
+  assert.equal(messages, before + 2);
+  menu.recordingCompleted({ query: { menuMessage: "1" }, body: { RecordingStatus: "completed", RecordingDuration: "0" } });
+  assert.equal(messages, before + 2);
 });
