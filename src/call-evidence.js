@@ -31,6 +31,16 @@ export function actionableNotification(data = {}) {
   return !["call", "staff-outbound-call"].includes(data.type) || /failed|busy|no-answer/.test(data.status || "");
 }
 
+// Email is a quiet summary channel. Push reminders remain independent.
+export function alertEmailPolicy(data = {}) {
+  if (!actionableNotification(data) || data.type === "unanswered-text") return { send: false };
+  const digits = String(data.from || data.to || "").replace(/\D/g, "");
+  const phone = digits.length === 10 ? `1${digits}` : digits;
+  if (phone && data.type === "sms") return { send: true, key: `customer-text-email:${phone}`, ttl: 5 * 60000 };
+  if (phone && ["ai-pickup-failed", "openai-accept-failed", "ai-off-missed-call", "early-hangup", "missed-call", "customer-voicemail", "sms-failed", "sms-delivery-failed"].includes(data.type)) return { send: true, key: `customer-attention-email:${phone}`, ttl: 10 * 60000 };
+  return { send: true };
+}
+
 export function alertDisplayType(type = "") {
   return ({ "ai-pickup-failed": "Call needs a team member", "early-hangup": "Caller hung up early", "missed-call": "Missed call", "call-completed": "Call completed", sms: "New customer text", "unanswered-text": "Customer awaiting a reply", booking: "Booking update", "customer-voicemail": "New voice message", "staff-text-reply": "Text delivery update", "staff-outbound-call": "Outgoing call update" })[type] || "Dispatch update";
 }

@@ -12,7 +12,7 @@ import webPush from "web-push";
 import { notificationState } from "./notification-state.js";
 import { requireStaffRecords } from "./staff-record-access.js";
 import { decorateConversations, workspaceStore, pendingTextReminders } from "./dispatch-workspace.js";
-import { actionableNotification, notificationPreference, alertDisplayType, callAttentionEmailKey, expoTicketResults, callIdResolver } from "./call-evidence.js";
+import { actionableNotification, alertEmailPolicy, notificationPreference, alertDisplayType, callAttentionEmailKey, expoTicketResults, callIdResolver } from "./call-evidence.js";
 import { operationsHandlers, operationsSnapshot, operationsHealth, replyPolicyStore, notificationAudience, reminderAudience } from "./dispatch-operations.js";
 import { reserveCallSms } from "./call-sms-policy.js";
 import { safeStaff } from "./dispatch-workspace.js";
@@ -49,6 +49,7 @@ import {
   saveBookingRequest,
   saveLead,
   savePushToken,
+  disablePushToken,
   saveReceptionistSettings
 } from "./receptionist.js";
 import { monitorRealtimeCall, listLiveCalls, stopRealtimeAssistant } from "./realtime-tools.js";
@@ -187,7 +188,14 @@ const liveCalls = createLiveCalls({ directory: dataDir, startTranscription: (id)
 
 const callMenu = mountCallMenu(app, {
   express, authenticate: hasTwilioSmsAccess, settings: loadReceptionistSettings, saveEvent: saveCallEvent,
-  sendBookingLinks: sendCallStartSmsIfNeeded, humanDial: async (settings, context) => {
+  sendBookingLinks: async (phone, callId) => notificationLedger.deliver(`menu-booking-links:${callId}`, async () => {
+    const message = appendStopFooter(defaultCallerSelfServiceSms());
+    let delivery;
+    try { delivery = await sendTwilioSms(phone, message); }
+    catch (error) { error.uncertain = true; throw error; }
+    await saveOutgoingSms({ to: phone, from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "", body: message, messageSid: delivery.sid || "", status: delivery.status || (delivery.ok ? "sent" : "failed"), source: "call_menu_booking", agentName: "DDD booking links", errorCode: delivery.code || "", errorMessage: delivery.error || "" });
+    return delivery;
+  }, { ttl: 86400000, holdOnUncertain: true }), humanDial: async (settings, context) => {
     if ((await liveCalls.config()).enabled && context.callId) return liveCalls.start({ id: context.callId, phone: context.customerPhone, businessPhone: context.businessPhone, teamOnly: true, aiUri: "", recordingCallback: `${String(process.env.PUBLIC_BASE_URL).replace(/\/$/, "")}/api/twilio/recording?secret=${encodeURIComponent(process.env.TWILIO_SMS_WEBHOOK_SECRET || "")}` });
     return buildHumanDialTwiml(settings, context);
   }, notify: queueTeamNotification,
@@ -3403,11 +3411,21 @@ async function deliverTeamNotification({ title, body, data, audience, eventKey }
       const response = await fetch("https://exp.host/--/api/v2/push/send", { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, signal: AbortSignal.timeout(15000), body: JSON.stringify({ to: subscription.token, badge, ...notificationAudio(subscription, preference), priority: "high", title, body, data: { app: "ddd-ai-dispatch", ...data } }) });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) return { ok: false, error: `Expo push failed with ${response.status}` };
-      return expoTicketResults(payload, 1)[0];
+      const result = expoTicketResults(payload, 1)[0];
+      if (!result.ok && /DeviceNotRegistered/.test(result.error || "")) await disablePushToken(subscription.token);
+      return result;
     }
-    if (!subscription.subscription?.endpoint || /^https:\/\/example\.com\//i.test(subscription.subscription.endpoint)) return { ok: false, skipped: true, reason: "Invalid notification device." };
+    if (!subscription.subscription?.endpoint || /^https:\/\/example\.com\//i.test(subscription.subscription.endpoint)) {
+      await disablePushToken(subscription.token || subscription.subscription?.endpoint);
+      return { ok: false, skipped: true, reason: "Invalid notification device." };
+    }
     await getWebPushVapidKeys();
-    await webPush.sendNotification(subscription.subscription, JSON.stringify({ title, body, data: { app: "ddd-ai-dispatch", url: "/", ...data } }), { timeout: 15000 });
+    try {
+      await webPush.sendNotification(subscription.subscription, JSON.stringify({ title, body, data: { app: "ddd-ai-dispatch", url: "/", ...data } }), { timeout: 15000 });
+    } catch (error) {
+      if ([404, 410].includes(error.statusCode)) await disablePushToken(subscription.subscription.endpoint);
+      throw error;
+    }
     return { ok: true, status: "accepted" };
   }, { ttl })));
   const sent = deliveries.filter((result) => result.ok && !result.skipped).length;
@@ -3420,12 +3438,13 @@ async function deliverTeamNotification({ title, body, data, audience, eventKey }
 }
 
 async function sendTeamAlertEmail(payload) {
-  if (!actionableNotification(payload.data)) return { ok: true, skipped: true, reason: "Routine update stays in the workspace" };
+  const policy = alertEmailPolicy(payload.data);
+  if (!policy.send) return { ok: true, skipped: true, reason: "Routine updates and reminders stay in Dispatch" };
   if (!emailAlertsReady() || process.env.EMAIL_ALERTS_ENABLED === "false") return { ok: false, skipped: true, reason: "Email alerts are not configured." };
-  const key = callAttentionEmailKey(payload.data) || `email:${payload.eventKey}`;
+  const key = policy.key || callAttentionEmailKey(payload.data) || `email:${payload.eventKey}`;
   const recipients = splitEmailList((payload.audience?.emailTo || getAlertEmailConfig().to).join(","));
   if (!recipients.length) return { ok: false, skipped: true, reason: "No email address for the selected staff." };
-  const results = await Promise.all(recipients.map((emailRecipient) => notificationLedger.deliver(`${key}:recipient:${emailRecipient}`, () => sendAlertEmail({ ...payload, emailRecipient }), { ttl: 7 * 86400000, holdOnUncertain: true })));
+  const results = await Promise.all(recipients.map((emailRecipient) => notificationLedger.deliver(`${key}:recipient:${emailRecipient}`, () => sendAlertEmail({ ...payload, emailRecipient }), { ttl: policy.ttl || 7 * 86400000, holdOnUncertain: true })));
   const uncertain = results.some((result) => result.uncertain);
   const pending = results.some((result) => result.pending);
   if (uncertain) await notificationLedger.observe("email", "uncertain").catch(() => {});

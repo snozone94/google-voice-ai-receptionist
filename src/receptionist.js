@@ -1201,6 +1201,18 @@ async function savePushTokenNow(subscription = {}) {
   return record;
 }
 
+export async function disablePushToken(identity) {
+  const operation = pushTokenWrites.then(async () => {
+    const records = await listRecords(pushTokensPath, Infinity);
+    const updated = records.map(record => (record.token || record.subscription?.endpoint) === identity ? { ...record, enabled: false } : record);
+    await ensureDataDir();
+    await fs.writeFile(`${pushTokensPath}.tmp`, updated.map(record => JSON.stringify(record)).join("\n") + "\n");
+    await fs.rename(`${pushTokensPath}.tmp`, pushTokensPath);
+  });
+  pushTokenWrites = operation.catch(() => {});
+  return operation;
+}
+
 export async function listPushTokens(limit = 100) {
   const records = await listRecords(pushTokensPath, limit);
   return records.filter((record) => record.enabled !== false && (record.token || record.subscription?.endpoint));

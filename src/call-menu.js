@@ -21,7 +21,7 @@ export function priceText(prices = {}) {
   return `DDD starting totals, including the $${prices.fee} service fee for one service:\n\n${lines.join("\n")}\n\nParts and other charges may apply. Final quote confirmed before service.\nMore service details: ${priceListUrl}`;
 }
 export function menuTwiml({ action, repeat = false }) {
-  return `<Response><Gather input="dtmf" numDigits="1" timeout="4" actionOnEmptyResult="true" action="${xml(action)}" method="POST"><Say voice="Polly.Joanna-Neural">${repeat ? "Please choose an option." : "DDD Roadside."} Press 1 to book by text. 2 for prices. 3 for an existing booking. Or 4 for the team.</Say></Gather></Response>`;
+  return `<Response>${repeat ? "" : '<Pause length="1"/>'}<Gather input="dtmf" numDigits="1" timeout="4" actionOnEmptyResult="true" action="${xml(action)}" method="POST"><Say voice="Polly.Joanna-Neural">${repeat ? "Please choose an option." : "Hey, thank you for calling Triple D’s automated system. How can we help you today?"} Press 1 to book by text. 2 for prices. 3 for an existing booking. Or 4 for the team.</Say></Gather></Response>`;
 }
 export function mountCallMenu(app, { express, authenticate, settings, saveEvent, sendBookingLinks, sendPriceLink, humanDial, notify, bypassAssistant, menuEnabled }) {
   let priceCache;
@@ -65,7 +65,7 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
       }
       let content;
       if (digit === "1") {
-        const delivery = await sendBookingLinks(phone).catch(() => ({ ok: false }));
+        const delivery = await sendBookingLinks(phone, req.body.CallSid).catch(() => ({ ok: false }));
         content = delivery.ok ? "Use the booking and app links in your DDD text to request service. Your appointment is confirmed when the team confirms it." : "We could not confirm the booking text. You can book at D D D cincy dot com, or leave a message for the team.";
       } else if (digit === "2") {
         const published = await prices();
