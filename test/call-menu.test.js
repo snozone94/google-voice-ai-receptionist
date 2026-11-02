@@ -12,7 +12,7 @@ test("published starting prices parse without inventing prices on a changed page
   assert.match(priceSpeech(prices), /already include the 25 dollar service fee/);
   assert.doesNotMatch(priceSpeech(prices), /before the visit fee|fee starts at|30 dollars|40 dollars|20 dollars|50 dollars/);
   assert.match(priceText(prices), /including the \$25 service fee/);
-  for (const message of [priceSpeech(prices), priceText(prices), priceSpeech({}), priceText({})]) {
+  for (const message of [priceText(prices), priceText({})]) {
     assert.match(message, /11 AM to 7 PM/);
     assert.match(message, /New-tire replacement service is available until 7 PM/);
     assert.match(message, /After 7 PM, tire service is limited to spare-tire changes/);
@@ -29,7 +29,7 @@ test("short menu accepts keypad digits during the greeting and has no default AI
   assert.match(menu, /^<Response><Pause length="1"\/>/);
   assert.match(menu, /Hey, thank you for calling Triple D’s automated system. How can we help you today\?/);
   assert.match(menu, /input="dtmf" numDigits="1" timeout="4" actionOnEmptyResult="true"/);
-  assert.match(menu, /Press 1 to book by text. 2 for prices. 3 for an existing booking. Or 4 for the team/);
+  assert.match(menu, /Press 1 to book by text. 2 for prices. 3 for an existing booking. 4 for hours and shop information. Or 5 to reach the team/);
   assert.match(menu, /secret=test&amp;repeat=1/);
   assert.doesNotMatch(menu, /<Dial|<Conference|assistant/i);
 });
@@ -53,6 +53,15 @@ test("keypad routing books without AI, handles text failures honestly, saves voi
   assert.equal(await menu.enabled(), true);
   assert.match((await request('1')).text, /booking and app links/);
   assert.equal(booking, 1); assert.equal(ai, 0); assert.equal(calls, 0);
+  const hours = await request('4');
+  assert.match(hours.text, /11 AM to 7 PM/);
+  assert.match(hours.text, /confirmed appointment only/);
+  assert.match(hours.text, /wait for approval before traveling/);
+  assert.match(hours.text, /info=hours/);
+  assert.match(hours.text, /Press 5 to reach the team/);
+  assert.doesNotMatch(hours.text, /<Dial/);
+  assert.equal(calls, 0);
+  assert.equal(booking, 1);
   smsOk = false;
   assert.match((await request('1')).text, /could not confirm/);
   assert.match((await request('3')).text, /same phone number or email/);
@@ -60,12 +69,12 @@ test("keypad routing books without AI, handles text failures honestly, saves voi
   assert.match((await request('7')).text, /Please choose/);
   assert.match((await request('', { repeat: '1' })).text, /<Record/);
   assert.equal(calls, 0);
-  assert.match((await request('4')).text, /<Dial>/);
+  assert.match((await request('5')).text, /<Dial>/);
   assert.equal(calls, 1); assert.equal(ai, 0);
   teamAvailable = false;
-  assert.match((await request("4")).text, /<Record/);
+  assert.match((await request("5")).text, /<Record/);
   assert.equal((await request('1', {}, {}, false)).code, 403);
-  assert.equal((await request('4', {}, { CallSid: 'bad' })).code, 400);
+  assert.equal((await request('5', {}, { CallSid: 'bad' })).code, 400);
   const before = messages;
   assert.match((await request('', { stage: 'saved' }, { RecordingUrl: 'https://api.twilio.com/test.wav', RecordingDuration: '8' })).text, /message is saved/);
   assert.equal(messages, before + 1);
