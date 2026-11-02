@@ -156,7 +156,7 @@ export function initializeLiveWorkspace({ code, staff }) {
     finally { dialing = false; }
   });
   document.querySelector("#saveLiveCallOptions").addEventListener("click", async () => {
-    try { await api("/api/live-calls/config", { enabled: document.querySelector("#liveCallEnabled").checked, ringTeam: document.querySelector("#liveRingTeam").checked, transcribeCalls: document.querySelector("#liveTranscribeCalls").checked }); status("Live-call options saved for new calls."); }
+    try { await api("/api/live-calls/config", { menuFirst: document.querySelector("#phoneMenuFirst").checked, enabled: document.querySelector("#liveCallEnabled").checked, ringTeam: document.querySelector("#liveRingTeam").checked, transcribeCalls: document.querySelector("#liveTranscribeCalls").checked }); status("Live-call options saved for new calls."); }
     catch (error) { status(error.message); }
   });
   for (const [id, restore] of [["connectLiveNumber", false], ["restoreLiveNumber", true]]) {
@@ -186,7 +186,7 @@ export function initializeLiveWorkspace({ code, staff }) {
         const result = await api("/api/voice/config");
         const select = document.querySelector("#browserCallerId");
         select.replaceChildren(...(result.callerIds || []).map((id) => { const option = document.createElement("option"); option.value = id; option.textContent = id; return option; }));
-        if (user.role === "admin") { const config = await api("/api/live-calls/config"); document.querySelector("#liveCallEnabled").checked = config.enabled; document.querySelector("#liveRingTeam").checked = config.ringTeam; document.querySelector("#liveTranscribeCalls").checked = config.transcribeCalls; const routeSelect = document.querySelector("#liveRouteNumber"); routeSelect.replaceChildren(...(result.callerIds || []).map((id) => { const option = document.createElement("option"); option.value = id; option.textContent = id; return option; })); }
+        if (user.role === "admin") { const config = await api("/api/live-calls/config"); document.querySelector("#phoneMenuFirst").checked = config.menuFirst !== false; document.querySelector("#liveCallEnabled").checked = config.enabled; document.querySelector("#liveRingTeam").checked = config.ringTeam; document.querySelector("#liveTranscribeCalls").checked = config.transcribeCalls; const routeSelect = document.querySelector("#liveRouteNumber"); routeSelect.replaceChildren(...(result.callerIds || []).map((id) => { const option = document.createElement("option"); option.value = id; option.textContent = id; return option; })); }
       }
       const epoch = generation;
       const result = await api("/api/calls/live");
