@@ -1,3 +1,4 @@
+import { mountReplyPolish } from "./reply-polish.js";
 import { mountCallMenu, priceText } from "./call-menu.js";
 import "dotenv/config";
 import crypto from "node:crypto";
@@ -239,6 +240,8 @@ app.get("/api/calls/:id/audio", async (req, res, next) => {
     stream.pipe(res);
   } catch (error) { next(error); }
 });
+
+mountReplyPolish(app, { express, authenticate: staffRecordsOnly, client: openAIClient, model: () => process.env.OPENAI_DRAFT_MODEL || "gpt-4o-mini" });
 
 const liveDraftCache = new Map();
 app.post("/api/live-calls/:id/drafts", express.json(), staffRecordsOnly, async (req, res, next) => {
