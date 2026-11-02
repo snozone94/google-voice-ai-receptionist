@@ -1,11 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { menuTwiml, parsePublishedPrices, priceSpeech, mountCallMenu } from "../src/call-menu.js";
+import { menuTwiml, parsePublishedPrices, priceSpeech, priceText, mountCallMenu } from "../src/call-menu.js";
 
 test("published starting prices parse without inventing prices on a changed page", () => {
   const prices = parsePublishedPrices('<p>Standard Service Fee: <b>Starting at</b> $25.00+</p><p>Battery jump-start — Starting at $30.00+</p><p>Door unlock — Starting at $40.00+</p><p>Tire plug repair — Starting at $20.00+</p><p>Spare tire change — Starting at $50.00+</p>');
   assert.deepEqual(prices, { fee: 25, jump: 30, unlock: 40, plug: 20, spare: 50 });
-  assert.match(priceSpeech(prices), /visit fee starts at 25 dollars/);
+  for (const total of [55, 65, 45, 75]) {
+    assert.ok(priceSpeech(prices).includes(`${total} dollars total`));
+    assert.ok(priceText(prices).includes(`$${total} total`));
+  }
+  assert.match(priceSpeech(prices), /already include the 25 dollar service fee/);
+  assert.doesNotMatch(priceSpeech(prices), /before the visit fee|fee starts at|30 dollars|40 dollars|20 dollars|50 dollars/);
+  assert.match(priceText(prices), /including the \$25 service fee/);
   assert.match(priceSpeech(prices), /final quote before service/);
   assert.deepEqual(parsePublishedPrices('<script>Battery jump-start Starting at $0</script>Unavailable'), {});
   assert.doesNotMatch(priceSpeech({ jump: 30 }), /start at 30/);
