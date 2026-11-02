@@ -34,10 +34,11 @@ export function actionableNotification(data = {}) {
 // Email is a quiet summary channel. Push reminders remain independent.
 export function alertEmailPolicy(data = {}) {
   if (!actionableNotification(data) || data.type === "unanswered-text") return { send: false };
-  const digits = String(data.from || data.to || "").replace(/\D/g, "");
+  const customer = data.type === "sms-delivery-failed" ? data.to : data.from || data.to;
+  const digits = String(customer || "").replace(/\D/g, "");
   const phone = digits.length === 10 ? `1${digits}` : digits;
   if (phone && data.type === "sms") return { send: true, key: `customer-text-email:${phone}`, ttl: 5 * 60000 };
-  if (phone && ["ai-pickup-failed", "openai-accept-failed", "ai-off-missed-call", "early-hangup", "missed-call", "customer-voicemail", "sms-failed", "sms-delivery-failed"].includes(data.type)) return { send: true, key: `customer-attention-email:${phone}`, ttl: 10 * 60000 };
+  if (phone && ["ai-pickup-failed", "openai-accept-failed", "ai-off-missed-call", "early-hangup", "missed-call", "customer-voicemail", "sms-failed", "sms-delivery-failed", "staff-text-reply"].includes(data.type)) return { send: true, key: `customer-attention-email:${phone}`, ttl: 10 * 60000 };
   return { send: true };
 }
 

@@ -725,7 +725,7 @@ app.post("/api/sms/reply", express.json(), async (req, res, next) => {
     }
 
     const to = normalizeE164(req.body?.to);
-    const message = appendSmsCompliance(String(req.body?.message || "").replace(/\s+/g, " ").trim());
+    const message = appendSmsCompliance(String(req.body?.message || "").trim());
     const agentName = String(staff.name || req.body?.agentName || "DDD team")
       .replace(/\s+/g, " ")
       .trim()
