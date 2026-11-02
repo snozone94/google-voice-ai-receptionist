@@ -86,5 +86,9 @@ test("email is quiet while push reminders remain independent", () => {
   assert.equal(first.ttl, 10 * 60000);
   assert.notEqual(first.key, alertEmailPolicy({ type: "missed-call", from: "+15135550101" }).key);
   assert.equal(alertEmailPolicy({ type: "sms", from: "+15135550100" }).ttl, 5 * 60000);
+  const deliveryOne = alertEmailPolicy({ type: "sms-delivery-failed", from: "+15134091342", to: "+15135550100" });
+  const deliveryTwo = alertEmailPolicy({ type: "sms-delivery-failed", from: "+15134091342", to: "+15135550101" });
+  assert.notEqual(deliveryOne.key, deliveryTwo.key);
+  assert.equal(deliveryOne.key, alertEmailPolicy({ type: "staff-text-reply", status: "failed", from: "+15135550100" }).key);
   assert.equal(alertEmailPolicy({ type: "booking", bookingId: "booking" }).send, true);
 });

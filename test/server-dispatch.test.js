@@ -213,6 +213,13 @@ test("dispatch HTTP contract, reviewer isolation, ownership, policy and provider
     const ledger = JSON.parse(await fs.readFile(path.join(dir, "notification-state.json"), "utf8"));
     assert.ok(Object.values(ledger.deliveries).some(value => value.status === "uncertain"));
   });
+  await t.test("suggested replies retain readable link line breaks when sent", async () => {
+    const response = await request("/api/sms/reply", "staff-one", { to: "+15135550142", message: "Book online:\nhttps://booking.invalid/request\n\niPhone:\nhttps://apps.apple.com/app/id6762315831" });
+    assert.equal(response.status, 201);
+    assert.match(sms.at(-1).Body, /Book online:\nhttps:/);
+    assert.match(sms.at(-1).Body, /\n\niPhone:\nhttps:/);
+    assert.equal((sms.at(-1).Body.match(/Reply STOP to stop\./g) || []).length, 1);
+  });
   await t.test("public booking replay cannot recover another record or inject identity/status", async () => {
     const victim = { bookingId: "victim", statusToken: "private-bearer", name: "Existing private customer", phone: "+15135550999", createdAt: new Date().toISOString(), status: "Requested" };
     await fs.writeFile(path.join(dir, "bookings.jsonl"), JSON.stringify(victim) + "\n");
