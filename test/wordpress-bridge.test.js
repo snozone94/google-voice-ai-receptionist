@@ -91,7 +91,7 @@ test('preferred time is read only from the confirmed lead table with exact UUID,
   assert.match(code, /\$lead_table = \$wpdb->prefix \. 'ddd_business_leads'/);
   assert.match(code, /\$has_leads = ddd_ai_dispatch_history_table_exists\(\$lead_table\)/);
   assert.match(code, /if \(\$has_leads\)/);
-  assert.match(code, /SELECT lead_uuid, job_uuid, preferred_time, created_at, updated_at FROM/);
+  assert.match(code, /SELECT lead_uuid, job_uuid, preferred_time, status, created_at, updated_at FROM/);
   assert.match(code, /WHERE job_uuid = %s ORDER BY updated_at DESC, created_at DESC, lead_uuid DESC LIMIT 1/);
   assert.match(code, /\(string\) \$lead\['job_uuid'\] === \$job_id/);
   assert.match(code, /\['serviceTime'\] = ddd_ai_dispatch_history_datetime\(\$preferred_time, \$legacy_gmt\) \?: \$preferred_time/);
@@ -101,4 +101,10 @@ test('preferred time is read only from the confirmed lead table with exact UUID,
   assert.match(date, /warning_count/);
   assert.match(date, /format\(DATE_ATOM\)/);
   assert.match(code, /strpos\(\$job_id, 'DDD-FORM'\) === 0/);
+});
+
+
+test('booking approvals require verified admin identity and preserve transactional same-job idempotency',()=>{
+ const auth=section('ddd_ai_dispatch_review_auth');assert.match(auth,/token_matches/);assert.match(auth,/tech_id/);assert.match(auth,/same_platform_member/);assert.match(auth,/same_manual_member/);assert.match(auth,/get_role_rows\(true\)/);
+ const code=section('ddd_ai_dispatch_review_booking');for(const guard of ['START TRANSACTION','FOR UPDATE','ROLLBACK','COMMIT','expected_status','expected_time','fingerprint'])assert.ok(code.includes(guard),guard);assert.match(code,/normalize_phone\(\$job\['customer_phone'\]\) !== \$phone/);assert.doesNotMatch(code,/->insert\(\$jobs|->insert\(\$leads/);assert.match(code,/->insert\(\$wpdb->options/);
 });
