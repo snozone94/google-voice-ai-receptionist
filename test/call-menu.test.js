@@ -113,3 +113,12 @@ test('verified booking flow is behind provider authentication and returns team c
   assert.match((await request(true, '', '3')).text, /Verify your booking/);
   assert.match((await request(true, 'booking-action', '5')).text, /<Dial>/); assert.equal(team, 1);
 });
+
+test('voicemail returned through live-call REST redirection has absolute recording action and callbacks', () => {
+  const menu = mountCallMenu({ post() {} }, { express: { urlencoded: () => null }, publicBaseUrl: 'https://dispatch.example.com', authenticate: () => true });
+  const xml = menu.voicemail({ query: { secret: 'a&b' }, body: {} });
+  assert.match(xml, /<Record[^>]*action="https:\/\/dispatch.example.com\/api\/twilio\/call-menu\?secret=a%26b&amp;stage=saved"/);
+  assert.match(xml, /recordingStatusCallback="https:\/\/dispatch.example.com\/api\/twilio\/recording\?secret=a%26b&amp;menuMessage=1"/);
+  assert.doesNotMatch(xml, /(?:action|recordingStatusCallback)="\//);
+  assert.match(menu.render({ query: {} }), /action="https:\/\/dispatch.example.com\/api\/twilio\/call-menu/);
+});

@@ -9,12 +9,13 @@ const bookings = [{ bookingId: 'job-real', serviceType: 'Tire plug', preferredTi
 async function fixture(t, history = bookings) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'booking-phone-')); t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const sent = [], published = [], receipts = []; let lookedUp = 0, time = Date.now();
-  const options = { directory, now: () => time, makeCode: () => '123456', lookup: async () => { lookedUp++; return { bookings: history }; }, sendCode: async (...args) => { sent.push(args); return { ok: true }; }, publishRequest: async request => { published.push(request); }, sendReceipt: async request => { receipts.push(request); }, voicemail: () => '<Response><Record/></Response>' };
+  const options = { directory, publicBaseUrl: 'https://dispatch.example.com', now: () => time, makeCode: () => '123456', lookup: async () => { lookedUp++; return { bookings: history }; }, sendCode: async (...args) => { sent.push(args); return { ok: true }; }, publishRequest: async request => { published.push(request); }, sendReceipt: async request => { receipts.push(request); }, voicemail: () => '<Response><Record/></Response>' };
   let service = createBookingPhone(options);
   return { directory, sent, published, receipts, get lookedUp() { return lookedUp; }, advance(ms) { time += ms; }, restart() { service = createBookingPhone(options); }, run(stage = '', body = {}) { return service.handle({ query: { stage: stage ? 'booking-' + stage : '', secret: 'test' }, body: { From: '+15135550100', To: '+15134091342', CallSid: callId, ...body } }); } };
 }
 test('no booking details before code verification, bound to phone, destination and call, durable across restart', async t => {
   const f = await fixture(t);
+  assert.match(await f.run(), /action="https:\/\/dispatch.example.com\/api\/twilio\/call-menu/);
   assert.match(await f.run(), /six digit verification/); assert.equal(f.sent.length, 1); assert.equal(f.lookedUp, 0);
   await f.run(); assert.equal(f.sent.length, 1);
   f.restart();
