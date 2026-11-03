@@ -46,7 +46,7 @@ export function canonicalBookingStatus(booking = {}) {
   return aliases[key] || key;
 }
 
-export const isOpenBooking = (booking) => !["completed", "cancelled", "failed", "rejected", "closed"].includes(canonicalBookingStatus(booking));
+export const isOpenBooking = (booking) => !["completed", "cancelled", "failed", "rejected", "closed", "archived", "rescheduled"].includes(canonicalBookingStatus(booking));
 const easternFormatter = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" });
 function calendarDay(year, month, day) {
   const stamp = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -116,7 +116,7 @@ export function bookingSyncHealth(bookings, { configured = false, now = Date.now
   return { key: "bookingSync", label: "Booking status sync", status, detail, nextStep: errors || pending ? "Review failed or uncertain booking sync before retrying creation; verify the existing platform job first." : !configured ? "Connect the customer-history status feed; local booking status is not live platform confirmation." : unverified || stale || missing ? "Check exact platform booking IDs and the last matched status timestamp. Unmatched or unqueried records remain unverified." : "" };
 }
 
-export function operationsSnapshot({ staff, conversations, calls, bookings, state = {}, voice, activeCalls = [], replyPolicy, health, team = [], now = Date.now() }) {
+export function operationsSnapshot({ staff, conversations, calls, bookings, state = {}, voice, activeCalls = [], replyPolicy, health, team = [], bookingChanges = [], availability, coverage, now = Date.now() }) {
   const threads = decorateConversations(conversations, calls, state);
   const self = safeStaff(staff);
   const isAdmin = adminRole(staff.role);
@@ -146,9 +146,9 @@ export function operationsSnapshot({ staff, conversations, calls, bookings, stat
       ...(thread.bookings || []).flatMap((booking) => [activityTime(booking.createdAt), activityTime(booking.updatedAt)]));
     const historical = !latestActivity || now - latestActivity > 86400000;
     return { phone: thread.phone, reason: thread.followUpReason, assignedTo: thread.assignedTo, minutesWaiting, historical, lastActivityAt: latestActivity ? new Date(latestActivity).toISOString() : null, priority: historical ? "review" : thread.needsReply && minutesWaiting >= replyPolicy.escalateAfterMinutes ? "urgent" : "normal" };
-  }).sort((a, b) => Number(a.historical) - Number(b.historical) || activityTime(b.lastActivityAt) - activityTime(a.lastActivityAt) || Number(b.priority === "urgent") - Number(a.priority === "urgent") || b.minutesWaiting - a.minutesWaiting);
+  }).sort((a, b) => Number(a.historical) - Number(b.historical) || Number(b.priority === "urgent") - Number(a.priority === "urgent") || b.minutesWaiting - a.minutesWaiting || activityTime(a.lastActivityAt) - activityTime(b.lastActivityAt));
 
-  return { staff: { ...safeStaff(staff), ok: Boolean(staff.ok), role: staff.role, ...(staff.source ? { source: staff.source } : {}) }, conversations: threads, calls, bookings, attention, voice, team: team.map((member) => ({ ...safeStaff(member), role: member.role || "staff", active: member.active !== false })), summary: { olderRequests: tasks.filter((task) => task.historical).length, activeCalls: activeCalls.length, unreadMessages: threads.reduce((sum, thread) => sum + thread.unread, 0), needsReply: threads.filter((thread) => thread.needsReply).length, openBookings: bookings.filter(isOpenBooking).length, todayOpenBookings: bookings.filter((booking) => isOpenBooking(booking) && bookingServiceDay(booking) === easternBookingDay(now)).length, overdueReplies: tasks.filter((task) => task.minutesWaiting >= replyPolicy.remindAfterMinutes && threads.find((thread) => thread.phone === task.phone)?.needsReply).length }, tasks, ...(adminRole(staff.role) ? { health: health || [] } : {}), replyPolicy, updatedAt: new Date(now).toISOString() };
+  return { bookingChanges, availability, coverage, staff: { ...safeStaff(staff), ok: Boolean(staff.ok), role: staff.role, ...(staff.source ? { source: staff.source } : {}) }, conversations: threads, calls, bookings, attention, voice, team: team.map((member) => ({ ...safeStaff(member), role: member.role || "staff", active: member.active !== false })), summary: { olderRequests: tasks.filter((task) => task.historical).length, activeCalls: activeCalls.length, unreadMessages: threads.reduce((sum, thread) => sum + thread.unread, 0), needsReply: threads.filter((thread) => thread.needsReply).length, openBookings: bookings.filter(isOpenBooking).length, todayOpenBookings: bookings.filter((booking) => isOpenBooking(booking) && bookingServiceDay(booking) === easternBookingDay(now)).length, overdueReplies: tasks.filter((task) => task.minutesWaiting >= replyPolicy.remindAfterMinutes && threads.find((thread) => thread.phone === task.phone)?.needsReply).length }, tasks, ...(adminRole(staff.role) ? { health: health || [] } : {}), replyPolicy, updatedAt: new Date(now).toISOString() };
 }
 
 // Receives observations, never credentials or provider error bodies.
@@ -176,8 +176,9 @@ export function reminderAudience(item, roster, { adminEmails = [], adminStaff } 
   const active = roster.filter((member) => member.active !== false);
   const admins = [...active.filter((member) => adminRole(member.role)), ...(adminStaff ? [adminStaff] : [])];
   const owner = item.assignedTo && [...active, ...(adminStaff ? [adminStaff] : [])].find((member) => safeStaff(member).id === item.assignedTo.id);
-  if (item.stage !== "escalation" && owner) return { staffIds: [safeStaff(owner).id], emailTo: owner.email ? [owner.email] : [] };
-  return { adminOnly: true, staffIds: [...new Set(admins.map((member) => safeStaff(member).id))], emailTo: [...new Set([...adminEmails, ...admins.map((member) => member.email).filter(Boolean)])] };
+  if (item.stage !== "escalation" && owner && owner.working !== false) return { staffIds: [safeStaff(owner).id], emailTo: owner.email ? [owner.email] : [] };
+  const backups=active.filter(member=>member.backup===true);
+  return { adminOnly: backups.length===0, staffIds: [...new Set([...admins,...backups].map((member) => safeStaff(member).id))], emailTo: [...new Set([...adminEmails, ...[...admins,...backups].map((member) => member.email).filter(Boolean)])] };
 }
 
 // Handlers are injected so reviewer isolation and authorization can be tested

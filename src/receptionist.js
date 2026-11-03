@@ -516,6 +516,7 @@ export async function listCallLog(limit = 50) {
         })),
         durationSeconds,
         durationLabel: formatDuration(durationSeconds),
+        isVoicemail: sortedEvents.some(event=>event.type==="twilio.menu.message"||event.status==="message-saved"),
         recordingUrl: firstTruthy(
           ...sortedEvents.map((event) => firstTruthy(event.recordingUrl, event.recording_url)),
           summary.recordingUrl,
@@ -822,11 +823,29 @@ function extractCommonQuestions(text = "") {
     .slice(0, 40);
 }
 
+export function applyReviewedBooking(request, decision, result) {
+  const operation=bookingWrites.then(async()=>{
+    const rows=await listRecords(bookingsPath,Infinity);
+    const existing=rows.find(row=>row.bookingId===request.booking.bookingId);
+    if(existing){const patch={bookingId:existing.bookingId,updatedAt:new Date().toISOString(),...(request.type==="cancel"?{status:"Cancelled",platformStatus:"Canceled"}:request.type==="reschedule"?{preferredTime:decision.appointmentAt,serviceTime:decision.appointmentAt,confirmationStatus:"Confirmed"}:{notes:[existing.notes,request.details].filter(Boolean).join("\n")})};await fs.appendFile(bookingsPath,JSON.stringify(patch)+"\n");}
+    historyCache.clear();
+    return result;
+  });bookingWrites=operation.catch(()=>{});return operation;
+}
+
 export async function listBookingsByPhone(phone, limit = 20) {
   const target = normalizeE164(phone);
   if (!target) return [];
   const records = await listRecords(bookingsPath, Infinity);
   return refreshBookings(records.filter((booking) => normalizeE164(booking.phone || booking.customer_phone) === target).slice(0, limit));
+}
+
+export async function getBookingForReview(phone, bookingId) {
+  const history = await fetchDddCustomerHistory(normalizeE164(phone), 20);
+  if (history.fetchError) throw Object.assign(new Error("WordPress could not be refreshed. Please try again."), {status:502});
+  const booking = history.bookings.find(item => item.bookingId === bookingId);
+  if (!booking) throw Object.assign(new Error("This booking is no longer available. Review it in WordPress."), {status:409});
+  return booking;
 }
 
 export async function getCustomerHistory(phone, limit = 8) {
@@ -853,6 +872,7 @@ export async function getCustomerHistory(phone, limit = 8) {
     bookings: bookings.map((booking) => ({
       bookingId: booking.bookingId,
       serviceTime: booking.serviceTime,
+      confirmationStatus: booking.confirmationStatus,
       source: booking.source,
       createdAt: booking.createdAt,
       name: booking.name,
@@ -938,7 +958,7 @@ async function refreshBookings(records) {
       checkedAt
     };
     if (!remote) return result;
-    for (const [field, aliases] of Object.entries({ status: ["status", "job_status"], assignee: ["assignee", "assigned_to", "technician", "technician_name"], serviceTime: ["serviceTime", "service_time", "scheduled_at"] })) {
+    for (const [field, aliases] of Object.entries({ status: ["status", "job_status"], assignee: ["assignee", "assigned_to", "technician", "technician_name"], serviceTime: ["serviceTime", "service_time", "scheduled_at"], confirmationStatus: ["confirmationStatus"] })) {
       const value = aliases.map((key) => remote[key]).find((value) => value !== undefined && value !== null && value !== "");
       if (value !== undefined) result[field] = value;
     }

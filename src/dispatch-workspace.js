@@ -35,7 +35,7 @@ export function decorateConversations(conversations, calls, state = {}) {
     const incompleteCall = latestCall && terminal && !subsequentlyBooked && /missed|incomplete|needs-review/.test(latestCall.completion || "") && callTime > time(saved.handledThrough) && repliedThrough <= callTime;
     const needsReply = waiting.length > 0;
     const needsFollowUp = Boolean(needsReply || failedText || incompleteCall);
-    return { ...conversation, messages, unread: unreadMessages.length, firstUnreadAt: unreadMessages[0]?.createdAt || null, needsReply, waitingSince: waiting[0]?.createdAt || null, handledThrough: saved.handledThrough || null, assignedTo: saved.assignedTo ? { id: String(saved.assignedTo.id), name: String(saved.assignedTo.name) } : null, needsFollowUp, followUpReason: needsFollowUp ? failedText ? "Text not delivered" : needsReply ? "Customer waiting" : "Call needs follow-up" : "", lastSmsStatus: lastOutbound?.status || "none" };
+    return { ...conversation, threadStatus: needsFollowUp ? "Needs reply" : unreadMessages.length ? "New" : time(lastOutbound?.createdAt)>time(saved.handledThrough) ? "Waiting on customer" : "Handled", messages, unread: unreadMessages.length, firstUnreadAt: unreadMessages[0]?.createdAt || null, needsReply, waitingSince: waiting[0]?.createdAt || null, handledThrough: saved.handledThrough || null, assignedTo: saved.assignedTo ? { id: String(saved.assignedTo.id), name: String(saved.assignedTo.name) } : null, needsFollowUp, followUpReason: needsFollowUp ? failedText ? "Text not delivered" : needsReply ? "Customer waiting" : "Call needs follow-up" : "", lastSmsStatus: lastOutbound?.status || "none" };
   });
 }
 

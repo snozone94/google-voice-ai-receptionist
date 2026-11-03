@@ -1,7 +1,9 @@
+import { reviewDecision, reviewKey, reviewReceipt, applyPlatformReview } from "./booking-review.js";
+import { serviceControlStore, availabilityMessage, businessAppointmentIso } from "./service-controls.js";
 import { holdMusicTwiml, createHoldMusicUrl, verifyHoldMusic, holdTracks } from "./hold-music.js";
 import { createBookingPhone } from "./booking-phone.js";
 import { mountReplyPolish } from "./reply-polish.js";
-import { mountCallMenu, priceText, serviceAvailability, shopVisitPolicy } from "./call-menu.js";
+import { mountCallMenu, priceText, serviceAvailability, shopVisitPolicy, tireAvailability } from "./call-menu.js";
 import "dotenv/config";
 import crypto from "node:crypto";
 import express from "express";
@@ -31,6 +33,8 @@ import {
   listBookings,
   listBookingsByPhone,
   getCustomerHistory,
+  getBookingForReview,
+  applyReviewedBooking,
   listCallLog,
   listLeads,
   listPushTokens,
@@ -67,6 +71,7 @@ const vapidKeysPath = path.join(dataDir, "web-push-vapid.json");
 const notificationLedger = notificationState(dataDir);
 const workspace = workspaceStore(dataDir);
 const replyPolicies = replyPolicyStore(dataDir);
+const serviceControls = serviceControlStore(dataDir);
 const uploadsDir = path.join(dataDir, "customer-uploads");
 const presence = new Map();
 const appReviewPin = String(process.env.APP_REVIEW_PIN || process.env.REVIEWER_PIN || "").trim();
@@ -189,7 +194,11 @@ const liveCalls = createLiveCalls({ directory: dataDir, holdMusicUrl: async reco
   try { await Promise.all(holdTracks.map(file => fs.access(path.join(dataDir, "hold-audio", file)))); }
   catch { return ""; }
   return createHoldMusicUrl(process.env.PUBLIC_BASE_URL, process.env.TWILIO_AUTH_TOKEN, record.id);
-}, startTranscription: (id) => callTranscripts.start(id), getTranscription: (id) => callTranscripts.get(id), routingIdentities: () => nativeVoice.routingIdentities(), saveCallEvent, transcript: listLiveCalls, stopAssistant: stopRealtimeAssistant, notify: (alert) => notifyTeamTracked(alert, "live-call-needs-team"), fallback: async (record) => {
+}, startTranscription: (id) => callTranscripts.start(id), getTranscription: (id) => callTranscripts.get(id), routingIdentities: async () => {
+  const ids=await nativeVoice.routingIdentities(), preferences=Object.values(await serviceControls.allPreferences());
+  const working=ids.filter(id=>preferences.find(p=>p.voiceIdentity===id)?.working!==false);
+  return working.length?working:ids.filter(id=>preferences.find(p=>p.voiceIdentity===id)?.backup===true);
+}, saveCallEvent, transcript: listLiveCalls, stopAssistant: stopRealtimeAssistant, notify: (alert) => notifyTeamTracked(alert, "live-call-needs-team"), fallback: async (record) => {
   const response = record.teamOnly ? callMenu.voicemail({ query: { secret: process.env.TWILIO_SMS_WEBHOOK_SECRET || "" }, body: { CallSid: record.id, From: record.phone, To: record.businessPhone } }) : await buildHumanDialTwiml(await loadReceptionistSettings(), { customerPhone: record.phone });
   await twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN).calls(record.id).update({ twiml: response });
 } });
@@ -220,9 +229,10 @@ const bookingPhone = createBookingPhone({
 });
 
 const callMenu = mountCallMenu(app, {
-  express, publicBaseUrl: process.env.PUBLIC_BASE_URL, authenticate: hasTwilioSmsAccess, settings: loadReceptionistSettings, saveEvent: saveCallEvent, bookingSelfService: req => bookingPhone.handle(req),
+  express, publicBaseUrl: process.env.PUBLIC_BASE_URL, authenticate: hasTwilioSmsAccess, settings: loadReceptionistSettings, saveEvent: saveCallEvent, bookingSelfService: req => bookingPhone.handle(req), availability: () => serviceControls.availability(),
   sendBookingLinks: async (phone, callId, includeShopInfo = false) => notificationLedger.deliver(`menu-booking-links:${callId}${includeShopInfo ? ":hours" : ""}`, async () => {
-    const message = appendStopFooter(`${defaultCallerSelfServiceSms()}${includeShopInfo ? `\n\n${serviceAvailability}\n\n${shopVisitPolicy}` : "\n\nShop visits require an approved appointment. Please wait for confirmation before traveling to the shop."}`);
+    const currentAvailability = await serviceControls.availability();
+    const message = appendStopFooter(`${defaultCallerSelfServiceSms()}${includeShopInfo ? `\n\n${currentAvailability.newTiresAvailable?tireAvailability:"New-tire replacement service is currently unavailable."}\nShop visits require an approved appointment before traveling.` : "\n\nShop visits require an approved appointment. Please wait for confirmation before traveling to the shop."}\n\n${availabilityMessage(currentAvailability)}`);
     let delivery;
     try { delivery = await sendTwilioSms(phone, message); }
     catch (error) { error.uncertain = true; throw error; }
@@ -234,7 +244,8 @@ const callMenu = mountCallMenu(app, {
   }, notify: queueTeamNotification,
   bypassAssistant: handleTwilioVoice, menuEnabled: async () => (await liveCalls.config()).menuFirst !== false,
   sendPriceLink: async (phone, callId, prices) => notificationLedger.deliver(`menu-prices:${callId}`, async () => {
-    const message = appendStopFooter(priceText(prices));
+    const currentAvailability = await serviceControls.availability();
+    const message = appendStopFooter(`${priceText(prices)}${currentAvailability.mode!=="available"||!currentAvailability.newTiresAvailable||currentAvailability.notice?"\n\n"+availabilityMessage(currentAvailability):""}`);
     const delivery = await sendTwilioSms(phone, message);
     await saveOutgoingSms({ to: phone, from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "", body: message, messageSid: delivery.sid || "", status: delivery.status || (delivery.ok ? "sent" : "failed"), source: "call_menu_prices", agentName: "DDD price list", errorCode: delivery.code || "", errorMessage: delivery.error || "" });
     return delivery;
@@ -274,6 +285,47 @@ app.get("/api/calls/:id/audio", async (req, res, next) => {
 });
 
 mountReplyPolish(app, { express, authenticate: staffRecordsOnly, client: openAIClient, model: () => process.env.OPENAI_DRAFT_MODEL || "gpt-4o-mini" });
+
+app.get("/api/service-availability", async (_req,res,next)=>{ try { const availability=await serviceControls.availability();res.set("Cache-Control","public, max-age=10").json({...availability,message:availabilityMessage(availability)}); }catch(error){next(error);} });
+app.post("/api/service-availability", express.json(), staffRecordsOnly, async (req,res,next)=>{ try { if(!isAdminRole(res.locals.staff.role))return res.status(403).json({error:"Admin access required."}); const availability=await serviceControls.setAvailability(req.body);res.json({...availability,message:availabilityMessage(availability)}); }catch(error){res.status(error.status||400).json({error:error.message});} });
+app.get("/api/staff/coverage",staffRecordsOnly,async(_req,res,next)=>{try{if(res.locals.staff.role==="reviewer")return res.json({working:false,backup:false});res.json(await serviceControls.preferences(safeStaff(res.locals.staff).id));}catch(error){next(error);} });
+app.post("/api/staff/coverage",express.json(),staffRecordsOnly,async(req,res,next)=>{try{if(res.locals.staff.role==="reviewer")return res.status(403).json({error:"Staff sign-in required."});res.json(await serviceControls.setPreferences(safeStaff(res.locals.staff).id,{...req.body,voiceIdentity:voiceIdentity(res.locals.staff)}));}catch(error){res.status(error.status||400).json({error:error.message});} });
+app.get("/api/booking-change-requests",staffRecordsOnly,async(_req,res,next)=>{try{res.json({requests:res.locals.staff.role==="reviewer"?[]:await bookingPhone.listRequests()});}catch(error){next(error);} });
+
+app.post("/api/booking-change-requests/:id/refresh",express.json(),staffRecordsOnly,async(req,res)=>{
+  try{
+    if(!isAdminRole(res.locals.staff.role))return res.status(403).json({error:"Admin access required."});
+    const existing=(await bookingPhone.listRequests()).find(item=>item.id===req.params.id);
+    if(!existing)return res.status(404).json({error:"Request not found."});
+    const booking=await getBookingForReview(existing.phone,existing.booking.bookingId);
+    res.json({request:await bookingPhone.refreshRequest(existing.id,booking),message:"Current WordPress booking refreshed. Review the details before approving."});
+  }catch(error){res.status(error.status||502).json({error:error.message});}
+});
+
+app.post("/api/booking-change-requests/:id/review",express.json(),staffRecordsOnly,async(req,res)=>{
+  try{
+    const staff=res.locals.staff;
+    if(!isAdminRole(staff.role))return res.status(403).json({error:"Admin access required to approve booking changes."});
+    const existing=(await bookingPhone.listRequests()).find(item=>item.id===req.params.id);
+    if(!existing)return res.status(404).json({error:"Booking change request not found."});
+    const decision=req.body.action==="verify" && existing.status==="needs_verification" && existing.review ? existing.review : reviewDecision(req.body,existing);
+    const result=await bookingPhone.review(req.params.id,decision,async(request,choice)=>{
+      if(choice.action!=="approve")return {ok:true,bookingUnchanged:true};
+      const historyUrl=process.env.DDD_CUSTOMER_HISTORY_URL;
+      const url=historyUrl?new URL('/wp-json/ddd/v1/dispatch-booking-change',historyUrl).toString():'';
+      const remote=await applyPlatformReview(request,choice,{url,token:process.env.DDD_TECH_TEAM_TOKEN});
+      return applyReviewedBooking(request,choice,remote);
+    });
+    const message=appendStopFooter(reviewReceipt(result));
+    const delivery=await notificationLedger.deliver(`booking-review-result:${reviewKey(result,result.review)}`,async()=>{
+      let sent;try{sent=await sendTwilioSms(result.phone,message);}catch(error){error.uncertain=true;throw error;}
+      await saveOutgoingSms({to:result.phone,from:result.businessPhone,body:message,messageSid:sent.sid||'',status:sent.status||(sent.ok?'sent':'failed'),source:'booking_review',agentName:staff.name||'DDD team'});return sent;
+    },{ttl:30*86400000,holdOnUncertain:true}).catch(()=>({ok:false,uncertain:true}));
+    res.json({request:result,delivery,message:delivery.ok?'Saved and customer text accepted for delivery.':'Decision saved. Customer text is not confirmed; check the conversation before retrying.'});
+  }catch(error){res.status(error.status||502).json({error:error.message});}
+});
+
+app.post("/api/calls/:id/voicemail-read",express.json(),staffRecordsOnly,async(req,res)=>{try{if(res.locals.staff.role==="reviewer")return res.status(403).json({error:"Staff sign-in required."});res.json(await serviceControls.markVoicemail(safeStaff(res.locals.staff).id,req.params.id));}catch(error){res.status(error.status||400).json({error:error.message});}});
 
 const liveDraftCache = new Map();
 app.post("/api/live-calls/:id/drafts", express.json(), staffRecordsOnly, async (req, res, next) => {
@@ -344,7 +396,8 @@ const dispatchOperations = operationsHandlers({
       try { await fs.access(dataDir, 6); } catch { storage = false; }
       health = operationsHealth({ configured: { calling: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.PUBLIC_BASE_URL && (nativeVoiceStatus().ready || configuredAiSipUri() || process.env.OPENAI_SIP_URI || process.env.TRANSFER_SIP_URI)), sms: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && normalizeE164(process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER)), email: emailAlertsReady() && process.env.EMAIL_ALERTS_ENABLED !== "false" }, outcomes, bookings, bookingStatusConfigured: Boolean(process.env.DDD_CUSTOMER_HISTORY_URL), tokenCount: tokens.filter((token) => notificationAudience(token)).length, teamCount: directory.team.filter((member) => member.active !== false).length, storage });
     }
-    return { conversations, calls, bookings, activeCalls, voice: nativeVoiceStatus(), health, team: [...directory.team, ...(process.env.ADMIN_PIN ? [{ name: process.env.ADMIN_STAFF_NAME || "Brianna", role: "admin", active: true }] : [])] };
+    const seenVoicemails=await serviceControls.voicemailSeen(safeStaff(staff).id);
+    return { conversations, calls:calls.map(call=>({...call,voicemailUnread:Boolean(call.isVoicemail&&!seenVoicemails[call.callId||call.id])})), bookings, activeCalls, bookingChanges: await bookingPhone.listRequests(), availability: await serviceControls.availability(), coverage: await serviceControls.preferences(safeStaff(staff).id), voice: nativeVoiceStatus(), health, team: [...directory.team, ...(process.env.ADMIN_PIN ? [{ name: process.env.ADMIN_STAFF_NAME || "Brianna", role: "admin", active: true }] : [])] };
   }
 });
 app.get("/api/operations", operationsOnly, async (_req, res, next) => {
@@ -1209,7 +1262,7 @@ async function handleTwilioVoice(req, res, next) {
     });
     queueCallStartSms(req.body?.From || req.query?.From || "");
     if (menuFirst) {
-      res.type("text/xml").send(callMenu.render(req));
+      res.type("text/xml").send(await callMenu.render(req));
       return;
     }
     queueTeamNotification({
@@ -1360,7 +1413,7 @@ app.post("/api/twilio/recording", express.urlencoded({ extended: false }), async
       req.body.From = call?.caller || "";
     }
     await saveCallEvent({
-      type: "twilio.recording.completed",
+      type: req.query.menuMessage==="1" && req.body.RecordingStatus==="completed" && Number(req.body.RecordingDuration)>0 ? "twilio.menu.message" : "twilio.recording.completed",
       data: {
         call_id: req.body.CallSid || req.body.callSid || (/^CA[0-9a-f]{32}$/i.test(req.query.call || "") ? req.query.call : ""),
         parent_call_id: req.body.ParentCallSid || "",
@@ -1891,7 +1944,8 @@ app.get("/api/call-log", async (req, res, next) => {
       res.json({ calls: appReviewCallLog.slice(0, Number(req.query.limit || 50)) });
       return;
     }
-    res.json({ staff, calls: await listCallLog(Number(req.query.limit || 50)) });
+    const seen=await serviceControls.voicemailSeen(safeStaff(staff).id);
+    res.json({ staff, calls: (await listCallLog(Number(req.query.limit || 50))).map(call=>({...call,voicemailUnread:Boolean(call.isVoicemail&&!seen[call.callId||call.id])})) });
   } catch (error) {
     next(error);
   }
@@ -1972,7 +2026,9 @@ app.post("/api/webrtc-offer", requireOpenAIKey, express.text({ type: "*/*", limi
 });
 
 async function loadSettingsWithInsights() {
-  const settings = await loadReceptionistSettings();
+  const baseSettings = await loadReceptionistSettings();
+  const currentAvailability=await serviceControls.availability();
+  const settings={...baseSettings,businessKnowledge:baseSettings.businessKnowledge+"\nCurrent service availability: "+availabilityMessage(currentAvailability)};
   if (settings.insightLearning?.enabled === false) return settings;
   try {
     return { ...settings, insightSnapshot: await buildBusinessInsights() };
@@ -3430,8 +3486,11 @@ async function deliverTeamNotification({ title, body, data, audience, eventKey }
       console.warn("Incoming call routing could not be verified; retaining alert fallback.");
     }
   }
+  const coveragePreferences = await serviceControls.allPreferences();
   const seen = new Set();
   tokens = tokens.filter((subscription) => {
+    const coverage = coveragePreferences[safeStaff({id:subscription.staffId,name:subscription.staffName}).id];
+    if(coverage?.working===false && !(coverage.backup && ["unanswered-text","sms-failed","sms-delivery-failed","missed-call","customer-voicemail"].includes(data.type)))return false;
     if (usesNativeIncomingCall(subscription, incomingCallIdentities)) return false;
     const key = subscription.token || subscription.subscription?.endpoint;
     if (!key || seen.has(key) || !notificationAudience(subscription, audience) || (preference && !(subscription.preferences?.[preference] ?? quietDefaults[preference] ?? true))) return false;
@@ -3639,7 +3698,9 @@ async function checkUnansweredTexts() {
         const fresh = pendingTextReminders(await listConversations(500), { minutes: policy.remindAfterMinutes, escalateMinutes: policy.escalateAfterMinutes, since, state: await workspace.get({ id: "__reminder_worker__" }) }).find((candidate) => candidate.key === item.key);
         if (!fresh) continue;
         const escalation = fresh.stage === "escalation";
-        const audience = reminderAudience(fresh, directory.team, { adminEmails: getAlertEmailConfig().to, adminStaff: process.env.ADMIN_PIN ? { name: process.env.ADMIN_STAFF_NAME || "Brianna", role: "admin" } : null });
+        const coverage = await serviceControls.allPreferences();
+        const rosterWithCoverage = directory.team.map(member=>({...member,...coverage[safeStaff(member).id]}));
+        const audience = reminderAudience(fresh, rosterWithCoverage, { adminEmails: getAlertEmailConfig().to, adminStaff: process.env.ADMIN_PIN ? { name: process.env.ADMIN_STAFF_NAME || "Brianna", role: "admin" } : null });
         audience.emailTo = splitEmailList(audience.emailTo.join(","));
         await notificationLedger.deliver(key, () => notifyTeamTracked({ title: escalation ? "Customer reply overdue" : "Customer needs a reply", body: `${formatPhoneForAlert(item.phone)} has been waiting ${item.minutesWaiting} minutes. ${String(item.message.body || "").slice(0, 160)}`, data: { type: "unanswered-text", from: item.phone, messageId: `reminder:${item.key}`, message: item.message.body || "", reminderKey: item.key, stage: item.stage }, audience }, "unanswered-text"), { ttl: 7 * 86400000 });
       } catch (error) { throw error; }

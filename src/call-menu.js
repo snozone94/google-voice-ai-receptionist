@@ -1,3 +1,4 @@
+import { availabilityMessage, defaultAvailability } from "./service-controls.js";
 const xml = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]);
 export const priceListUrl = "https://dddcincy.com/shop-our-roadside-services/";
 export function parsePublishedPrices(html) {
@@ -23,8 +24,8 @@ export function priceText(prices = {}) {
   const lines = Object.entries(labels).filter(([key]) => prices[key]).map(([key, label]) => `${label}: from $${Number((prices[key] + prices.fee).toFixed(2))} total`);
   return `DDD starting totals, including the $${prices.fee} service fee for one service:\n\n${lines.join("\n")}\n\nParts and other charges may apply. Final quote confirmed before service.\nMore service details: ${priceListUrl}\n\n${serviceAvailability}`;
 }
-export function menuTwiml({ action, repeat = false }) {
-  return `<Response>${repeat ? "" : '<Pause length="1"/>'}<Gather input="dtmf" numDigits="1" timeout="4" actionOnEmptyResult="true" action="${xml(action)}" method="POST"><Say voice="Polly.Joanna-Neural">${repeat ? "Please choose an option." : "Hey, thank you for calling Triple D’s automated system. How can we help you today?"} Press 1 to book by text. 2 for prices. 3 for an existing booking. 4 for hours and shop information. Or 5 to reach the team.</Say></Gather></Response>`;
+export function menuTwiml({ action, repeat = false, notice = "" }) {
+  return `<Response>${repeat ? "" : '<Pause length="1"/>'}<Gather input="dtmf" numDigits="1" timeout="4" actionOnEmptyResult="true" action="${xml(action)}" method="POST"><Say voice="Polly.Joanna-Neural">${repeat ? "Please choose an option." : "Hey, thank you for calling Triple D’s automated system. How can we help you today?"}${!repeat && notice ? " " + xml(notice) : ""} Press 1 to book by text. 2 for prices. 3 for an existing booking. 4 for hours and shop information. Or 5 to reach the team.</Say></Gather></Response>`;
 }
 export async function boundedMenuDelivery(send, waitMs = 1500) {
   let timer;
@@ -35,7 +36,7 @@ export async function boundedMenuDelivery(send, waitMs = 1500) {
     ]);
   } finally { clearTimeout(timer); }
 }
-export function mountCallMenu(app, { express, authenticate, settings, saveEvent, sendBookingLinks, sendPriceLink, humanDial, notify, bypassAssistant, menuEnabled, bookingSelfService, publicBaseUrl = process.env.PUBLIC_BASE_URL || "" }) {
+export function mountCallMenu(app, { express, authenticate, settings, saveEvent, sendBookingLinks, sendPriceLink, humanDial, notify, bypassAssistant, menuEnabled, bookingSelfService, publicBaseUrl = process.env.PUBLIC_BASE_URL || "", availability = async () => defaultAvailability }) {
   let priceCache;
   async function prices() {
     if (priceCache && priceCache.expires > Date.now()) return priceCache.value;
@@ -89,11 +90,14 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
       } else if (digit === "2") {
         const published = await prices();
         const delivery = await boundedMenuDelivery(() => sendPriceLink(phone, req.body.CallSid, published));
+        const current=await availability();
         content = priceSpeech(published);
+        if(!current.newTiresAvailable)content=content.replace(tireAvailability,"New-tire replacements are currently unavailable. Spare-tire changes depend on technician availability.");
         if (delivery.queued) content = content.replace("The price list is in your DDD text.", "We are sending the price list by text.");
         if (!delivery.ok) content = content.replace(/The price list is in your DDD text\./, "See D D D cincy dot com for the full price list.").replace(/Please check the price list in your DDD text/, "Please check D D D cincy dot com");
       } else if (digit === "4") {
-        content = `${serviceAvailability} ${shopVisitPolicy} Press 1 to receive booking and shop information by text.`;
+        const current=await availability();
+        content = `${availabilityMessage(current)} ${current.newTiresAvailable?tireAvailability:"Tire service is limited to spare-tire changes, subject to technician availability."} ${shopVisitPolicy} Press 1 to receive booking and shop information by text.`;
       } else if (digit === "3") {
         content = "For booking details, open DDD Mobile using the same phone number or email as your booking. You can leave the team a message here.";
       } else if (req.query.repeat === "1" || req.query.stage === "followup") {
@@ -111,5 +115,5 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
     if (req.query.menuMessage === "1" && req.body.RecordingStatus === "completed" && Number(req.body.RecordingDuration) > 0 && req.body.RecordingUrl) {
       notify({ title: "New DDD voice message", body: "A customer left a message. Open their conversation to listen and reply.", data: { type: "customer-voicemail", callId: req.body.CallSid, from: req.body.From || "" } }, "menu-voice-message");
     }
-  }, async enabled() { return process.env.CALL_MENU_ENABLED !== "false" && (await menuEnabled()); }, render(req) { return menuTwiml({ action: action(req) }); } };
+  }, async enabled() { return process.env.CALL_MENU_ENABLED !== "false" && (await menuEnabled()); }, async render(req) { const current=await availability();return menuTwiml({ action: action(req), notice: current.mode!=="available" ? availabilityMessage(current).split(" Regular hours")[0]+(current.notice?" "+current.notice:"") : current.notice }); } };
 }

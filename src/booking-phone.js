@@ -121,5 +121,37 @@ export function createBookingPhone({ directory, lookup, sendCode, publishRequest
     }
     return overview(req, booking);
   }
-  return { handle };
+  return { handle,
+    listRequests: () => transaction(state => Object.values(state.requests).sort((a,b) => b.createdAt.localeCompare(a.createdAt))),
+    async refreshRequest(id, booking) {
+      return transaction(state => {
+        const request=state.requests[id];
+        if(!request)throw Object.assign(new Error("Request not found."),{status:404});
+        if(!['pending','offered'].includes(request.status))throw Object.assign(new Error("Resolve the previous decision before refreshing this request."),{status:409});
+        if(booking.bookingId!==request.booking.bookingId)throw Object.assign(new Error("Booking identity changed."),{status:409});
+        request.booking=structuredClone(booking);delete request.error;
+        return structuredClone(request);
+      });
+    },
+    async review(id, decision, execute) {
+      const claim = await transaction(state => {
+        const request = state.requests[id];
+        if (!request) throw Object.assign(new Error("Request not found."), { status: 404 });
+        if (["approved", "declined"].includes(request.status)) return { done: true, request };
+        if (request.status === "processing" && now()-Date.parse(request.reviewStartedAt||0)>60000) request.status="needs_verification";
+        if (request.status === "processing") throw Object.assign(new Error("This request is being reviewed. Please refresh shortly."), { status: 409 });
+        if (request.review && request.status === "needs_verification" && JSON.stringify(request.review) !== JSON.stringify(decision)) throw Object.assign(new Error("Verify the previous change before submitting a different decision."), { status: 409 });
+        request.status = "processing"; request.review = decision; request.reviewStartedAt=new Date(now()).toISOString();
+        return { request: structuredClone(request) };
+      });
+      if (claim.done) return claim.request;
+      try {
+        const result = await execute(claim.request, decision);
+        return await transaction(state => { const request=state.requests[id]; Object.assign(request,{status:decision.action==="approve"?"approved":decision.action==="offer"?"offered":"declined",reviewedAt:new Date(now()).toISOString(),result});return structuredClone(request); });
+      } catch(error) {
+        await transaction(state => { const request=state.requests[id];request.status=error.definite?"pending":"needs_verification";request.error=error.definite?error.message:"Check the current booking before retrying; the previous result was not confirmed."; });
+        throw error;
+      }
+    }
+  };
 }
