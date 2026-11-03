@@ -7,7 +7,7 @@ const xml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
 const terminal = (value) => ["completed", "failed", "busy", "no-answer", "canceled"].includes(value);
 const failure = (message, status = 409) => Object.assign(new Error(message), { status });
 
-export function createLiveCalls({ directory, client = () => twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN), baseUrl = () => process.env.PUBLIC_BASE_URL, routingIdentities, saveCallEvent, transcript = () => [], stopAssistant = () => {}, notify = async () => {}, fallback = async () => {}, startTranscription = async () => {}, getTranscription = async () => null, aiDisconnectGraceMs = 3000, recoveryRetryMs = 1000, pickupTimeoutMs = 25000 }) {
+export function createLiveCalls({ directory, client = () => twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN), baseUrl = () => process.env.PUBLIC_BASE_URL, routingIdentities, saveCallEvent, transcript = () => [], stopAssistant = () => {}, notify = async () => {}, fallback = async () => {}, startTranscription = async () => {}, holdMusicUrl = async () => "", getTranscription = async () => null, aiDisconnectGraceMs = 3000, recoveryRetryMs = 1000, pickupTimeoutMs = 25000 }) {
   const file = path.join(directory, "live-call-sessions.json");
   const configFile = path.join(directory, "live-call-options.json");
   let records = {};
@@ -214,7 +214,13 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
     // Mute AI first, then unmute the verified staff leg. Never drop the caller
     // while a phone is still ringing or if joining failed.
     if (ai && record.aiState === "connected") await conference(record).participants(ai).update({ muted: true });
-    try { await conference(record).participants(callSid).update({ muted: false, endConferenceOnExit: true }); }
+    try {
+      await conference(record).participants(callSid).update({ muted: false, endConferenceOnExit: true });
+      if (record.musicHolding) {
+        await conference(record).participants(record.id).update({ hold: false });
+        record.musicHolding = false;
+      }
+    }
     catch (error) {
       if (ai && record.aiState === "connected") await conference(record).participants(ai).update({ muted: false }).catch(() => {});
       throw error;
@@ -349,7 +355,7 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
         }
         const record = get(id);
         const recordingUrl = `${recordingCallback}${recordingCallback.includes("?") ? "&" : "?"}call=${encodeURIComponent(id)}`;
-        return `<Response><Say voice="Polly.Joanna-Neural">${record.teamOnly ? "Connecting you to the team." : "Thanks for calling Triple D Roadside. One moment while we connect you."}</Say><Dial><Conference participantLabel="customer" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" waitUrl="" record="record-from-start" recordingStatusCallback="${xml(recordingUrl)}" recordingStatusCallbackMethod="POST" statusCallback="${xml(callback(id))}" statusCallbackMethod="POST" statusCallbackEvent="start end join leave">${xml(record.room)}</Conference></Dial><Hangup/></Response>`;
+        return `<Response><Say voice="Polly.Joanna-Neural">${record.teamOnly ? "Please enjoy some music while we connect you to the team." : "Thanks for calling Triple D Roadside. One moment while we connect you."}</Say><Dial><Conference participantLabel="customer" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" waitUrl="" record="record-from-start" recordingStatusCallback="${xml(recordingUrl)}" recordingStatusCallbackMethod="POST" statusCallback="${xml(callback(id))}" statusCallbackMethod="POST" statusCallbackEvent="start end join leave">${xml(record.room)}</Conference></Dial><Hangup/></Response>`;
       });
     },
     async events(id, event) {
@@ -376,6 +382,14 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
           cancelRecovery(id);
           await persist();
         } else if (event.StatusCallbackEvent === "participant-join" && label === "customer") {
+          const waitingMusicUrl = record.teamOnly && !record.owner ? await holdMusicUrl(record) : "";
+          if (waitingMusicUrl && !record.owner && !record.musicHolding) {
+            try {
+              await conference(record).participants(record.id).update({ hold: true, holdUrl: waitingMusicUrl, holdMethod: "GET" });
+              record.musicHolding = true;
+              await persist();
+            } catch (error) { console.warn("Waiting music unavailable; continuing team call", error.code || error.status || "provider error"); }
+          }
           await Promise.allSettled([addAi(record), ringStaff(record), options.transcribeCalls ? startTranscription(record.id) : Promise.resolve()]);
         } else if (event.StatusCallbackEvent === "participant-join" && label === "ddd-ai") {
           record.aiCallSid = event.CallSid;

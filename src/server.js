@@ -1,3 +1,4 @@
+import { holdMusicTwiml, createHoldMusicUrl, verifyHoldMusic, holdTracks } from "./hold-music.js";
 import { createBookingPhone } from "./booking-phone.js";
 import { mountReplyPolish } from "./reply-polish.js";
 import { mountCallMenu, priceText, serviceAvailability, shopVisitPolicy } from "./call-menu.js";
@@ -184,7 +185,11 @@ function openAIClient() {
 
 const callTranscripts = createCallTranscripts({ directory: dataDir });
 const nativeVoice = mountNativeVoice(app, { express, authenticate: getStaffAccess, directory: dataDir, callerIds: outboundCallerIds, saveCallEvent, getLiveCalls: () => liveCalls, getCallTranscripts: () => callTranscripts, onHumanNoAnswer: req => callMenu.voicemail(req) });
-const liveCalls = createLiveCalls({ directory: dataDir, startTranscription: (id) => callTranscripts.start(id), getTranscription: (id) => callTranscripts.get(id), routingIdentities: () => nativeVoice.routingIdentities(), saveCallEvent, transcript: listLiveCalls, stopAssistant: stopRealtimeAssistant, notify: (alert) => notifyTeamTracked(alert, "live-call-needs-team"), fallback: async (record) => {
+const liveCalls = createLiveCalls({ directory: dataDir, holdMusicUrl: async record => {
+  try { await Promise.all(holdTracks.map(file => fs.access(path.join(dataDir, "hold-audio", file)))); }
+  catch { return ""; }
+  return createHoldMusicUrl(process.env.PUBLIC_BASE_URL, process.env.TWILIO_AUTH_TOKEN, record.id);
+}, startTranscription: (id) => callTranscripts.start(id), getTranscription: (id) => callTranscripts.get(id), routingIdentities: () => nativeVoice.routingIdentities(), saveCallEvent, transcript: listLiveCalls, stopAssistant: stopRealtimeAssistant, notify: (alert) => notifyTeamTracked(alert, "live-call-needs-team"), fallback: async (record) => {
   const response = record.teamOnly ? callMenu.voicemail({ query: { secret: process.env.TWILIO_SMS_WEBHOOK_SECRET || "" }, body: { CallSid: record.id, From: record.phone, To: record.businessPhone } }) : await buildHumanDialTwiml(await loadReceptionistSettings(), { customerPhone: record.phone });
   await twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN).calls(record.id).update({ twiml: response });
 } });
@@ -3582,6 +3587,18 @@ function escapeXml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+app.all("/api/voice/hold-music", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  if (!verifyHoldMusic(req.query, process.env.TWILIO_AUTH_TOKEN)) return res.sendStatus(403);
+  res.type("text/xml").send(holdMusicTwiml(process.env.PUBLIC_BASE_URL, req.query));
+});
+app.get("/api/voice/hold-audio/:file", (req, res) => {
+  res.set("Cache-Control", "private, no-store");
+  if (!verifyHoldMusic(req.query, process.env.TWILIO_AUTH_TOKEN)) return res.sendStatus(403);
+  if (!holdTracks.includes(req.params.file)) return res.sendStatus(404);
+  res.type("audio/mpeg").sendFile(path.join(dataDir, "hold-audio", req.params.file));
+});
 
 app.use("/customer-uploads", express.static(uploadsDir, { fallthrough: false, maxAge: "7d" }));
 app.use(express.static(new URL("../web", import.meta.url).pathname));
