@@ -214,13 +214,7 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
     // Mute AI first, then unmute the verified staff leg. Never drop the caller
     // while a phone is still ringing or if joining failed.
     if (ai && record.aiState === "connected") await conference(record).participants(ai).update({ muted: true });
-    try {
-      await conference(record).participants(callSid).update({ muted: false, endConferenceOnExit: true });
-      if (record.musicHolding) {
-        await conference(record).participants(record.id).update({ hold: false });
-        record.musicHolding = false;
-      }
-    }
+    try { await conference(record).participants(callSid).update({ muted: false, endConferenceOnExit: true }); }
     catch (error) {
       if (ai && record.aiState === "connected") await conference(record).participants(ai).update({ muted: false }).catch(() => {});
       throw error;
@@ -354,8 +348,11 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
           scheduleRecovery(id, pickupTimeoutMs);
         }
         const record = get(id);
+        // waitUrl plays while the caller is alone, before the conference can start.
+        // A REST hold request is invalid in this initial conference state.
+        const waitingMusicUrl = record.teamOnly ? await holdMusicUrl(record) : "";
         const recordingUrl = `${recordingCallback}${recordingCallback.includes("?") ? "&" : "?"}call=${encodeURIComponent(id)}`;
-        return `<Response><Say voice="Polly.Joanna-Neural">${record.teamOnly ? "Please enjoy some music while we connect you to the team." : "Thanks for calling Triple D Roadside. One moment while we connect you."}</Say><Dial><Conference participantLabel="customer" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" waitUrl="" record="record-from-start" recordingStatusCallback="${xml(recordingUrl)}" recordingStatusCallbackMethod="POST" statusCallback="${xml(callback(id))}" statusCallbackMethod="POST" statusCallbackEvent="start end join leave">${xml(record.room)}</Conference></Dial><Hangup/></Response>`;
+        return `<Response><Say voice="Polly.Joanna-Neural">${record.teamOnly ? "Please enjoy some music while we connect you to the team." : "Thanks for calling Triple D Roadside. One moment while we connect you."}</Say><Dial><Conference participantLabel="customer" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" waitUrl="${xml(waitingMusicUrl)}" waitMethod="GET" record="record-from-start" recordingStatusCallback="${xml(recordingUrl)}" recordingStatusCallbackMethod="POST" statusCallback="${xml(callback(id))}" statusCallbackMethod="POST" statusCallbackEvent="start end join leave">${xml(record.room)}</Conference></Dial><Hangup/></Response>`;
       });
     },
     async events(id, event) {
@@ -382,14 +379,6 @@ export function createLiveCalls({ directory, client = () => twilio(process.env.T
           cancelRecovery(id);
           await persist();
         } else if (event.StatusCallbackEvent === "participant-join" && label === "customer") {
-          const waitingMusicUrl = record.teamOnly && !record.owner ? await holdMusicUrl(record) : "";
-          if (waitingMusicUrl && !record.owner && !record.musicHolding) {
-            try {
-              await conference(record).participants(record.id).update({ hold: true, holdUrl: waitingMusicUrl, holdMethod: "GET" });
-              record.musicHolding = true;
-              await persist();
-            } catch (error) { console.warn("Waiting music unavailable; continuing team call", error.code || error.status || "provider error"); }
-          }
           await Promise.allSettled([addAi(record), ringStaff(record), options.transcribeCalls ? startTranscription(record.id) : Promise.resolve()]);
         } else if (event.StatusCallbackEvent === "participant-join" && label === "ddd-ai") {
           record.aiCallSid = event.CallSid;
