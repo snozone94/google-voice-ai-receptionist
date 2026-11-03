@@ -23,13 +23,14 @@ export function bookingStatusLabel(booking = {}) {
   if (['complete', 'completed', 'cleared', 'done', 'finished', 'resolved', 'techniciancompleted', 'techniciancomplete', 'techcompleted', 'techcomplete', 'jobcompleted', 'servicecompleted'].includes(key)) return 'Completed';
   if (['cancelled', 'canceled', 'customercancelled', 'customercanceled'].includes(key)) return 'Canceled';
   if (['failed', 'rejected', 'declined', 'closed'].includes(key)) return key === 'declined' ? 'Rejected' : key[0].toUpperCase() + key.slice(1);
+  if (['newbooking','requested','new','pending','confirmed'].includes(key)) return booking.confirmationStatus==='Confirmed'||key==='confirmed'?'Confirmed':'Requested';
   return raw;
 }
 export function needsReply(record = {}) {
   return Boolean(record.needsReply ?? record.needsFollowUp);
 }
 export function isOpenBooking(booking = {}) {
-  return !['Completed', 'Canceled', 'Failed', 'Rejected', 'Closed'].includes(bookingStatusLabel(booking));
+  return !['completed', 'canceled', 'failed', 'rejected', 'closed', 'archived', 'rescheduled'].includes(bookingStatusLabel(booking).toLowerCase());
 }
 export function mergeConversations(conversations = [], calls = [], bookings = []) {
   const grouped = new Map();

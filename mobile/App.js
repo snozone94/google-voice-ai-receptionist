@@ -1,3 +1,4 @@
+import { AvailabilityControls, CoverageControls, BookingChanges, TodayJobs, CallRecordingPlayer } from "./WorkspaceControls";
 import { mergeConversations, ownerLabel, needsReply, isOpenBooking, newestUnreadIndex, workspaceSummary, splitHomeTasks, taskWaitLabel, bookingOwnerLabel, bookingRequestedLabel, bookingStatusLabel, conversationPhone, canWork, ownershipActions, workspaceState, notificationDestination, validateReplyPolicy } from "./workspace-view";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
@@ -560,8 +561,8 @@ export default function App() {
 
         <WorkspaceContent style={activeTab === "Inbox" ? styles.inboxContent : { flex: 1 }} contentContainerStyle={activeTab === "Inbox" ? undefined : styles.content} showsVerticalScrollIndicator={false}>
           {activeTab === "Calls" && phone.call && !phone.call.liveCallId && phone.call.callSid ? <ActiveCallTranscript baseUrl={cleanBaseUrl} accessCode={adminPin} callId={phone.call.callSid} /> : null}
-          {activeTab === "Home" ? <WorkspaceHome staff={signedInStaff} onDial={() => { setDialRequest(Date.now()); setActiveTab("Calls"); }} activity={activity} isAdmin={isAdmin} onSelect={setActiveTab} onNewText={() => { setContactPhone(""); setComposeRequest(Date.now()); setActiveTab("Inbox"); }} onThread={(number) => { setContactPhone(number); setActiveTab("Inbox"); }} /> : null}
           {canWork(signedInStaff) && ["Home", "Calls"].includes(activeTab) ? <LiveCallsPanel baseUrl={cleanBaseUrl} accessCode={adminPin} phone={phone} onError={setSessionStatus} onText={(number) => { setContactPhone(number); setActiveTab("Inbox"); }} /> : null}
+          {activeTab === "Home" ? <WorkspaceHome baseUrl={cleanBaseUrl} accessCode={adminPin} onRefresh={refreshWorkspace} staff={signedInStaff} onDial={() => { setDialRequest(Date.now()); setActiveTab("Calls"); }} activity={activity} isAdmin={isAdmin} onSelect={setActiveTab} onNewText={() => { setContactPhone(""); setComposeRequest(Date.now()); setActiveTab("Inbox"); }} onThread={(number) => { setContactPhone(number); setActiveTab("Inbox"); }} /> : null}
           {isAdmin && activeTab === "Settings" ? (
             <SettingsTab
               adminPin={adminPin}
@@ -667,7 +668,7 @@ export default function App() {
               onRefresh={refreshWorkspace}
             />
           ) : null}
-          {activeTab === "More" ? <AccountPanel staff={signedInStaff} phone={phone} preferences={personalPrefs} setPreferences={setPersonalPrefs} onEnablePush={() => enablePushNotifications()} onPreviewSound={previewAlertSound} pushStatus={pushStatus} onSignOut={signOut} isAdmin={isAdmin} onSelect={setActiveTab} baseUrl={cleanBaseUrl} accessCode={adminPin} /> : null}
+          {activeTab === "More" ? <AccountPanel activity={activity} onRefresh={refreshWorkspace} staff={signedInStaff} phone={phone} preferences={personalPrefs} setPreferences={setPersonalPrefs} onEnablePush={() => enablePushNotifications()} onPreviewSound={previewAlertSound} pushStatus={pushStatus} onSignOut={signOut} isAdmin={isAdmin} onSelect={setActiveTab} baseUrl={cleanBaseUrl} accessCode={adminPin} /> : null}
 
           {loading ? <ActivityIndicator color="#7d4dff" /> : null}
           <Text style={styles.status}>{status}</Text>
@@ -680,7 +681,7 @@ export default function App() {
   );
 }
 
-function WorkspaceHome({ staff, activity, isAdmin, onSelect, onNewText, onDial, onThread }) {
+function WorkspaceHome({ baseUrl, accessCode, onRefresh, staff, activity, isAdmin, onSelect, onNewText, onDial, onThread }) {
   const [olderOpen, setOlderOpen] = useState(false);
   const summary = workspaceSummary(activity);
   const tasks = Array.isArray(activity.tasks) ? activity.tasks : mergeConversations(activity.conversations).filter(needsReply).map(item => ({ phone: item.phone, reason: item.followUpReason || "Needs reply", assignedTo: ownerLabel(item), historical: item.historical === true }));
@@ -696,15 +697,16 @@ function WorkspaceHome({ staff, activity, isAdmin, onSelect, onNewText, onDial, 
       <Text style={styles.record}>{summary.openBookings} open bookings{summary.overdueReplies != null ? ` · ${summary.overdueReplies} overdue replies` : ""}</Text>
       <View style={styles.buttonRow}><ActionButton disabled={!canWork(staff)} label="New text" onPress={onNewText} /><ActionButton disabled={!canWork(staff)} label="Dial" onPress={onDial} variant="light" /><ActionButton disabled={!canWork(staff)} label="Listen / Answer" onPress={() => onSelect("Calls")} variant="light" /></View>
     </Card>
-    <Card title="Needs attention">
+    <AvailabilityControls baseUrl={baseUrl} accessCode={accessCode} value={activity.availability} isAdmin={false}/>
+    <BookingChanges items={activity.bookingChanges} baseUrl={baseUrl} accessCode={accessCode} isAdmin={isAdmin} onThread={onThread} onSaved={onRefresh}/>
+    <TodayJobs items={activity.bookings} onThread={onThread}/>
+    <Card title="Needs reply">
       {current.length ? current.map(renderTask) : <Text style={styles.record}>{historical.length ? "No current requests need attention." : "You're caught up."}</Text>}
       {historical.length ? <>
         <Pressable accessibilityRole="button" accessibilityLabel={`Older requests (${historical.length})`} accessibilityState={{ expanded: olderOpen }} onPress={() => setOlderOpen(value => !value)} style={[styles.listHeader, { minHeight: 48 }]}><Text style={styles.record}>Older requests ({historical.length})</Text><ChevronDown size={20} color="#203040" style={{ transform: [{ rotate: olderOpen ? "180deg" : "0deg" }] }} /></Pressable>
         {olderOpen ? historical.map(renderTask) : null}
       </> : null}
     </Card>
-    {replyPolicy ? <Card title="Reply guidance"><Text style={styles.record}>{typeof replyPolicy === "string" ? replyPolicy : replyPolicy.message || replyPolicy.description || (replyPolicy.remindAfterMinutes != null ? `Reminder after ${replyPolicy.remindAfterMinutes} min · Escalation after ${replyPolicy.escalateAfterMinutes} min` : "Follow up with waiting customers.")}</Text></Card> : null}
-    {isAdmin && activity.health ? <Card title="Service status">{Object.entries(activity.health).map(([key, value]) => <Text key={key} style={styles.record}>{value?.label || key.replace(/([a-z])([A-Z])/g, "$1 $2")}: {typeof value === "object" && value ? value.message || value.status || (value.ok === true ? "Available" : "Check service") : String(value)}</Text>)}</Card> : null}
   </>;
 }
 
@@ -779,7 +781,7 @@ function ReplyPolicyPanel({ baseUrl, accessCode }) {
   return <Card title="Reply reminders"><Text style={styles.record}>Choose when waiting customers trigger a reminder and an escalation.</Text><Field label="Remind after (minutes)" keyboardType="number-pad" editable={loaded && !busy} value={remind} onChangeText={setRemind} /><Field label="Escalate after (minutes)" keyboardType="number-pad" editable={loaded && !busy} value={escalate} onChangeText={setEscalate} /><ActionButton label={busy ? "Saving..." : "Save reminders"} disabled={!loaded || busy} onPress={save} />{message ? <Text accessibilityLiveRegion="polite" style={styles.record}>{message}</Text> : null}</Card>;
 }
 
-function AccountPanel({ baseUrl, accessCode, staff, phone, preferences, setPreferences, onEnablePush, onPreviewSound, pushStatus, onSignOut, isAdmin, onSelect }) {
+function AccountPanel({ activity, onRefresh, baseUrl, accessCode, staff, phone, preferences, setPreferences, onEnablePush, onPreviewSound, pushStatus, onSignOut, isAdmin, onSelect }) {
   return <>
     <Text style={styles.screenHeading}>{staff.name}</Text><Text style={styles.muted}>{isAdmin ? "Administrator" : "Technician"}</Text>
     <Card title="Business phone"><Text style={styles.record}>{phone.status}</Text>{phone.callerIds.length > 1 ? <View style={styles.buttonRow}>{phone.callerIds.map((id) => <ActionButton key={id} label={formatPhone(id)} onPress={() => phone.setCallerId(id)} variant={id === phone.callerId ? undefined : "light"} />)}</View> : null}</Card>
@@ -790,6 +792,9 @@ function AccountPanel({ baseUrl, accessCode, staff, phone, preferences, setPrefe
       <Text style={styles.muted}>Critical Alerts: Apple approval required.</Text>
       {[["texts", "Customer messages"], ["missedCalls", "Missed calls & unfinished requests"], ["bookings", "New bookings"], ["qaIssues", "Delivery & service problems"], ["newCalls", "Every incoming call"], ["teamActivity", "Team replies & call activity"]].map(([key, label]) => <View key={key} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 10, gap: 8 }}><Text style={[styles.record, { flex: 1 }]}>{label}</Text><Switch value={Boolean(preferences[key])} onValueChange={(value) => setPreferences((current) => ({ ...current, [key]: value }))} /></View>)}
     </Card>
+    {canWork(staff)?<CoverageControls baseUrl={baseUrl} accessCode={accessCode}/>:null}
+    {isAdmin?<AvailabilityControls baseUrl={baseUrl} accessCode={accessCode} value={activity?.availability} isAdmin onSaved={onRefresh}/>:null}
+    {isAdmin&&activity?.health?<Card title="Service connections">{(Array.isArray(activity.health)?activity.health:Object.values(activity.health)).map((item,index)=><Text key={item.key||index} style={styles.record}>{item.label||"Service"}: {item.status||"Check connection"}{item.nextStep?` · ${item.nextStep}`:""}</Text>)}</Card>:null}
     <ActionButton label="Insights" variant="light" onPress={() => onSelect("Insights")} />
     {isAdmin ? <Card title="Administration">{[["Settings", "Answering & settings"], ["Voice", "Voice"], ["Script", "Business information"], ["Flows", "Intake questions"], ["Team", "Team access"]].map(([target, label]) => <ActionButton key={target} label={label} variant="light" onPress={() => onSelect(target)} />)}</Card> : null}
     {isAdmin ? <ReplyPolicyPanel baseUrl={baseUrl} accessCode={accessCode} /> : null}
@@ -1427,7 +1432,7 @@ function InboxTab({ keyboardVisible, notificationOnly, staff, team, composeReque
 
   return (
     <>
-      {!selectedConversation ? <View style={styles.buttonRow}><ActionButton disabled={!canWork(staff)} label={composing ? "Close" : "New text"} onPress={() => setComposing(!composing)} /><ActionButton label="Refresh" onPress={onRefresh} variant="light" /></View> : <ActionButton label="Back to inbox" variant="light" onPress={() => { setSelectedPhone(""); setManualPhone(""); setComposing(false); }} />}
+      {!selectedConversation ? <View style={styles.buttonRow}><ActionButton disabled={!canWork(staff)} label={composing ? "Close" : "New text"} onPress={() => setComposing(!composing)} /><ActionButton label="Refresh" onPress={onRefresh} variant="light" /></View> : <View style={styles.buttonRow}><ActionButton label="Back to inbox" variant="light" onPress={() => { setSelectedPhone(""); setManualPhone(""); setComposing(false); }} />{!keyboardVisible?<ActionButton label="New text" variant="light" onPress={()=>{setSelectedPhone("");setManualPhone("");setComposing(true);}}/>:null}</View>}
       {composing && !selectedConversation ? <ScrollView><Card title="New conversation">
         <View style={styles.manualContactBox}>
           <Text style={styles.linkLabel}>Customer number</Text>
@@ -1585,7 +1590,7 @@ function ConversationCard({ keyboardVisible, onPolish, onRead, staff, team, isAd
         </View>
         <Text style={styles.pill}>{conversation.messages?.length || 0} messages</Text>
       </View>
-      <Text style={styles.record}>{conversation.unread ? `${conversation.unread} unread · ` : ""}{needsReply(conversation) ? "Needs reply · " : ""}{ownerLabel(conversation)}</Text>
+      <Text style={styles.record}>{conversation.threadStatus|| (needsReply(conversation)?"Needs reply":"Waiting on customer")} · {conversation.unread ? `${conversation.unread} unread · ` : ""}{needsReply(conversation) ? "Needs reply · " : ""}{ownerLabel(conversation)}</Text>
       {!keyboardVisible ? <View style={styles.buttonRow}>
         {actions.claim ? <ActionButton disabled={assigning} label="Claim" variant="light" onPress={() => updateOwner({ action: "claim" })} /> : null}
         {actions.assign ? <ActionButton label="Assign" variant="light" onPress={() => setAssignmentOpen(!assignmentOpen)} /> : null}
@@ -1642,7 +1647,7 @@ function ConversationCard({ keyboardVisible, onPolish, onRead, staff, team, isAd
       {polishMessage ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{polishMessage}</Text> : null}
       <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end", flexShrink: 0 }}>
         <Pressable accessibilityRole="button" accessibilityLabel={suggestionsOpen ? "Hide suggested replies" : "Suggested replies"} onPress={() => setSuggestionsOpen(!suggestionsOpen)} style={{ minWidth: 40, minHeight: 44, justifyContent: "center", alignItems: "center" }}><Sparkles size={22} color="#8c2387" /></Pressable>
-        <TextInput autoCorrect spellCheck autoCapitalize="sentences" textContentType="none" onFocus={() => { setSuggestionsOpen(false); setDetailsOpen(false); setMenuOpen(false); setAssignmentOpen(false); }} accessibilityLabel="Reply from DDD" placeholder="Message customer..." placeholderTextColor="#687785" multiline onChangeText={(message) => onDraftChange(customerPhone, message)} value={draft} style={{ flex: 1, minHeight: 44, maxHeight: 110, borderRadius: 8, borderWidth: 1, borderColor: "#c3d5dd", backgroundColor: "#fff", color: "#203040", padding: 12, fontSize: 15 }} />
+        <TextInput autoCorrect spellCheck autoCapitalize="sentences" textContentType="none" onFocus={() => { onRead(); setSuggestionsOpen(false); setDetailsOpen(false); setMenuOpen(false); setAssignmentOpen(false); }} accessibilityLabel="Reply from DDD" placeholder="Message customer..." placeholderTextColor="#687785" multiline onChangeText={(message) => onDraftChange(customerPhone, message)} value={draft} style={{ flex: 1, minHeight: 44, maxHeight: 110, borderRadius: 8, borderWidth: 1, borderColor: "#c3d5dd", backgroundColor: "#fff", color: "#203040", padding: 12, fontSize: 15 }} />
         <Pressable disabled={smsBusy || !draft.trim() || !canWork(staff)} accessibilityRole="button" accessibilityLabel={smsBusy ? "Sending" : "Send text"} onPress={() => onSend(customerPhone)} style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "#007c69", opacity: smsBusy || !draft.trim() ? 0.4 : 1, justifyContent: "center", alignItems: "center" }}><Send size={20} color="#fff" /></Pressable>
       </View>
     </View>
@@ -1681,7 +1686,7 @@ function BookingCard({ booking = {} }) {
       <Text style={styles.record}>{booking.vehicle || "Vehicle not set"}{booking.vehicleColor ? ` (${booking.vehicleColor})` : ""}</Text>
       <Text style={styles.record}>{booking.location || "Location not set"}</Text>
       <View style={styles.callChipRow}>
-        <Text style={styles.smallChip}>Requested: {requestedFor}</Text>
+        <Text style={styles.smallChip}>{statusLabel==="Requested"?"Requested":"Appointment"}: {requestedFor}</Text>
         <Text style={styles.smallChip}>Saved: {formatDateTime(booking.createdAt)}</Text>
       </View>
       {missing.length ? <Text style={styles.warningText}>Needs: {missing.join(", ")}</Text> : null}
@@ -1789,7 +1794,8 @@ function CallsTab({ staff, dialRequest, adminPin, apiBaseUrl, calls, insights, s
   const [dialerOpen, setDialerOpen] = useState(false);
   const [dialPhone, setDialPhone] = useState("");
   const [calling, setCalling] = useState(false);
-  const callGroups = useMemo(() => groupCallsByCaller(calls || []), [calls]);
+  const [callFilter,setCallFilter]=useState("all");
+  const callGroups = useMemo(() => groupCallsByCaller((calls || []).filter(call=>callFilter!=="voicemails"||call.isVoicemail)), [calls,callFilter]);
 
   useEffect(() => { if (dialRequest) setDialerOpen(true); }, [dialRequest]);
   async function startOutboundCall() {
@@ -1821,16 +1827,17 @@ function CallsTab({ staff, dialRequest, adminPin, apiBaseUrl, calls, insights, s
         {nativePhone.callerIds.length > 1 ? <View style={styles.buttonRow}>{nativePhone.callerIds.map((id) => <ActionButton key={id} label={formatPhone(id)} onPress={() => nativePhone.setCallerId(id)} variant={id === nativePhone.callerId ? undefined : "light"} />)}</View> : null}
         <ActionButton disabled={!canWork(staff) || calling || Boolean(nativePhone.call) || !nativePhone.ready} label={calling ? "Calling..." : nativePhone.call ? "Call in progress" : "Call from DDD"} onPress={startOutboundCall} />
       </Card> : null}
-      <Text style={styles.screenHeading}>Recent calls</Text>
+      <View style={styles.buttonRow}><ActionButton label="All calls" variant={callFilter==="all"?undefined:"light"} onPress={()=>setCallFilter("all")}/><ActionButton label={`Voicemails${(calls||[]).some(c=>c.voicemailUnread)?` · ${(calls||[]).filter(c=>c.voicemailUnread).length} new`:""}`} variant={callFilter==="voicemails"?undefined:"light"} onPress={()=>setCallFilter("voicemails")}/></View>
+      <Text style={styles.screenHeading}>{callFilter==="voicemails"?"Voicemails":"Recent calls"}</Text>
         {callGroups.map((group, index) => (
-          <CallCard onText={onText} onRecording={async (call) => { if (!canWork(staff)) return; try { const result = await apiPost(apiBaseUrl, `/api/calls/${encodeURIComponent(call.callId || call.id)}/recording-link`, {}, adminPin); await Linking.openURL(result.url); } catch (error) { setStatus(error.message); } }} onCall={(phone) => { setDialPhone(phone); setDialerOpen(true); }} call={group.latest} callGroup={group} key={group.key || group.latest?.id || group.latest?.callId || index} />
+          <CallCard callInProgress={Boolean(nativePhone.call)} onText={onText} onRecording={async (call) => { if (!canWork(staff)) return; try { const result = await apiPost(apiBaseUrl, `/api/calls/${encodeURIComponent(call.callId || call.id)}/recording-link`, {}, adminPin); if(call.isVoicemail)await apiPost(apiBaseUrl, `/api/calls/${encodeURIComponent(call.callId||call.id)}/voicemail-read`,{},adminPin); return result.url; } catch (error) { setStatus(error.message); throw error; } }} onCall={(phone) => { setDialPhone(phone); setDialerOpen(true); }} call={group.latest} callGroup={group} key={group.key || group.latest?.id || group.latest?.callId || index} />
         ))}
         {callGroups.length ? null : <Text style={styles.muted}>Forwarded calls will appear here.</Text>}
     </>
   );
 }
 
-function CallCard({ call: latestCall, callGroup, onText, onCall, onRecording }) {
+function CallCard({ callInProgress, call: latestCall, callGroup, onText, onCall, onRecording }) {
   const [expanded, setExpanded] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -1848,7 +1855,7 @@ function CallCard({ call: latestCall, callGroup, onText, onCall, onRecording }) 
         <Text style={styles.listTitle} numberOfLines={1}>{formatPhone(call.caller || call.from || "Unknown caller")}</Text>
         <Text style={styles.pill}>{repeatCalls.length > 1 ? `${repeatCalls.length} calls` : call.durationLabel || formatDuration(call.durationSeconds) || "No time"}</Text>
       </View>
-      <Text style={styles.muted}>{formatDateTime(call.startedAt || call.createdAt)} · {call.displayStatus || "Call received"}</Text>
+      <Text style={styles.muted}>{call.voicemailUnread?"● New voicemail · ":call.isVoicemail?"Voicemail · ":""}{formatDateTime(call.startedAt || call.createdAt)} · {call.displayStatus || "Call received"}</Text>
       </Pressable>
       {expanded ? <>
       <View style={styles.buttonRow}><ActionButton label="Text back" onPress={() => onText(call.caller || call.from)} /><ActionButton label="Call back" onPress={() => onCall(call.caller || call.from)} variant="light" /></View>
@@ -1871,7 +1878,7 @@ function CallCard({ call: latestCall, callGroup, onText, onCall, onRecording }) 
           ))}
         </View>
       ) : null}
-      {call.recordingUrl ? <ActionButton label="Play recording" onPress={() => onRecording(call)} variant="light" /> : null}
+      {call.recordingUrl ? <CallRecordingPlayer key={call.callId||call.id} getSource={()=>onRecording(call)} disabled={callInProgress} label={call.isVoicemail?"Play voicemail":"Play recording"}/> : null}
       <ActionButton label={transcriptOpen ? "Hide transcript" : "Full transcript"} onPress={() => setTranscriptOpen(!transcriptOpen)} variant="light" />
       {transcriptOpen ? <View style={styles.transcriptBox}>
         <Text style={styles.linkLabel}>Transcript</Text>
@@ -2413,20 +2420,19 @@ function cleanConversationBody(value = "") {
 }
 
 function getDeliveryIssue(message = {}) {
-  const status = String(message.status || "").toLowerCase();
-  if (!/failed|undelivered|error/.test(status)) return "";
-  const reason = String(message.errorMessage || message.reason || "").replace(/\s+/g, " ").trim();
-  const code = String(message.errorCode || "").trim();
-  if (reason && code) return `Delivery issue ${code}: ${reason}`;
-  if (reason) return `Delivery issue: ${reason}`;
-  if (code) return `Delivery issue ${code}`;
-  return "This text could not be sent. Check the number and try again.";
+  if(!/failed|undelivered|error/i.test(message.status||""))return "";
+  const code=String(message.errorCode||"");
+  if(code==="21610")return "Not delivered: this customer opted out of texts. Call instead; do not resend.";
+  if(["21211","21614","30005","30006"].includes(code))return "Not delivered: this number may be incorrect or unable to receive texts. Check the number or call instead.";
+  if(["30007","30034","30035"].includes(code))return "Not delivered: the carrier blocked this text. Call the customer and review texting setup in Account.";
+  if(code==="30003")return "Not delivered: the customer’s phone was unreachable. You can call or try a text later.";
+  return "Not delivered. Check the number or call the customer before trying again.";
 }
 
 function formatMessageStatus(value = "") {
   const status = String(value || "").toLowerCase();
   if (!status) return "";
-  if (/staff-sms-reply/.test(status) && /failed/.test(status)) return "Text reply failed";
+  if (/staff-sms-reply/.test(status) && /failed/.test(status)) return "Not delivered";
   if (/sms/.test(status) && /failed/.test(status)) return "Text failed";
   if (/failed|undelivered/.test(status)) return "Couldn't deliver";
   if (status === "delivered") return "Delivered";
@@ -2884,8 +2890,8 @@ const styles = StyleSheet.create({
     borderColor: "rgba(217, 211, 238, 0.9)",
     borderRadius: 18,
     borderWidth: 1,
-    backgroundColor: "#fffaff",
-    padding: 12,
+    backgroundColor: "#e5ecf1",
+    padding: 14,
     shadowColor: "#3b2267",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.08,

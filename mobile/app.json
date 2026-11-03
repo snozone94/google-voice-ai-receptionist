@@ -56,7 +56,15 @@
           ]
         }
       ],
-      "./withDddSceneLifecycle.cjs"
+      "./withDddSceneLifecycle.cjs",
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": false,
+          "enableBackgroundRecording": false,
+          "microphonePermission": "DDD Dispatch uses your microphone for business phone calls."
+        }
+      ]
     ]
   }
 }

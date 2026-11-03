@@ -13,6 +13,7 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "@twilio/voice-react-native-sdk": "^1.8.1",
     "expo": "~57.0.24",
+    "expo-audio": "~57.0.5",
     "expo-constants": "~57.0.17",
     "expo-device": "~57.0.2",
     "expo-linear-gradient": "~57.0.2",
