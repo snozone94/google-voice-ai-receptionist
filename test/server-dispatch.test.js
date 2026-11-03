@@ -64,6 +64,19 @@ test("dispatch HTTP contract, reviewer isolation, ownership, policy and provider
     assert.equal((await request("/api/admin/reply-policy", "4444")).status, 403);
     assert.equal((await request("/api/operations", "")).status, 403);
   });
+  await t.test("availability, coverage and approvals enforce server-side roles",async()=>{
+    assert.equal((await request('/api/service-availability','staff-one',{mode:'closed',newTiresAvailable:false,notice:''})).status,403);
+    assert.equal((await request('/api/service-availability','4444',{mode:'closed',newTiresAvailable:false,notice:''})).status,403);
+    assert.equal((await request('/api/staff/coverage','4444',{working:true,backup:true})).status,403);
+    assert.equal((await request('/api/booking-change-requests/demo/review','staff-one',{action:'approve',availabilityConfirmed:true})).status,403);
+    assert.equal((await request('/api/booking-change-requests/demo/refresh','staff-one',{})).status,403);
+    assert.equal((await request('/api/service-availability','test-admin',{mode:'busy',newTiresAvailable:false,notice:'Temporary delay'})).status,200);
+    const publicView=await request('/api/service-availability','');assert.equal(publicView.body.mode,'busy');assert.doesNotMatch(JSON.stringify(publicView.body),/test-admin|staff-one|Private real customer/);
+    await request('/api/service-availability','test-admin',{mode:'available',newTiresAvailable:true,notice:''});
+    assert.equal((await request('/api/staff/coverage','staff-one',{working:false,backup:true})).body.working,false);
+    assert.equal((await request('/api/staff/coverage','staff-two')).body.working,true);
+    await request('/api/staff/coverage','staff-one',{working:true,backup:false});
+  });
   await t.test("ownership uses auth identity, validates roster and keeps read separate from reply", async () => {
     let response = await request("/api/operations", "staff-one");
     assert.equal(response.status, 200);
