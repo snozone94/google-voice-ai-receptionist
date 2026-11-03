@@ -22,7 +22,7 @@ async function fixture(t, overrides = {}) {
   let failUnmute = false;
   const participants = (sid) => ({ update: async (patch) => { actions.push(["update", sid, patch]); if (failUnmute && patch.muted === false && sid !== "ai-leg") throw new Error("phone disconnected"); }, fetch: async () => { throw Object.assign(new Error("not found"), { status: 404 }); }, remove: async () => { actions.push(["remove", sid]); } });
   participants.create = async (options) => { actions.push(["create", options]); return { callSid: options.label === "ddd-ai" ? "ai-leg" : options.label }; };
-  const dependencies = { directory, client: () => ({ conferences: () => ({ participants }), calls: (sid) => ({ fetch: async () => ({ status: "in-progress" }), update: async (patch) => { actions.push(["call-update", sid, patch]); } }) }), baseUrl: () => "https://dispatch.example.test", routingIdentities: async () => ["tech-one"], saveCallEvent: async (event) => actions.push(["event", event]), stopAssistant: () => actions.push(["stop-ai"]) };
+  const dependencies = { directory, holdMusicUrl: async () => "https://dispatch.example.test/api/voice/hold-music?track=0", client: () => ({ conferences: () => ({ participants }), calls: (sid) => ({ fetch: async () => ({ status: "in-progress" }), update: async (patch) => { actions.push(["call-update", sid, patch]); } }) }), baseUrl: () => "https://dispatch.example.test", routingIdentities: async () => ["tech-one"], saveCallEvent: async (event) => actions.push(["event", event]), stopAssistant: () => actions.push(["stop-ai"]) };
   Object.assign(dependencies, overrides);
   const calls = createLiveCalls(dependencies);
   t.after(async () => { await calls.close(); await fs.rm(directory, { recursive: true, force: true }); });
@@ -397,12 +397,14 @@ test("menu team calls keep native answering and live transcription without diali
   const { calls, actions } = await fixture(t, { startTranscription: async call => transcribed.push(call) });
   const teamId = `CA${"c".repeat(32)}`;
   const twiml = await calls.start({ id: teamId, phone: "+15135550100", businessPhone: "+15134091342", aiUri: "", teamOnly: true, recordingCallback: "https://dispatch.example.test/recording" });
-  assert.match(twiml, /Connecting you to the team/);
+  assert.match(twiml, /Please enjoy some music while we connect you to the team/);
   actions.length = 0;
   await calls.events(teamId, { ConferenceSid: conferenceSid, FriendlyName: `ddd-${teamId}`, ParticipantLabel: "customer", CallSid: teamId, StatusCallbackEvent: "participant-join" });
   assert.equal(actions.filter(([kind, options]) => kind === "create" && options.label === "ddd-ai").length, 0);
   assert.equal(actions.filter(([kind, options]) => kind === "create" && options.label === "staff-tech-one").length, 1);
   assert.ok(transcribed.includes(teamId));
+  assert.ok(actions.some(([kind, sid, patch]) => kind === "update" && sid === teamId && patch.hold === true && patch.holdUrl === "https://dispatch.example.test/api/voice/hold-music?track=0"));
   await calls.events(teamId, { ConferenceSid: conferenceSid, FriendlyName: `ddd-${teamId}`, ParticipantLabel: "staff-tech-one", CallSid: "staff-tech-one", StatusCallbackEvent: "participant-join" });
   assert.equal((await calls.list("tech-one")).find(call => call.callId === teamId).ownedByYou, true);
+  assert.ok(actions.some(([kind, sid, patch]) => kind === "update" && sid === teamId && patch.hold === false));
 });
