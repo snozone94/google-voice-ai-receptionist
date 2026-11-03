@@ -2,13 +2,8 @@
   "name": "DDD Mobile",
   "tone": "warm, concise, professional, direct, and fast",
   "hours": {
-    "monday": "9:00 AM - 5:00 PM",
-    "tuesday": "9:00 AM - 5:00 PM",
-    "wednesday": "9:00 AM - 5:00 PM",
-    "thursday": "9:00 AM - 5:00 PM",
-    "friday": "9:00 AM - 5:00 PM",
-    "saturday": "closed",
-    "sunday": "closed"
+    "regular": "11 AM\u20137 PM",
+    "availability": "All service depends on technician availability. After-hours service is not guaranteed. Shop visits require an approved appointment before traveling."
   },
   "services": [
     "Roadside assistance intake and booking",
@@ -69,6 +64,10 @@
     {
       "question": "Can customers track the service?",
       "answer": "Send callers to the DDD Mobile app or status links when appropriate. Customers should use the same phone number or email so their booking can match their account. Do not send live tracking until a tech is assigned or en route."
+    },
+    {
+      "question": "When are new-tire replacements available?",
+      "answer": "New-tire replacements are available until 7 PM, subject to tire and technician availability. After 7 PM, tire service is limited to spare-tire changes when a technician is available. All requests require confirmation."
     }
   ],
   "escalationRules": [
