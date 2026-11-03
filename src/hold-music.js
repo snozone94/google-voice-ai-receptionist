@@ -5,7 +5,7 @@ const signature = (call, expires, secret) => crypto.createHmac('sha256', secret)
 export function createHoldMusicUrl(baseUrl, secret, call, now = Date.now()) {
   if (!secret || !/^CA[0-9a-f]{32}$/i.test(call)) return '';
   const expires = String(now + 10 * 60000);
-  const query = new URLSearchParams({ call, expires, token: signature(call, expires, secret), track: String(parseInt(call.slice(-1), 16) % 2) });
+  const query = new URLSearchParams({ call, expires, token: signature(call, expires, secret), track: '0' });
   return new URL('/api/voice/hold-music?' + query, baseUrl).toString();
 }
 export function verifyHoldMusic(query, secret, now = Date.now()) {
@@ -14,8 +14,7 @@ export function verifyHoldMusic(query, secret, now = Date.now()) {
   return crypto.timingSafeEqual(Buffer.from(token, 'hex'), Buffer.from(signature(call, expires, secret), 'hex'));
 }
 export function holdMusicTwiml(baseUrl, query) {
-  const tracks = [...holdTracks];
-  if (query.track === '1') tracks.reverse();
+  const tracks = [holdTracks[query.track === '1' ? 1 : 0]];
   const params = new URLSearchParams({ call: query.call, expires: query.expires, token: query.token });
   return `<Response>${tracks.map(file => `<Play>${xml(new URL('/api/voice/hold-audio/' + file + '?' + params, baseUrl))}</Play>`).join('')}<Redirect method="GET">${xml(new URL('/api/voice/hold-music?' + params + '&track=' + (query.track === '1' ? '1' : '0'), baseUrl))}</Redirect></Response>`;
 }
