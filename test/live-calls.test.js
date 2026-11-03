@@ -403,8 +403,9 @@ test("menu team calls keep native answering and live transcription without diali
   assert.equal(actions.filter(([kind, options]) => kind === "create" && options.label === "ddd-ai").length, 0);
   assert.equal(actions.filter(([kind, options]) => kind === "create" && options.label === "staff-tech-one").length, 1);
   assert.ok(transcribed.includes(teamId));
-  assert.ok(actions.some(([kind, sid, patch]) => kind === "update" && sid === teamId && patch.hold === true && patch.holdUrl === "https://dispatch.example.test/api/voice/hold-music?track=0"));
+  assert.match(twiml, /waitUrl="https:\/\/dispatch.example.test\/api\/voice\/hold-music\?track=0" waitMethod="GET"/);
+  assert.equal(actions.some(([kind, sid, patch]) => kind === "update" && sid === teamId && patch.hold === true), false);
   await calls.events(teamId, { ConferenceSid: conferenceSid, FriendlyName: `ddd-${teamId}`, ParticipantLabel: "staff-tech-one", CallSid: "staff-tech-one", StatusCallbackEvent: "participant-join" });
   assert.equal((await calls.list("tech-one")).find(call => call.callId === teamId).ownedByYou, true);
-  assert.ok(actions.some(([kind, sid, patch]) => kind === "update" && sid === teamId && patch.hold === false));
+  assert.ok(actions.some(([kind, sid, patch]) => kind === "update" && sid === "staff-tech-one" && patch.muted === false));
 });
