@@ -87,6 +87,8 @@ function ddd_ai_dispatch_photo_upload_shortcode() {
 }
 
 function ddd_ai_dispatch_register_routes() {
+    register_rest_route('ddd/v1', '/dispatch-booking-capability', ['methods' => 'GET', 'permission_callback' => 'ddd_ai_dispatch_review_auth', 'callback' => function () { return ['ok' => true, 'approvalConnected' => true]; }]);
+    register_rest_route('ddd/v1', '/dispatch-booking-change', ['methods' => 'POST', 'permission_callback' => 'ddd_ai_dispatch_review_auth', 'callback' => 'ddd_ai_dispatch_review_booking']);
     register_rest_route('ddd/v1', '/customer-history', [
         'methods' => 'GET',
         'permission_callback' => 'ddd_ai_dispatch_auth',
@@ -586,13 +588,14 @@ function ddd_ai_dispatch_find_customer_jobs($phone, $limit) {
         if ($has_leads) {
             // At most one read per returned job, exact UUID only, newest lead wins.
             $lead = $wpdb->get_row($wpdb->prepare(
-                "SELECT lead_uuid, job_uuid, preferred_time, created_at, updated_at FROM `{$lead_table}` WHERE job_uuid = %s ORDER BY updated_at DESC, created_at DESC, lead_uuid DESC LIMIT 1",
+                "SELECT lead_uuid, job_uuid, preferred_time, status, created_at, updated_at FROM `{$lead_table}` WHERE job_uuid = %s ORDER BY updated_at DESC, created_at DESC, lead_uuid DESC LIMIT 1",
                 $job_id
             ), ARRAY_A);
             if ($lead && (string) $lead['job_uuid'] === $job_id) {
                 $preferred_time = trim((string) $lead['preferred_time']);
                 if ($preferred_time !== '') {
                     $record['preferredTime'] = $preferred_time;
+                    $record['confirmationStatus'] = ($lead['status'] ?? '') === 'Scheduled' ? 'Confirmed' : '';
                     $record['serviceTime'] = ddd_ai_dispatch_history_datetime($preferred_time, $legacy_gmt) ?: $preferred_time;
                 }
             }
@@ -756,3 +759,105 @@ function ddd_ai_dispatch_normalize_phone($phone) {
     }
     return '';
 }
+
+// Dispatch approvals update an existing verified job only. No job creation is permitted here.
+function ddd_ai_dispatch_review_auth(WP_REST_Request $request) {
+    if (current_user_can('manage_options')) return true;
+    $token = (string) $request->get_header('x-ddd-tech-token');
+    if ($token === '') return new WP_Error('rest_forbidden', 'Administrator sign-in required.', ['status' => 403]);
+    $auth = new WP_REST_Request('POST', '/ddd/v1/tech-auth-test');
+    $auth->set_header('x-ddd-tech-token', $token);
+    $auth->set_param('ddd_tech_token', $token);
+    $response = rest_do_request($auth);
+    if (is_wp_error($response) || $response->get_status() >= 400) return new WP_Error('rest_forbidden', 'Administrator sign-in required.', ['status' => 403]);
+    $identity = $response->get_data();
+    if (empty($identity['token_matches']) || empty($identity['tech_id'])) return new WP_Error('rest_forbidden', 'Administrator sign-in required.', ['status' => 403]);
+    $identity_keys = array_filter([ddd_ai_dispatch_role_identifier($identity['tech_id']), ddd_ai_dispatch_role_identifier($identity['tech_label'] ?? '')]);
+    foreach (ddd_ai_dispatch_get_role_rows(true) as $member) {
+        // Platform IDs are a separate namespace from WordPress user IDs.
+        $same_platform_member = ($member['source'] ?? '') === 'ddd_platform' && (string) $member['source_id'] === (string) $identity['tech_id'];
+        // Existing manually assigned roles use the authenticated identity's exact identifier/name.
+        $same_manual_member = ($member['source'] ?? 'manual') === 'manual' && (in_array(ddd_ai_dispatch_role_identifier($member['identifier'] ?? ''), $identity_keys, true) || in_array(ddd_ai_dispatch_role_identifier($member['label'] ?? ''), $identity_keys, true));
+        if (($same_platform_member || $same_manual_member) && in_array($member['role'], ['admin', 'owner', 'manager', 'administrator'], true)) return true;
+    }
+    return new WP_Error('rest_forbidden', 'Administrator access required for booking approval.', ['status' => 403]);
+}
+function ddd_ai_dispatch_review_booking(WP_REST_Request $request) {
+    global $wpdb;
+    $input = $request->get_json_params();
+    $key = sanitize_text_field($input['idempotency_key'] ?? '');
+    $id = sanitize_text_field($input['booking_id'] ?? '');
+    $phone = ddd_ai_dispatch_normalize_phone($input['phone'] ?? '');
+    $type = sanitize_key($input['type'] ?? '');
+    if (!preg_match('/^[a-f0-9]{64}$/', $key) || !preg_match('/^BCR-CA[a-f0-9]{32}$/i', $input['request_id'] ?? '') || !$phone || !$id || !in_array($type, ['reschedule', 'cancel', 'add_notes'], true)) return new WP_REST_Response(['error' => 'Valid request, booking and customer phone are required.'], 400);
+    $option = 'ddd_dispatch_review_' . $key;
+    $fingerprint = hash('sha256', wp_json_encode($input));
+    $existing = get_option($option, []);
+    if ($existing) return hash_equals((string) ($existing['fingerprint'] ?? ''), $fingerprint) ? $existing['result'] : new WP_REST_Response(['error' => 'This approval key already belongs to a different change.'], 409);
+    $jobs = $wpdb->prefix . 'ddd_jobs';
+    $leads = $wpdb->prefix . 'ddd_business_leads';
+    if (!ddd_ai_dispatch_history_table_exists($jobs) || !ddd_ai_dispatch_history_table_exists($leads)) return new WP_REST_Response(['error' => 'Booking storage is unavailable.'], 503);
+    // Require transactional storage before touching either part of a booking.
+    foreach ([$jobs, $leads, $wpdb->options] as $table) {
+        $engine = $wpdb->get_var($wpdb->prepare('SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=%s', $table));
+        if (strtolower((string) $engine) !== 'innodb') return new WP_REST_Response(['error' => 'Transactional booking storage is required for approval.'], 503);
+    }
+    $wpdb->query('START TRANSACTION');
+    try {
+        $job = $wpdb->get_row($wpdb->prepare("SELECT * FROM `{$jobs}` WHERE job_uuid=%s FOR UPDATE", $id), ARRAY_A);
+        if (!$job || ddd_ai_dispatch_normalize_phone($job['customer_phone']) !== $phone) throw new Exception('No exact booking and phone match was found.', 409);
+        // Re-read the idempotency result after locking this job to serialize simultaneous submissions.
+        $saved = $wpdb->get_var($wpdb->prepare("SELECT option_value FROM `{$wpdb->options}` WHERE option_name=%s", $option));
+        if ($saved) { $wpdb->query('ROLLBACK'); $saved = maybe_unserialize($saved); return hash_equals((string) ($saved['fingerprint'] ?? ''), $fingerprint) ? $saved['result'] : new WP_REST_Response(['error' => 'Approval conflict.'], 409); }
+        if (in_array(strtolower((string) $job['status']), ['completed', 'archived', 'rescheduled', 'canceled', 'cancelled'], true)) throw new Exception('This booking is already closed. Refresh before reviewing.', 409);
+        $lead = $wpdb->get_row($wpdb->prepare("SELECT * FROM `{$leads}` WHERE job_uuid=%s ORDER BY updated_at DESC,created_at DESC,lead_uuid DESC LIMIT 1 FOR UPDATE", $id), ARRAY_A);
+        if (isset($input['expected_status']) && (string) $input['expected_status'] !== (string) $job['status']) throw new Exception('Booking status changed since the request. Review the current job before approving.', 409);
+        if ($type === 'reschedule' && (!$lead || trim((string) ($input['expected_time'] ?? '')) !== trim((string) $lead['preferred_time']))) throw new Exception('Appointment details changed or are missing. Review the current booking first.', 409);
+        $note = sanitize_textarea_field($input['note'] ?? '');
+        $details = sanitize_textarea_field($input['details'] ?? '');
+        $stamp = current_time('mysql');
+        $job_patch = ['updated_at' => $stamp];
+        $lead_patch = ['updated_at' => $stamp];
+        if ($type === 'cancel') { $job_patch['status'] = 'Canceled'; $job_patch['completed_at'] = $stamp; $lead_patch['status'] = 'Closed'; }
+        elseif ($type === 'reschedule') {
+            $raw_time = (string) ($input['appointment_at'] ?? '');
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/', $raw_time) || strtotime($raw_time) <= time()) throw new Exception('A future, timezone-qualified appointment time is required.', 400);
+            // Store an unambiguous instant; existing history adapters format it for Cincinnati time.
+            $lead_patch['preferred_time'] = $raw_time;
+            $lead_patch['status'] = 'Scheduled';
+            $job_patch['status'] = empty($job['assigned_tech_id']) ? 'Confirmed' : 'Assigned';
+        }
+        $audit = 'Dispatch approved ' . $type . ' request ' . sanitize_text_field($input['request_id']) . '. ' . $details . ($note ? ' ' . $note : '');
+        $job_patch['notes'] = trim((string) $job['notes'] . "\n\n" . $audit);
+        if ($lead) $lead_patch['notes'] = trim((string) $lead['notes'] . "\n\n" . $audit);
+        if ($wpdb->update($jobs, $job_patch, ['job_uuid' => $id]) === false || ($lead && $wpdb->update($leads, $lead_patch, ['lead_uuid' => $lead['lead_uuid']]) === false)) throw new Exception('Booking update failed. No change was committed.', 500);
+        $result = ['ok' => true, 'jobId' => $id, 'status' => $job_patch['status'] ?? $job['status'], 'appointmentAt' => $lead_patch['preferred_time'] ?? ($lead['preferred_time'] ?? ''), 'assignedTo' => $job['assigned_tech_id'] ?? '', 'sameJob' => true];
+        // The result is committed together with the changes so a lost HTTP response is safely replayable.
+        $inserted = $wpdb->insert($wpdb->options, ['option_name' => $option, 'option_value' => maybe_serialize(['fingerprint' => $fingerprint, 'result' => $result]), 'autoload' => 'no']);
+        if ($inserted === false) throw new Exception('Could not record approval safely.', 500);
+        $wpdb->query('COMMIT');
+        wp_cache_delete($option, 'options');
+        wp_cache_delete('notoptions', 'options');
+        return $result;
+    } catch (Exception $error) {
+        $wpdb->query('ROLLBACK');
+        return new WP_REST_Response(['error' => $error->getMessage()], in_array($error->getCode(), [400, 409], true) ? $error->getCode() : 503);
+    }
+}
+function ddd_ai_dispatch_availability_notice() {
+    if (!is_front_page() && !is_page(['book-service', 'emergency-service', 'shop-our-roadside-services'])) return;
+    ?>
+    <script>
+    (function(){
+      const target=document.querySelector('form.forminator-custom-form')||document.querySelector('main .ddd-wrap')||document.querySelector('main');
+      if(!target)return;
+      const notice=document.createElement('p');notice.className='ddd-service-availability';notice.setAttribute('role','status');
+      notice.textContent='Regular hours: 11 AM–7 PM. Service depends on technician availability. Shop visits require an approved appointment before traveling.';
+      notice.style.cssText='background:#10243a;color:#f3f8ff;border-left:4px solid #27b9b0;border-radius:12px;padding:16px;line-height:1.6;font-size:16px';
+      target.prepend(notice);
+      fetch('https://google-voice-ai-receptionist.onrender.com/api/service-availability',{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject()).then(a=>{notice.textContent=a.message+' Shop visits require an approved appointment before traveling.';document.querySelectorAll('.ddd-dispatch-status').forEach(e=>{e.textContent=a.mode==='closed'?'Next available service window':a.mode==='busy'?'Currently helping customers':'Taking service requests';});}).catch(()=>{});
+    })();
+    </script>
+    <?php
+}
+add_action('wp_footer', 'ddd_ai_dispatch_availability_notice', 25);
