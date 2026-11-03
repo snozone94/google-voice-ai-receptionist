@@ -5936,3 +5936,49 @@ body:not(.workspace-signed-in) .login-card { box-shadow: none !important; border
   .reply-keyboard-open .reply-form { flex: 0 0 auto; padding: 8px; gap: 6px; }
   .reply-keyboard-open #replyMessageInput { max-height: 96px; min-height: 44px; }
 }
+
+/* Dispatch workspace: quiet navy surfaces, clear actions and rainbow selection accents. */
+.workspace-section { margin: 18px 0; padding: 18px; border: 1px solid #35516b; border-radius: 16px; background: #14263d; color: #eef5fc; }
+.workspace-section h2 { font-size: 20px; margin: 0 0 12px; color: #f3f8ff !important; }
+.workspace-section h3 { color: #eaf3fc !important; font-size: 17px; margin: 0; }
+.workspace-section p,.workspace-section label,.workspace-section summary { color: #d4e2ef !important; }
+.workspace-section input:not([type=checkbox]),.workspace-section textarea,.workspace-section select { width: 100%; font-size: 16px; background: #e8eff5 !important; color: #13273c !important; border: 1px solid #68829b; border-radius: 10px; padding: 12px; }
+.workspace-section form { display: grid; gap: 12px; max-width: 760px; }
+.workspace-section label { display: grid; gap: 6px; font-weight: 600; }
+.workspace-section .checkbox-label { display: flex; align-items: center; gap: 10px; }
+.workspace-section input[type=checkbox] { width: 22px; height: 22px; flex: 0 0 auto; }
+.workspace-section button { min-height: 44px; border-radius: 12px !important; background: #d4ebf1 !important; color: #102b3d !important; font-weight: 700; padding: 10px 16px; }
+.workspace-section details { margin-top: 12px; }
+.workspace-section summary { min-height: 44px; cursor: pointer; font-weight: 700; padding: 12px 0; }
+.booking-review-card { padding: 16px; margin: 12px 0; border: 1px solid #45617b; border-left: 4px solid #35c7b6; border-radius: 12px; background: #1a304a; }
+.review-title,.review-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.review-actions { justify-content: flex-start; }
+.status-chip,.thread-status-chip { display: inline-block; background: #d8f1ec; color: #10473c !important; padding: 5px 9px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+.review-error,.review-result { color: #ffd6a0 !important; }
+.availability-badge { padding: 12px; border: 1px solid #305e69; border-radius: 12px; color: #d2efeb !important; background: #16303b; }
+.home-job { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; margin: 8px 0; }
+.workspace-signed-in .home-summary button { border-radius: 14px !important; min-height: 90px; }
+.workspace-signed-in .tabs button.active { background: linear-gradient(110deg,#7646b0,#166f80) !important; color: #fff !important; }
+.workspace-signed-in .tabs button { min-height: 46px; }
+.workspace-signed-in .conversation-item { border-radius: 12px; }
+.workspace-signed-in .reply-form { border-top: 2px solid #4bbfb5; }
+@media(max-width:700px){ .workspace-section { padding: 12px; margin: 12px 0; } .review-actions button { flex: 1 1 100%; } .workspace-section input,.workspace-section textarea { min-width: 0; } }
+
+#advancedAdminSettings { margin: 20px 0; padding: 16px; border: 1px solid #3e5672; border-radius: 14px; background: #15253a; }
+#advancedAdminSettings > summary { min-height: 44px; cursor: pointer; color: #e4edf8; font-weight: 700; }
+.workspace-signed-in:not(.workspace-admin) #advancedAdminSettings { display: none !important; }
+
+/* Keep thread actions compact so the conversation has room above the composer. */
+.thread-ownership .ownership-tools { flex: 0 0 auto; border: 0; padding: 0; background: transparent; }
+.ownership-tools summary { cursor: pointer; padding: 8px; color: #cfebe9; font-size: 13px; }
+.ownership-tools[open] { flex-basis: 100%; max-height: 150px; overflow-y: auto; }
+.ownership-tools .ownership-actions { padding: 8px 0; }
+.workspace-signed-in[data-view="inbox"] .conversation-panel > .customer-details,
+.workspace-signed-in[data-view="inbox"] .conversation-panel > .thread-records { flex-shrink: 0; }
+.workspace-signed-in[data-view="inbox"] .reply-form textarea { min-height: 76px; height: 76px; line-height: 1.45; }
+.workspace-signed-in[data-view="inbox"] .message-list { min-height: 110px !important; }
+@media (max-width: 700px) {
+ .workspace-signed-in[data-view="inbox"] .thread-ownership { padding: 4px 10px; }
+ .thread-ownership p { margin: 2px 0; }
+ .thread-ownership #threadReadLabel { min-width: 100px; }
+}

@@ -1,3 +1,5 @@
+import { initializeCleanup } from "./workspace-cleanup.js";
+let cleanupController = null;
 import { initializeLiveWorkspace } from "./live-calls.js";
 
 const callButton = document.querySelector("#callButton");
@@ -2148,10 +2150,10 @@ document.querySelector("#newConversationForm")?.addEventListener("submit", (even
   replyMessageInput.focus();
 });
 function openCustomerDialer(phone = "") {
-  setActiveTab("overview");
-  if (phone) outboundCustomerPhoneInput.value = formatPhone(phone);
-  document.querySelector("#outboundCallButton")?.scrollIntoView({ block: "center" });
-  outboundCustomerPhoneInput?.focus();
+  setActiveTab("calls");
+  const menu=document.querySelector(".live-phone-menu");if(menu)menu.open=true;
+  const input=document.querySelector("#browserDialNumber");
+  if(input){input.value=phone||"";input.scrollIntoView({block:"center",behavior:"smooth"});input.focus();}
 }
 document.querySelector("#inboxDialButton")?.addEventListener("click", () => openCustomerDialer());
 document.querySelector("#conversationCallButton")?.addEventListener("click", () => openCustomerDialer(selectedConversationPhone));
@@ -2213,7 +2215,7 @@ function renderConversations() {
       </div>
       <span class="thread-preview">${escapeHtml(cleanConversationBody(conversation.lastBody || "No texts yet").replace(/https?:\/\/\S+/g, "[link]"))}</span>
       <small>${escapeHtml(formatPhone(conversation.phone))}</small>
-      ${(conversation.needsReply ? `<small class="inbox-follow-up">Needs reply</small>` : "")}
+      ${`<small class="thread-status-chip">${escapeHtml(conversation.threadStatus||(conversation.needsReply?"Needs reply":conversation.unread?"New":"Waiting on customer"))}</small>`}
       ${conversation.unread ? `<span class="inbox-unread-badge">${conversation.unread} unread</span>` : `<small class="thread-state">${conversation.needsReply ? "Read · reply still needed" : "Read"}</small>`}
       <small class="thread-owner">${escapeHtml(ownerLabel(conversation.assignedTo || conversation.owner))}</small>
       ${conversation.needsFollowUp && !conversation.needsReply ? `<small class="inbox-follow-up">${escapeHtml(conversation.followUpReason || "Needs follow-up")}</small>` : ""}
@@ -2371,14 +2373,13 @@ function renderSelectedConversation() {
 }
 
 function getDeliveryIssue(message = {}) {
-  const status = String(message.status || "").toLowerCase();
-  if (!/failed|undelivered|error/.test(status)) return "";
-  const reason = String(message.errorMessage || message.reason || "").replace(/\s+/g, " ").trim();
-  const code = String(message.errorCode || "").trim();
-  if (reason && code) return `Delivery issue ${code}: ${reason}`;
-  if (reason) return `Delivery issue: ${reason}`;
-  if (code) return `Delivery issue ${code}`;
-  return "This text could not be sent. Check the number and try again.";
+  if(!/failed|undelivered|error/i.test(message.status||""))return "";
+  const code=String(message.errorCode||"");
+  if(code==="21610")return "Not delivered: this customer opted out of texts. Call instead; do not resend.";
+  if(["21211","21614","30005","30006"].includes(code))return "Not delivered: this number may be incorrect or unable to receive texts. Check the number or call instead.";
+  if(["30007","30034","30035"].includes(code))return "Not delivered: the carrier blocked this text. Call the customer and review texting setup in Account.";
+  if(code==="30003")return "Not delivered: the customer’s phone was unreachable. You can call or try a text later.";
+  return "Not delivered. Check the number or call the customer before trying again.";
 }
 
 function getLatestConversationBooking(conversation = {}) {
@@ -2882,7 +2883,8 @@ function renderCallLog() {
     renderSelectedCall();
     return;
   }
-  const groups = groupCallsByCaller(callLog);
+  const filteredCalls=document.querySelector("#callViewFilter")?.value==="voicemails"?callLog.filter(call=>call.isVoicemail):callLog;
+  const groups = groupCallsByCaller(filteredCalls);
   if (selectedCallId && !groups.some((group) => group.calls.some((call) => call.id === selectedCallId))) {
     selectedCallId = groups[0]?.latest?.id || "";
   }
@@ -2894,7 +2896,7 @@ function renderCallLog() {
     button.className = isSelected ? "call-log-item selected" : "call-log-item";
     const label = group.caller || call.caller || call.callId || "Unknown caller";
     const meta = [
-      call.displayStatus || call.outcome?.label,
+      call.voicemailUnread ? "● New voicemail" : call.isVoicemail ? "Voicemail" : call.displayStatus || call.outcome?.label,
       call.durationLabel,
       call.smsStatus && call.smsStatus !== "none" ? `SMS ${call.smsStatus}` : "",
       call.recordingStatus === "available" ? "recording" : "",
@@ -2957,6 +2959,7 @@ function renderSelectedCall() {
     ? `<button type="button" data-action="play-recording">Play recording</button>`
     : "No recording link stored yet";
   const sameCall = callDetail.dataset.selectedCallId === call.id;
+  if(sameCall&&callDetail.querySelector("audio[data-call-recording]"))return;
   const transcriptExpanded = sameCall && callDetail.querySelector('[data-full-transcript]')?.open;
   const previousScroll = sameCall ? callDetail.scrollTop : 0;
   callDetail.dataset.selectedCallId = call.id;
@@ -3042,10 +3045,12 @@ function renderSelectedCall() {
       if (!response.ok) throw new Error(result.error || "Recording unavailable.");
       const player = document.createElement("audio");
       player.controls = true;
+      player.dataset.callRecording="true";
       player.src = result.url;
       player.style.maxWidth = "100%";
       button.replaceWith(player);
       player.play().catch(() => {});
+      if(call.isVoicemail){await fetch(`/api/calls/${encodeURIComponent(call.callId||call.id)}/voicemail-read`,{method:"POST",headers:{...staffHeaders(),"Content-Type":"application/json"},body:"{}"});call.voicemailUnread=false;}
     } catch (error) { button.textContent = error.message; button.disabled = false; }
   });
 }
@@ -3593,6 +3598,7 @@ async function refreshHome() {
     if (!response.ok) throw new Error("Workspace unavailable. Use Inbox, Calls, or Bookings; then try Refresh.");
     const data = await response.json();
     if (request !== homeRequest || !isAccessVerified()) return;
+    cleanupController?.render(data);
     let liveCount = null;
     if (!data.summary) {
       try {
@@ -3658,7 +3664,7 @@ function canWorkThreads() { return isAccessVerified() && signedInStaff?.role !==
 function replyStateLabel(thread) {
   if (!thread) return "";
   const read = thread.unread ? `${thread.unread} unread` : "Read";
-  return `${read} · ${thread.needsReply ? "Needs reply" : thread.needsFollowUp ? thread.followUpReason || "Needs follow-up" : "No reply needed"}`;
+  return `${read} · ${thread.threadStatus||(thread.needsReply?"Needs reply":thread.needsFollowUp?thread.followUpReason||"Needs reply":"Waiting on customer")}`;
 }
 async function stableStaffIdentity(member) {
   if (member.id) return String(member.id);
@@ -3924,3 +3930,8 @@ window.visualViewport?.addEventListener("resize", syncReplyViewport);
 window.visualViewport?.addEventListener("scroll", syncReplyViewport);
 replyMessageInput.addEventListener("focus", syncReplyViewport);
 replyMessageInput.addEventListener("blur", () => setTimeout(syncReplyViewport, 100));
+
+cleanupController = initializeCleanup({headers:staffHeaders,isAdmin:isAdminStaff,isSignedIn:isAccessVerified,isWorker:()=>isAccessVerified()&&signedInStaff?.role!=="reviewer",onThread:phone=>{selectedConversationPhone=normalizePhoneForRoute(phone);setActiveTab("inbox");document.body.classList.add("thread-open");renderConversations();},onRefresh:()=>refreshHome().catch(()=>{})});
+document.querySelector("#callViewFilter")?.addEventListener("change",renderCallLog);
+const alwaysNewText=document.createElement("button");alwaysNewText.type="button";alwaysNewText.textContent="New text";alwaysNewText.addEventListener("click",()=>{document.body.classList.remove("thread-open");document.querySelector("#newConversationForm").hidden=false;document.querySelector("#newConversationPhone").focus();});
+document.querySelector(".conversation-header .inbox-toolbar")?.prepend(alwaysNewText);

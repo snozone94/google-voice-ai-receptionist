@@ -117,7 +117,7 @@
           <section class="control-card outbound-card" aria-label="Outbound calling">
             <div>
               <p class="eyebrow">Call customers</p>
-              <h2>Callback bridge</h2>
+              <h2>Call using your phone</h2>
               <p>Your phone rings first. Answer to connect with the customer using your selected DDD number.</p>
             </div>
             <div class="mini-fields">
@@ -206,7 +206,7 @@
             <details id="liveCallConfiguration" hidden>
               <summary>Incoming call options</summary>
               <label><input type="checkbox" id="phoneMenuFirst" /> Start calls with booking, prices, messages, and team options</label>
-              <p>1 Book by text · 2 Prices · 3 Existing booking · 4 Team. The assistant is optional.</p>
+              <p>1 Book by text · 2 Prices · 3 Existing booking · 4 Hours & shop · 5 Team. The assistant is optional.</p>
               <label><input type="checkbox" id="liveCallEnabled" /> Allow listening and taking over from AI</label>
               <label><input type="checkbox" id="liveRingTeam" /> Ring signed-in team phones while AI answers</label>
               <label><input type="checkbox" id="liveTranscribeCalls" /> Save live call transcripts, including team conversations</label>
@@ -230,7 +230,7 @@
         <section class="home-live-calls" aria-labelledby="homeCallsTitle"><h3 id="homeCallsTitle">Live calls</h3><div id="homeCallsDock"></div></section>
         <div id="homeSummary" class="home-summary" aria-label="Today at a glance"></div>
         <p id="homeReplyPolicy" class="muted"></p>
-        <h3>Next steps</h3><div id="homeTasks"><p>Unread texts and replies will appear here.</p></div>
+        <h3>Needs reply</h3><div id="homeTasks"><p>Unread texts and replies will appear here.</p></div>
         <details id="homeHealth" hidden><summary>System health · admin</summary><div id="homeHealthItems"></div>
           <form id="replyPolicyForm"><h3>Reply reminders</h3><p>Set when an unanswered customer text needs a reminder and escalation.</p>
             <label>Remind after (minutes)<input id="remindAfterMinutes" type="number" min="1" max="60" required /></label>
@@ -729,9 +729,9 @@
             </div>
             <div id="threadOwnership" class="thread-ownership" hidden>
               <p id="threadOwnerLabel"></p><p id="threadReadLabel"></p>
-              <div class="ownership-actions"><button id="claimThread" type="button">Claim</button><button id="releaseThread" type="button">Release</button>
+              <details class="ownership-tools"><summary>Assign / claim</summary><div class="ownership-actions"><button id="claimThread" type="button">Claim</button><button id="releaseThread" type="button">Release</button>
                 <form id="assignThreadForm" hidden><label>Assign to<select id="threadAssignee" required></select></label><button type="submit">Assign</button></form>
-              </div><p id="ownershipStatus" role="status"></p>
+              </div></details><p id="ownershipStatus" role="status"></p>
             </div>
             <details id="threadRecords" class="thread-records"><summary>Calls, transcripts & bookings</summary><div id="threadRecordsContent"></div></details>
             <details class="customer-details"><summary>Customer details & booking</summary><div id="conversationConfidence" class="confidence-pill muted">No booking selected</div><div id="conversationDetails" class="conversation-details"></div></details>
@@ -757,9 +757,9 @@
         <div class="section-title-row">
           <div>
             <p class="eyebrow">Call history</p>
-            <h2>Call Log</h2>
+            <h2>Calls</h2>
           </div>
-          <button id="refreshCallLogButton" type="button">Refresh calls</button>
+          <select id="callViewFilter" aria-label="Call view"><option value="all">All calls</option><option value="voicemails">Voicemails</option></select><button id="refreshCallLogButton" type="button">Refresh calls</button>
         </div>
         <div class="call-log-shell">
           <aside class="call-log-list" id="callLogList"></aside>
