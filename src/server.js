@@ -190,7 +190,7 @@ const liveCalls = createLiveCalls({ directory: dataDir, startTranscription: (id)
 } });
 
 const bookingPhone = createBookingPhone({
-  directory: dataDir,
+  directory: dataDir, publicBaseUrl: process.env.PUBLIC_BASE_URL,
   lookup: phone => getCustomerHistory(phone, 12),
   voicemail: req => callMenu.voicemail(req),
   sendCode: (phone, callId, code) => notificationLedger.deliver(`booking-verification:${callId}`, async () => {
@@ -215,7 +215,7 @@ const bookingPhone = createBookingPhone({
 });
 
 const callMenu = mountCallMenu(app, {
-  express, authenticate: hasTwilioSmsAccess, settings: loadReceptionistSettings, saveEvent: saveCallEvent, bookingSelfService: req => bookingPhone.handle(req),
+  express, publicBaseUrl: process.env.PUBLIC_BASE_URL, authenticate: hasTwilioSmsAccess, settings: loadReceptionistSettings, saveEvent: saveCallEvent, bookingSelfService: req => bookingPhone.handle(req),
   sendBookingLinks: async (phone, callId, includeShopInfo = false) => notificationLedger.deliver(`menu-booking-links:${callId}${includeShopInfo ? ":hours" : ""}`, async () => {
     const message = appendStopFooter(`${defaultCallerSelfServiceSms()}${includeShopInfo ? `\n\n${serviceAvailability}\n\n${shopVisitPolicy}` : "\n\nShop visits require an approved appointment. Please wait for confirmation before traveling to the shop."}`);
     let delivery;

@@ -10,7 +10,7 @@ export function bookingDescription(booking) {
   const time = /^\d{4}-\d{2}-\d{2}T/.test(rawTime || '') && !Number.isNaN(Date.parse(rawTime)) ? new Intl.DateTimeFormat('en-US', { dateStyle: 'full', timeStyle: 'short', timeZone: 'America/New_York' }).format(new Date(rawTime)) : rawTime;
   return `${String(booking.serviceType || 'Service').slice(0, 100)}. ${String(time || 'Appointment time awaiting confirmation').slice(0, 160)}. Status: ${status.slice(0, 60)}.`;
 }
-export function createBookingPhone({ directory, lookup, sendCode, publishRequest, sendReceipt, voicemail, now = Date.now, makeCode = () => String(crypto.randomInt(100000, 1000000)) }) {
+export function createBookingPhone({ directory, lookup, sendCode, publishRequest, sendReceipt, voicemail, publicBaseUrl = process.env.PUBLIC_BASE_URL || "", now = Date.now, makeCode = () => String(crypto.randomInt(100000, 1000000)) }) {
   const file = path.join(directory, 'phone-booking-self-service.json');
   let queue = Promise.resolve();
   const transaction = action => {
@@ -27,7 +27,7 @@ export function createBookingPhone({ directory, lookup, sendCode, publishRequest
     queue = result.catch(() => {}); return result;
   };
   const hash = code => crypto.createHash('sha256').update(code).digest('hex');
-  const action = (req, stage) => '/api/twilio/call-menu?' + new URLSearchParams({ secret: String(req.query.secret || ''), stage: `booking-${stage}` });
+  const action = (req, stage) => { const relative = '/api/twilio/call-menu?' + new URLSearchParams({ secret: String(req.query.secret || ''), stage: `booking-${stage}` }); return publicBaseUrl ? new URL(relative, publicBaseUrl).toString() : relative; };
   const gather = (req, stage, text, speech = false, digits = 1) => `<Response><Gather input="${speech ? 'speech' : 'dtmf'}" ${speech ? 'speechTimeout="auto" language="en-US"' : `numDigits="${digits}"`} timeout="15" actionOnEmptyResult="true" action="${escape(action(req, stage))}" method="POST">${say(text)}</Gather></Response>`;
   const choices = (req, bookings) => gather(req, 'select', bookings.map((b, i) => `Press ${i + 1} for ${bookingDescription(b)}`).join(' ') + ' Press 9 to return to the main menu.');
   const overview = (req, booking) => gather(req, 'action', `${bookingDescription(booking)} Press 1 to request a new date or time. Press 2 to request cancellation. Press 3 to leave an update. Press 5 to reach the team. Press 9 for the main menu.`);

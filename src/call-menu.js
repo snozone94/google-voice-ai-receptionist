@@ -35,7 +35,7 @@ export async function boundedMenuDelivery(send, waitMs = 1500) {
     ]);
   } finally { clearTimeout(timer); }
 }
-export function mountCallMenu(app, { express, authenticate, settings, saveEvent, sendBookingLinks, sendPriceLink, humanDial, notify, bypassAssistant, menuEnabled, bookingSelfService }) {
+export function mountCallMenu(app, { express, authenticate, settings, saveEvent, sendBookingLinks, sendPriceLink, humanDial, notify, bypassAssistant, menuEnabled, bookingSelfService, publicBaseUrl = process.env.PUBLIC_BASE_URL || "" }) {
   let priceCache;
   async function prices() {
     if (priceCache && priceCache.expires > Date.now()) return priceCache.value;
@@ -47,8 +47,9 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
       return value;
     } catch { return {}; }
   }
-  const action = (req, params = {}) => `/api/twilio/call-menu?${new URLSearchParams({ secret: String(req.query.secret || ""), ...params })}`;
-  const message = req => `<Say voice="Polly.Joanna-Neural">After the tone, leave your name, service, vehicle, and location, or your booking question. Press pound when finished.</Say><Record maxLength="90" finishOnKey="#" playBeep="true" action="${xml(action(req, { stage: "saved" }))}" method="POST" recordingStatusCallback="${xml('/api/twilio/recording?' + new URLSearchParams({ secret: String(req.query.secret || ""), menuMessage: "1" }))}" recordingStatusCallbackMethod="POST"/><Say voice="Polly.Joanna-Neural">Thank you. Please reply to DDD by text if your message did not save.</Say><Hangup/>`;
+  const callbackUrl = value => publicBaseUrl ? new URL(value, publicBaseUrl).toString() : value;
+  const action = (req, params = {}) => callbackUrl(`/api/twilio/call-menu?${new URLSearchParams({ secret: String(req.query.secret || ""), ...params })}`);
+  const message = req => `<Say voice="Polly.Joanna-Neural">After the tone, leave your name, service, vehicle, and location, or your booking question. Press pound when finished.</Say><Record maxLength="90" finishOnKey="#" playBeep="true" action="${xml(action(req, { stage: "saved" }))}" method="POST" recordingStatusCallback="${xml(callbackUrl('/api/twilio/recording?' + new URLSearchParams({ secret: String(req.query.secret || ""), menuMessage: "1" })))}" recordingStatusCallbackMethod="POST"/><Say voice="Polly.Joanna-Neural">Thank you. Please reply to DDD by text if your message did not save.</Say><Hangup/>`;
   const voicemail = req => `<Response><Say voice="Polly.Joanna-Neural">The team is not available right now. You can reply to DDD by text, or leave a message.</Say>${message(req)}</Response>`;
   app.post("/api/twilio/call-menu", express.urlencoded({ extended: false }), async (req, res, next) => {
     try {
