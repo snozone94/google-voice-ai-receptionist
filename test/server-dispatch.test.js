@@ -29,6 +29,7 @@ test("dispatch HTTP contract, reviewer isolation, ownership, policy and provider
       if (smsNetworkFailure) throw new Error("Unknown provider outcome");
       return smsFailure ? Response.json({ status: "failed", message: "Rejected", code: 21610 }, { status: 400 }) : Response.json({ sid: `SMtest${sms.length}`, status: "queued" });
     }
+    if (String(url).includes('/Recordings/') && String(url).endsWith('.mp3')) return new Response(Buffer.from('ID3test-private-recording'),{headers:{'Content-Type':'audio/mpeg'}});
     throw new Error(`Unexpected external request: ${url}`);
   };
   let server;
@@ -348,6 +349,21 @@ test("dispatch HTTP contract, reviewer isolation, ownership, policy and provider
     assert.match(health.detail, /uncertain/);
     assert.match(health.nextStep, /before resending/);
     process.env.EMAIL_ALERTS_ENABLED = "false";
+  });
+
+  await t.test("signed recordings retain auth while accepting iOS byte probes",async()=>{
+    const previous=process.env.TWILIO_ACCOUNT_SID;process.env.TWILIO_ACCOUNT_SID='AC'+'a'.repeat(32);
+    try{
+      const callId='CA'+'c'.repeat(32);
+      await fs.appendFile(path.join(dir,'calls.jsonl'),JSON.stringify({createdAt:new Date().toISOString(),callId,type:'twilio.menu.message',recordingUrl:`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Recordings/RE${'a'.repeat(32)}`})+'\n');
+      assert.equal((await request(`/api/calls/${callId}/recording-link`,'4444',{})).status,403);
+      assert.equal((await request(`/api/calls/${callId}/recording-link`,'',{})).status,403);
+      const link=await request(`/api/calls/${callId}/recording-link`,'test-admin',{});assert.equal(link.status,200);
+      const signed=new URL(link.body.url),route=base+signed.pathname+signed.search;
+      const r=await originalFetch(route,{headers:{Range:'bytes=0-1'}});assert.equal(r.status,206);assert.equal(r.headers.get('Content-Length'),'2');assert.equal(await r.text(),'ID');
+      assert.equal((await originalFetch(base+signed.pathname)).status,403);
+      signed.searchParams.set('expires','1');assert.equal((await originalFetch(base+signed.pathname+signed.search)).status,403);
+    }finally{process.env.TWILIO_ACCOUNT_SID=previous;}
   });
 
 });
