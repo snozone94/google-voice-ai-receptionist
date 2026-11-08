@@ -1,3 +1,4 @@
+import {phoneHours,bookingRequestPolicy} from "./business-hours.js";
 import { createRecordingPlayback } from "./recording-playback.js";
 import { reviewDecision, reviewKey, reviewReceipt, applyPlatformReview } from "./booking-review.js";
 import { serviceControlStore, availabilityMessage, businessAppointmentIso } from "./service-controls.js";
@@ -232,7 +233,7 @@ const callMenu = mountCallMenu(app, {
   express, publicBaseUrl: process.env.PUBLIC_BASE_URL, authenticate: hasTwilioSmsAccess, settings: loadReceptionistSettings, saveEvent: saveCallEvent, bookingSelfService: req => bookingPhone.handle(req), availability: () => serviceControls.availability(),
   sendBookingLinks: async (phone, callId, includeShopInfo = false) => notificationLedger.deliver(`menu-booking-links:${callId}${includeShopInfo ? ":hours" : ""}`, async () => {
     const currentAvailability = await serviceControls.availability();
-    const message = appendStopFooter(`${defaultCallerSelfServiceSms()}${includeShopInfo ? `\n\n${currentAvailability.newTiresAvailable?tireAvailability:"New-tire replacement service is currently unavailable."}\nShop visits require an approved appointment before traveling.` : "\n\nShop visits require an approved appointment. Please wait for confirmation before traveling to the shop."}\n\n${availabilityMessage(currentAvailability)}`);
+    const message = appendStopFooter(`${defaultCallerSelfServiceSms()}\n\n${bookingRequestPolicy(currentAvailability)}`);
     let delivery;
     try { delivery = await sendTwilioSms(phone, message); }
     catch (error) { error.uncertain = true; throw error; }
@@ -283,7 +284,7 @@ app.get("/api/calls/:id/audio", async (req, res, next) => {
 
 mountReplyPolish(app, { express, authenticate: staffRecordsOnly, client: openAIClient, model: () => process.env.OPENAI_DRAFT_MODEL || "gpt-4o-mini" });
 
-app.get("/api/service-availability", async (_req,res,next)=>{ try { const availability=await serviceControls.availability();res.set("Cache-Control","public, max-age=10").json({...availability,message:availabilityMessage(availability)}); }catch(error){next(error);} });
+app.get("/api/service-availability", async (_req,res,next)=>{ try { const availability=await serviceControls.availability();res.set("Cache-Control","public, max-age=10").json({...availability,phoneHours:phoneHours(availability),message:availabilityMessage(availability)}); }catch(error){next(error);} });
 app.post("/api/service-availability", express.json(), staffRecordsOnly, async (req,res,next)=>{ try { if(!isAdminRole(res.locals.staff.role))return res.status(403).json({error:"Admin access required."}); const availability=await serviceControls.setAvailability(req.body);res.json({...availability,message:availabilityMessage(availability)}); }catch(error){res.status(error.status||400).json({error:error.message});} });
 app.get("/api/staff/coverage",staffRecordsOnly,async(_req,res,next)=>{try{if(res.locals.staff.role==="reviewer")return res.json({working:false,backup:false});res.json(await serviceControls.preferences(safeStaff(res.locals.staff).id));}catch(error){next(error);} });
 app.post("/api/staff/coverage",express.json(),staffRecordsOnly,async(req,res,next)=>{try{if(res.locals.staff.role==="reviewer")return res.status(403).json({error:"Staff sign-in required."});res.json(await serviceControls.setPreferences(safeStaff(res.locals.staff).id,{...req.body,voiceIdentity:voiceIdentity(res.locals.staff)}));}catch(error){res.status(error.status||400).json({error:error.message});} });

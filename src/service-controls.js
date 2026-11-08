@@ -1,12 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 const bad = message => Object.assign(new Error(message), { status: 400 });
-export const defaultAvailability = { mode: 'available', newTiresAvailable: true, notice: '', regularHours: '11 AM–7 PM', timeZone: 'America/New_York' };
+export const defaultAvailability = { mode: 'available', newTiresAvailable: true, notice: '', hoursOverride: 'auto', regularHours: '11 AM–7 PM', timeZone: 'America/New_York' };
 export function validateAvailability(input) {
   if (!['available','busy','closed'].includes(input.mode)) throw bad('Choose Taking requests, Busy, or Closed.');
   if (typeof input.newTiresAvailable !== 'boolean') throw bad('Choose whether new-tire service is available.');
   if (typeof input.notice !== 'string' || input.notice.length > 160) throw bad('Keep the temporary notice within 160 characters.');
-  return { ...defaultAvailability, mode: input.mode, newTiresAvailable: input.newTiresAvailable, notice: input.notice.replace(/\s+/g,' ').trim() };
+  if(input.hoursOverride!==undefined&&!['auto','after-hours','extended'].includes(input.hoursOverride))throw bad('Choose Automatic, After-hours now, or Extended-hours availability.');
+  return { ...defaultAvailability, hoursOverride:input.hoursOverride||'auto', mode: input.mode, newTiresAvailable: input.newTiresAvailable, notice: input.notice.replace(/\s+/g,' ').trim() };
 }
 export function availabilityMessage(value = defaultAvailability) {
   const mode = { available: 'Taking service requests, subject to technician availability.', busy: 'We are currently busy. Requests will be reviewed when a technician is available.', closed: 'We are currently closed. Requests will be reviewed for the next available service window.' }[value.mode];
@@ -17,7 +18,7 @@ export function serviceControlStore(directory) {
   const update = (action,write=true) => { const result = queue.then(async () => { let state={availability:{...defaultAvailability},staff:{}}; try { state=JSON.parse(await fs.readFile(file,'utf8')); } catch(e) { if(e.code!=='ENOENT')throw e; } const value=action(state); if(!write)return value; await fs.mkdir(directory,{recursive:true}); await fs.writeFile(file+'.tmp',JSON.stringify(state),{mode:0o600}); await fs.rename(file+'.tmp',file); return value; }); queue=result.catch(()=>{});return result; };
   return {
     availability: () => update(s=>s.availability,false),
-    setAvailability: value => { const next=validateAvailability(value);return update(s=>(s.availability=next)); },
+    setAvailability: value => update(s=>(s.availability=validateAvailability({...value,hoursOverride:value.hoursOverride??s.availability.hoursOverride??'auto'}))),
     preferences: id => update(s=>s.staff[id] || { working:true, backup:false },false),
     setPreferences: (id,value) => { if(typeof value.working!=='boolean'||typeof value.backup!=='boolean')throw bad('Working and backup must be on or off.');return update(s=>(s.staff[id]={working:value.working,backup:value.backup,...(value.voiceIdentity?{voiceIdentity:value.voiceIdentity}:{})})); },
     voicemailSeen: id => update(s=>s.voicemails?.[id]||{},false),

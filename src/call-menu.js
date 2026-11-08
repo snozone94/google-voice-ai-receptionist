@@ -1,3 +1,4 @@
+import {phoneHours,afterHoursGreeting} from "./business-hours.js";
 import { availabilityMessage, defaultAvailability } from "./service-controls.js";
 const xml = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]);
 export const priceListUrl = "https://dddcincy.com/shop-our-roadside-services/";
@@ -24,8 +25,8 @@ export function priceText(prices = {}) {
   const lines = Object.entries(labels).filter(([key]) => prices[key]).map(([key, label]) => `${label}: from $${Number((prices[key] + prices.fee).toFixed(2))} total`);
   return `DDD starting totals, including the $${prices.fee} service fee for one service:\n\n${lines.join("\n")}\n\nParts and other charges may apply. Final quote confirmed before service.\nMore service details: ${priceListUrl}\n\n${serviceAvailability}`;
 }
-export function menuTwiml({ action, repeat = false, notice = "" }) {
-  return `<Response>${repeat ? "" : '<Pause length="1"/>'}<Gather input="dtmf" numDigits="1" timeout="4" actionOnEmptyResult="true" action="${xml(action)}" method="POST"><Say voice="Polly.Joanna-Neural">${repeat ? "Please choose an option." : "Hey, thank you for calling Triple D’s automated system. How can we help you today?"}${!repeat && notice ? " " + xml(notice) : ""} Press 1 to book by text. 2 for prices. 3 for an existing booking. 4 for hours and shop information. Or 5 to reach the team.</Say></Gather></Response>`;
+export function menuTwiml({ action, repeat = false, notice = "", greeting = "", afterHours = false }) {
+  return `<Response>${repeat ? "" : '<Pause length="1"/>'}<Gather input="dtmf" numDigits="1" timeout="4" actionOnEmptyResult="true" action="${xml(action)}" method="POST"><Say voice="Polly.Joanna-Neural">${repeat ? "Please choose an option." : xml(greeting||"Hey, thank you for calling Triple D’s automated system. How can we help you today?")}${!repeat && notice ? " " + xml(notice) : ""}${afterHours?" Press 1 to request service by text. 2 for starting prices. 3 to manage an existing booking. 4 for hours and shop information. Or 5 to try the team or leave a voicemail.":" Press 1 to book by text. 2 for prices. 3 for an existing booking. 4 for hours and shop information. Or 5 to reach the team."}</Say></Gather></Response>`;
 }
 export async function boundedMenuDelivery(send, waitMs = 1500) {
   let timer;
@@ -36,7 +37,7 @@ export async function boundedMenuDelivery(send, waitMs = 1500) {
     ]);
   } finally { clearTimeout(timer); }
 }
-export function mountCallMenu(app, { express, authenticate, settings, saveEvent, sendBookingLinks, sendPriceLink, humanDial, notify, bypassAssistant, menuEnabled, bookingSelfService, publicBaseUrl = process.env.PUBLIC_BASE_URL || "", availability = async () => defaultAvailability }) {
+export function mountCallMenu(app, { express, authenticate, settings, saveEvent, sendBookingLinks, sendPriceLink, humanDial, notify, bypassAssistant, menuEnabled, bookingSelfService, publicBaseUrl = process.env.PUBLIC_BASE_URL || "", availability = async () => defaultAvailability, now = Date.now }) {
   let priceCache;
   async function prices() {
     if (priceCache && priceCache.expires > Date.now()) return priceCache.value;
@@ -48,6 +49,11 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
       return value;
     } catch { return {}; }
   }
+  const renderMenu=async(req,repeat=false)=>{
+    const current=await availability(),time=now(),hours=phoneHours(current,time);
+    const notice=[current.mode==='busy'?'We are currently busy. Requests will be reviewed when a technician is available.':'',current.notice||''].filter(Boolean).join(' ');
+    return menuTwiml({action:action(req,repeat?{repeat:'1'}:{}),repeat,afterHours:hours.afterHours,greeting:hours.afterHours?afterHoursGreeting(current,time):'',notice});
+  };
   const callbackUrl = value => publicBaseUrl ? new URL(value, publicBaseUrl).toString() : value;
   const action = (req, params = {}) => callbackUrl(`/api/twilio/call-menu?${new URLSearchParams({ secret: String(req.query.secret || ""), ...params })}`);
   const message = req => `<Say voice="Polly.Joanna-Neural">After the tone, leave your name, service, vehicle, and location, or your booking question. Press pound when finished.</Say><Record maxLength="90" finishOnKey="#" playBeep="true" action="${xml(action(req, { stage: "saved" }))}" method="POST" recordingStatusCallback="${xml(callbackUrl('/api/twilio/recording?' + new URLSearchParams({ secret: String(req.query.secret || ""), menuMessage: "1" })))}" recordingStatusCallbackMethod="POST"/><Say voice="Polly.Joanna-Neural">Thank you. Please reply to DDD by text if your message did not save.</Say><Hangup/>`;
@@ -60,7 +66,7 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
         const result = await bookingSelfService(req);
         if (typeof result === "string") return res.type("text/xml").send(result);
         req = { ...req, query: { ...req.query, stage: "" }, body: { ...req.body, Digits: result?.team ? "5" : "9" } };
-        if (!result?.team) return res.type("text/xml").send(menuTwiml({ action: action(req) }));
+        if (!result?.team) return res.type("text/xml").send(await renderMenu(req));
       }
       const phone = req.body.From || "";
       const headers = [{ name: "from", value: phone }, { name: "to", value: req.body.To || "" }];
@@ -103,7 +109,7 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
       } else if (req.query.repeat === "1" || req.query.stage === "followup") {
         return res.type("text/xml").send(`<Response>${message(req)}</Response>`);
       } else {
-        return res.type("text/xml").send(menuTwiml({ action: action(req, { repeat: "1" }), repeat: true }));
+        return res.type("text/xml").send(await renderMenu(req,true));
       }
       return res.type("text/xml").send(`<Response><Gather input="dtmf" numDigits="1" timeout="3" actionOnEmptyResult="true" action="${xml(action(req, { stage: "followup", ...(digit === "4" ? { info: "hours" } : {}) }))}" method="POST"><Say voice="Polly.Joanna-Neural">${xml(content)} Press 5 to reach the team, or stay on the line to leave a message.</Say></Gather></Response>`);
     } catch (error) {
@@ -115,5 +121,5 @@ export function mountCallMenu(app, { express, authenticate, settings, saveEvent,
     if (req.query.menuMessage === "1" && req.body.RecordingStatus === "completed" && Number(req.body.RecordingDuration) > 0 && req.body.RecordingUrl) {
       notify({ title: "New DDD voice message", body: "A customer left a message. Open their conversation to listen and reply.", data: { type: "customer-voicemail", callId: req.body.CallSid, from: req.body.From || "" } }, "menu-voice-message");
     }
-  }, async enabled() { return process.env.CALL_MENU_ENABLED !== "false" && (await menuEnabled()); }, async render(req) { const current=await availability();return menuTwiml({ action: action(req), notice: current.mode!=="available" ? availabilityMessage(current).split(" Regular hours")[0]+(current.notice?" "+current.notice:"") : current.notice }); } };
+  }, async enabled() { return process.env.CALL_MENU_ENABLED !== "false" && (await menuEnabled()); }, render: req=>renderMenu(req) };
 }
