@@ -17,6 +17,7 @@ import twilio from "twilio";
 import webPush from "web-push";
 import { notificationState } from "./notification-state.js";
 import { requireStaffRecords } from "./staff-record-access.js";
+import { mountTechWorkflow } from './tech-workflow.js';
 import { decorateConversations, workspaceStore, pendingTextReminders } from "./dispatch-workspace.js";
 import { actionableNotification, alertEmailPolicy, notificationPreference, alertDisplayType, callAttentionEmailKey, expoTicketResults, callIdResolver } from "./call-evidence.js";
 import { operationsHandlers, operationsSnapshot, operationsHealth, replyPolicyStore, notificationAudience, reminderAudience } from "./dispatch-operations.js";
@@ -372,6 +373,7 @@ app.get("/api/calls/:id/transcript", staffRecordsOnly, async (req, res, next) =>
 });
 
 // Review credentials are recognized only by these isolated workspace routes.
+mountTechWorkflow(app, { staffOnly: staffRecordsOnly, authUrl: dddPlatformAuthUrl() });
 const operationsOnly = requireStaffRecords(async (req) => {
   const code = String(req.get("x-staff-code") || req.get("x-admin-pin") || req.query.staffCode || req.query.adminPin || "").trim();
   return appReviewPin && code === appReviewPin ? appReviewStaff : getStaffAccess(req);
