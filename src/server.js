@@ -1,3 +1,4 @@
+import { createRecordingPlayback } from "./recording-playback.js";
 import { reviewDecision, reviewKey, reviewReceipt, applyPlatformReview } from "./booking-review.js";
 import { serviceControlStore, availabilityMessage, businessAppointmentIso } from "./service-controls.js";
 import { holdMusicTwiml, createHoldMusicUrl, verifyHoldMusic, holdTracks } from "./hold-music.js";
@@ -10,7 +11,6 @@ import express from "express";
 import fs from "node:fs/promises";
 import path from "node:path";
 import tls from "node:tls";
-import { Readable } from "node:stream";
 import OpenAI from "openai";
 import twilio from "twilio";
 import webPush from "web-push";
@@ -254,6 +254,8 @@ const callMenu = mountCallMenu(app, {
 
 app.get("/vendor/twilio-voice.js", (_req, res) => res.sendFile(path.join(root, "node_modules/@twilio/voice-sdk/dist/twilio.min.js")));
 
+const recordingPlayback=createRecordingPlayback({fetcher:url=>fetch(url,{headers:{Authorization:`Basic ${Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64")}`},signal:AbortSignal.timeout(20000)})});
+
 app.post("/api/calls/:id/recording-link", express.json(), staffRecordsOnly, async (req, res, next) => {
   try {
     if (res.locals.staff.role === "reviewer") return res.status(403).json({ error: "Staff sign-in required." });
@@ -275,12 +277,7 @@ app.get("/api/calls/:id/audio", async (req, res, next) => {
     const call = (await listCallLog(1000)).find((item) => item.callId === req.params.id || item.id === req.params.id);
     const recording = String(call?.recordingUrl || "").match(/^https:\/\/api\.twilio\.com\/2010-04-01\/Accounts\/(AC[0-9a-f]{32})\/Recordings\/(RE[0-9a-f]{32})(?:\.(?:mp3|wav))?$/i);
     if (!recording || recording[1] !== process.env.TWILIO_ACCOUNT_SID) return res.status(404).send("Recording unavailable.");
-    const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${recording[1]}/Recordings/${recording[2]}.mp3`, { headers: { Authorization: `Basic ${Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64")}` }, signal: AbortSignal.timeout(20000) });
-    if (!response.ok || !response.body) return res.status(502).send("Recording is not ready. Please try again shortly.");
-    res.type("audio/mpeg");
-    const stream = Readable.fromWeb(response.body);
-    stream.on("error", (error) => { if (res.headersSent) res.destroy(); else next(error); });
-    stream.pipe(res);
+    await recordingPlayback(req,res,`https://api.twilio.com/2010-04-01/Accounts/${recording[1]}/Recordings/${recording[2]}.mp3`);
   } catch (error) { next(error); }
 });
 
