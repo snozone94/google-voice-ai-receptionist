@@ -1,4 +1,5 @@
 import { AvailabilityControls, CoverageControls, BookingChanges, TodayJobs, CallRecordingPlayer } from "./WorkspaceControls";
+import { TechCoordination } from './TechCoordination';
 import { mergeConversations, ownerLabel, needsReply, isOpenBooking, newestUnreadIndex, workspaceSummary, splitHomeTasks, taskWaitLabel, bookingOwnerLabel, bookingRequestedLabel, bookingStatusLabel, conversationPhone, canWork, ownershipActions, workspaceState, notificationDestination, validateReplyPolicy } from "./workspace-view";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
@@ -697,6 +698,7 @@ function WorkspaceHome({ baseUrl, accessCode, onRefresh, staff, activity, isAdmi
       <Text style={styles.record}>{summary.openBookings} open bookings{summary.overdueReplies != null ? ` · ${summary.overdueReplies} overdue replies` : ""}</Text>
       <View style={styles.buttonRow}><ActionButton disabled={!canWork(staff)} label="New text" onPress={onNewText} /><ActionButton disabled={!canWork(staff)} label="Dial" onPress={onDial} variant="light" /><ActionButton disabled={!canWork(staff)} label="Listen / Answer" onPress={() => onSelect("Calls")} variant="light" /></View>
     </Card>
+    <TechCoordination baseUrl={baseUrl} accessCode={accessCode} enabled={canWork(staff)}/>
     <AvailabilityControls baseUrl={baseUrl} accessCode={accessCode} value={activity.availability} isAdmin={false}/>
     <BookingChanges items={activity.bookingChanges} baseUrl={baseUrl} accessCode={accessCode} isAdmin={isAdmin} onThread={onThread} onSaved={onRefresh}/>
     <TodayJobs items={activity.bookings} onThread={onThread}/>
