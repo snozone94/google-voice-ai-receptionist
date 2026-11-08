@@ -1,6 +1,7 @@
-import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync, setIsAudioActiveAsync } from 'expo-audio';
+import { playRecording } from './recording-audio-session';
 import { bookingOwnerLabel, bookingRequestedLabel, isOpenBooking } from './workspace-view';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, Pressable, Switch, ScrollView, Modal, StyleSheet } from 'react-native';
 const s=StyleSheet.create({card:{backgroundColor:'#13283e',borderColor:'#31506c',borderWidth:1,borderRadius:16,padding:16,gap:10,marginBottom:12},title:{fontSize:19,fontWeight:'800',color:'#f2f7fc'},text:{fontSize:15,lineHeight:22,color:'#d0deeb'},muted:{fontSize:13,lineHeight:20,color:'#abc2d5'},row:{flexDirection:'row',flexWrap:'wrap',gap:8,alignItems:'center'},button:{minHeight:46,justifyContent:'center',paddingHorizontal:16,paddingVertical:10,borderRadius:12,backgroundColor:'#dcecf4'},buttonText:{color:'#10283c',fontWeight:'800',fontSize:15},input:{backgroundColor:'#f2f6fa',color:'#162a3c',padding:12,borderRadius:10,fontSize:16,minHeight:46},pill:{color:'#83e5d9',fontWeight:'700'},error:{color:'#ffd59b',fontSize:14,lineHeight:20}});
 const Button=({label,onPress,disabled=false})=><Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[s.button,disabled&&{opacity:.45}]}><Text style={s.buttonText}>{label}</Text></Pressable>;
@@ -42,11 +43,15 @@ export function TodayJobs({items=[],onThread}){
 
 export function CallRecordingPlayer({getSource,disabled=false,label='Play recording'}){
  const [source,setSource]=useState(null),[busy,setBusy]=useState(false),[autoStart,setAutoStart]=useState(false),[error,setError]=useState('');
+ const allowed=useRef(!disabled);allowed.current=!disabled;
+ useEffect(()=>{allowed.current=!disabled;return()=>{allowed.current=false;};},[]);
  const player=useAudioPlayer(source,{updateInterval:500});
  const status=useAudioPlayerStatus(player);
- useEffect(()=>{if(autoStart&&status.isLoaded&&!disabled){player.play();setAutoStart(false);}},[autoStart,status.isLoaded,disabled,player]);
+ const start=()=>playRecording({player,setMode:setAudioModeAsync,setActive:setIsAudioActiveAsync,canPlay:()=>allowed.current});
+ useEffect(()=>{if(autoStart&&status.isLoaded&&!disabled){setAutoStart(false);start().catch(()=>setError('Could not start audio. Finish any phone call and try again.'));}},[autoStart,status.isLoaded,disabled,player]);
+ useEffect(()=>{if(!autoStart||status.isLoaded)return;const timer=setTimeout(()=>{setAutoStart(false);setSource(null);setError('Recording could not load. Tap Play to retry.');},20000);return()=>clearTimeout(timer);},[autoStart,status.isLoaded]);
  useEffect(()=>{if(disabled){player.pause();setAutoStart(false);}},[disabled,player]);
- const toggle=async()=>{try{setError('');if(status.playing){player.pause();return;}if(!source||status.error){setBusy(true);setSource(await getSource());setAutoStart(true);}else{if(status.didJustFinish)await player.seekTo(0);player.play();}}catch(e){setError(e.message);}finally{setBusy(false);}};
+ const toggle=async()=>{if(!allowed.current)return;try{setError('');if(status.playing){player.pause();return;}if(!source||status.error){setBusy(true);const next=await getSource();if(!allowed.current)return;setSource(next);setAutoStart(true);}else{if(status.didJustFinish)await player.seekTo(0);await start();}}catch(e){setError(e.message);}finally{setBusy(false);}};
  const stamp=n=>`${Math.floor((n||0)/60)}:${String(Math.floor((n||0)%60)).padStart(2,'0')}`;
- return <View style={{gap:8}}><View style={s.row}><Button label={busy?'Loading…':status.playing?'Pause':source?'Play':label} disabled={disabled||busy} onPress={toggle}/>{source?<Button label="Back 10 seconds" disabled={disabled||!status.isLoaded} onPress={()=>player.seekTo(Math.max(0,status.currentTime-10))}/>:null}{source?<Text style={{color:'#30465b'}}>{stamp(status.currentTime)} / {stamp(status.duration)}</Text>:null}</View>{disabled?<Text style={{color:'#526779'}}>Finish the live call before playing a recording.</Text>:null}{error||status.error?<Text style={{color:'#9b3d24'}}>{error||'Recording unavailable. Try again.'}</Text>:null}</View>;
+ return <View style={{gap:8}}><View style={s.row}><Button label={busy||autoStart&&!status.isLoaded?'Loading…':status.playing?'Pause':source?'Play':label} disabled={disabled||busy||autoStart&&!status.isLoaded} onPress={toggle}/>{source?<Button label="Back 10 seconds" disabled={disabled||!status.isLoaded} onPress={()=>player.seekTo(Math.max(0,status.currentTime-10))}/>:null}{source?<Text style={{color:'#30465b'}}>{stamp(status.currentTime)} / {stamp(status.duration)}</Text>:null}</View>{disabled?<Text style={{color:'#526779'}}>Finish the live call before playing a recording.</Text>:<Text style={{color:'#526779'}}>Plays through your current audio output. Use the phone’s volume buttons to adjust.</Text>}{error||status.error?<Text style={{color:'#9b3d24'}}>{error||'Recording unavailable. Try again.'}</Text>:null}</View>;
 }
