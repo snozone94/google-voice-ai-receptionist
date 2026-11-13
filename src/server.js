@@ -1,3 +1,4 @@
+import { sendWithSmsDisclosure } from "./sms-disclosure.js";
 import {phoneHours,bookingRequestPolicy} from "./business-hours.js";
 import { createRecordingPlayback } from "./recording-playback.js";
 import { reviewDecision, reviewKey, reviewReceipt, applyPlatformReview } from "./booking-review.js";
@@ -225,7 +226,7 @@ const bookingPhone = createBookingPhone({
     let delivery;
     try { delivery = await sendTwilioSms(request.phone, body); }
     catch (error) { error.uncertain = true; throw error; }
-    await saveOutgoingSms({ to: request.phone, from: request.businessPhone, body, messageSid: delivery.sid || "", status: delivery.status || (delivery.ok ? "sent" : "failed"), source: "booking_change_receipt", agentName: "DDD booking updates" });
+    await saveOutgoingSms({ to: request.phone, from: request.businessPhone, body: delivery.messageBody ?? body, messageSid: delivery.sid || "", status: delivery.status || (delivery.ok ? "sent" : "failed"), source: "booking_change_receipt", agentName: "DDD booking updates" });
     return delivery;
   }, { ttl: 30 * 86400000, holdOnUncertain: true })
 });
@@ -238,7 +239,7 @@ const callMenu = mountCallMenu(app, {
     let delivery;
     try { delivery = await sendTwilioSms(phone, message); }
     catch (error) { error.uncertain = true; throw error; }
-    await saveOutgoingSms({ to: phone, from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "", body: message, messageSid: delivery.sid || "", status: delivery.status || (delivery.ok ? "sent" : "failed"), source: "call_menu_booking", agentName: "DDD booking links", errorCode: delivery.code || "", errorMessage: delivery.error || "" });
+    await saveOutgoingSms({ to: phone, from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "", body: delivery.messageBody ?? message, messageSid: delivery.sid || "", status: delivery.status || (delivery.ok ? "sent" : "failed"), source: "call_menu_booking", agentName: "DDD booking links", errorCode: delivery.code || "", errorMessage: delivery.error || "" });
     return delivery;
   }, { ttl: 86400000, holdOnUncertain: true }), humanDial: async (settings, context) => {
     if ((await liveCalls.config()).enabled && context.callId) return liveCalls.start({ id: context.callId, phone: context.customerPhone, businessPhone: context.businessPhone, teamOnly: true, aiUri: "", recordingCallback: `${String(process.env.PUBLIC_BASE_URL).replace(/\/$/, "")}/api/twilio/recording?secret=${encodeURIComponent(process.env.TWILIO_SMS_WEBHOOK_SECRET || "")}` });
@@ -249,7 +250,7 @@ const callMenu = mountCallMenu(app, {
     const currentAvailability = await serviceControls.availability();
     const message = appendStopFooter(`${priceText(prices)}${currentAvailability.mode!=="available"||!currentAvailability.newTiresAvailable||currentAvailability.notice?"\n\n"+availabilityMessage(currentAvailability):""}`);
     const delivery = await sendTwilioSms(phone, message);
-    await saveOutgoingSms({ to: phone, from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "", body: message, messageSid: delivery.sid || "", status: delivery.status || (delivery.ok ? "sent" : "failed"), source: "call_menu_prices", agentName: "DDD price list", errorCode: delivery.code || "", errorMessage: delivery.error || "" });
+    await saveOutgoingSms({ to: phone, from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "", body: delivery.messageBody ?? message, messageSid: delivery.sid || "", status: delivery.status || (delivery.ok ? "sent" : "failed"), source: "call_menu_prices", agentName: "DDD price list", errorCode: delivery.code || "", errorMessage: delivery.error || "" });
     return delivery;
   }, { ttl: 86400000 })
 });
@@ -318,7 +319,7 @@ app.post("/api/booking-change-requests/:id/review",express.json(),staffRecordsOn
     const message=appendStopFooter(reviewReceipt(result));
     const delivery=await notificationLedger.deliver(`booking-review-result:${reviewKey(result,result.review)}`,async()=>{
       let sent;try{sent=await sendTwilioSms(result.phone,message);}catch(error){error.uncertain=true;throw error;}
-      await saveOutgoingSms({to:result.phone,from:result.businessPhone,body:message,messageSid:sent.sid||'',status:sent.status||(sent.ok?'sent':'failed'),source:'booking_review',agentName:staff.name||'DDD team'});return sent;
+      await saveOutgoingSms({to:result.phone,from:result.businessPhone,body:sent.messageBody??message,messageSid:sent.sid||'',status:sent.status||(sent.ok?'sent':'failed'),source:'booking_review',agentName:staff.name||'DDD team'});return sent;
     },{ttl:30*86400000,holdOnUncertain:true}).catch(()=>({ok:false,uncertain:true}));
     res.json({request:result,delivery,message:delivery.ok?'Saved and customer text accepted for delivery.':'Decision saved. Customer text is not confirmed; check the conversation before retrying.'});
   }catch(error){res.status(error.status||502).json({error:error.message});}
@@ -831,7 +832,7 @@ app.post("/api/sms/reply", express.json(), async (req, res, next) => {
     const record = await saveOutgoingSms({
       to,
       from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
-      body: message,
+      body: delivery.messageBody ?? message,
       messageSid: delivery.sid || "",
       status: delivery.status || (delivery.ok ? "sent" : "failed"),
       agentName,
@@ -1071,7 +1072,7 @@ app.post("/api/alerts/audit", express.json(), async (req, res, next) => {
       await saveOutgoingSms({
         to: phone,
         from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
-        body: message,
+        body: smsResult.messageBody ?? message,
         messageSid: smsResult.sid || "",
         status: smsResult.status || (smsResult.ok ? "sent" : "failed"),
         agentName: "Alert audit",
@@ -2561,6 +2562,10 @@ function hasCustomerLookupAccess(req) {
 }
 
 async function sendTwilioSms(to, message) {
+  return sendWithSmsDisclosure({ dataDir, to, from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER, message, send: body => sendTwilioSmsRaw(to, body) });
+}
+
+async function sendTwilioSmsRaw(to, message) {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   const from = normalizeE164(process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER);
@@ -2967,7 +2972,7 @@ async function sendMissedCallSms(to, status = "") {
     await saveOutgoingSms({
       to: normalizedTo,
       from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
-      body: message,
+      body: delivery.messageBody ?? message,
       messageSid: delivery.sid || "",
       status: delivery.status || (delivery.ok ? "sent" : "failed"),
       agentName: "Missed-call fallback",
@@ -3045,7 +3050,7 @@ async function sendCallStartSmsIfNeeded(to) {
     await saveOutgoingSms({
       to: normalizedTo,
       from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
-      body: message,
+      body: delivery.messageBody ?? message,
       messageSid: delivery.sid || "",
       status: delivery.status || (delivery.ok ? "sent" : "failed"),
       agentName: "Call-start fallback",
@@ -3090,7 +3095,7 @@ async function sendCompletedCallSmsIfNeeded(to, status = "") {
     await saveOutgoingSms({
       to: normalizedTo,
       from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || "",
-      body: message,
+      body: delivery.messageBody ?? message,
       messageSid: delivery.sid || "",
       status: delivery.status || (delivery.ok ? "sent" : "failed"),
       agentName: "Call follow-up",

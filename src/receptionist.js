@@ -1,3 +1,4 @@
+import { sendWithSmsDisclosure } from "./sms-disclosure.js";
 import fs from "node:fs/promises";
 import { reserveCallSms } from "./call-sms-policy.js";
 import path from "node:path";
@@ -1690,7 +1691,7 @@ SMS follow-up:
 - SMS follow-up is ${activeSettings.smsFollowUp.enabled ? "enabled" : "disabled"} in admin.
 - If enabled, ask permission before texting the caller the best DDD link.
 - Message template: ${activeSettings.smsFollowUp.message}
-- All outbound SMS must include opt-out wording: "Reply STOP to stop." If the template already includes it, do not repeat it.
+- Keep SMS concise and professional. The delivery service adds opt-out wording to the first message to each customer; do not add it to every reply.
 - Use the most relevant DDD destination as {{link}}. Do not use a booking/customer tracking URL for immediate SMS until a technician is assigned, active, or en route.
 - If the caller asks how to check the booking, say DDD will text the app and website options. Do not read long links out loud.
 - When calling save_lead or save_booking_request, set smsConsent to true only if the caller clearly agreed to receive the text.
@@ -2836,6 +2837,10 @@ export function appendSmsCompliance(message = "") {
 }
 
 async function sendConfiguredSms(to, message) {
+  return sendWithSmsDisclosure({ dataDir, to, from: process.env.TWILIO_SMS_FROM || process.env.GOOGLE_VOICE_NUMBER || process.env.VOIPMS_SMS_DID, message, send: body => sendConfiguredSmsRaw(to, body) });
+}
+
+async function sendConfiguredSmsRaw(to, message) {
   const twilioResult = await sendTwilioSms(to, message);
   if (!twilioResult.skipped) {
     await saveOutgoingSms({
