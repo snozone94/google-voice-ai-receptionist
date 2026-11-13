@@ -234,6 +234,13 @@ test("dispatch HTTP contract, reviewer isolation, ownership, policy and provider
     assert.match(sms.at(-1).Body, /\n\niPhone:\nhttps:/);
     assert.equal((sms.at(-1).Body.match(/Reply STOP to stop\./g) || []).length, 1);
   });
+  await t.test("later staff replies omit the footer on the wire and in the inbox", async () => {
+    const response = await request("/api/sms/reply", "staff-one", { to: "+15135550142", message: "Your technician is on the way. Reply STOP to stop." });
+    assert.equal(response.status, 201);
+    assert.equal(sms.at(-1).Body, "Your technician is on the way.");
+    const records = (await fs.readFile(path.join(dir, "sms.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
+    assert.equal(records.filter(row => row.to === "+15135550142" && row.direction === "outbound").at(-1).body, sms.at(-1).Body);
+  });
   await t.test("public booking replay cannot recover another record or inject identity/status", async () => {
     const victim = { bookingId: "victim", statusToken: "private-bearer", name: "Existing private customer", phone: "+15135550999", createdAt: new Date().toISOString(), status: "Requested" };
     await fs.writeFile(path.join(dir, "bookings.jsonl"), JSON.stringify(victim) + "\n");
